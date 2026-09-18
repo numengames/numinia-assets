@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Numen Games S.L.
+# SPDX-License-Identifier: CC0-1.0
+version = 1
+
+# List documentation explicitly. Never use a catch-all that silently licenses
+# incoming media. A new resource requires its own reviewed declaration.
+[[annotations]]
+path = [
+  "README.md",
+  "AGENTS.md",
+  "CONTRIBUTING.md",
+  "CHANGELOG.md",
+  "TRADEMARKS.md",
+  "content/README.md",
+]
+SPDX-FileCopyrightText = "2026 Numen Games S.L."
+SPDX-License-Identifier = "CC-BY-4.0"
