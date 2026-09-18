@@ -1,0 +1,18 @@
+SPDX-FileCopyrightText: Polygonal Mind
+SPDX-License-Identifier: CC0-1.0
+
+Resource: Pot Vapor 02, identified with Structure_Vapor_Pot_02_Art from the
+Chromatic Chaos VHS pack. Original creator: Polygonal Mind.
+Canonical record: https://github.com/numengames/numinia-archive/blob/main/system/SYS-005-digital-resource-register.md#pot-vapor-02
+
+The rightsholder's CC0 offer:
+https://github.com/PolygonalMind/initiative-opensource-release#the-opensource-initiative
+
+The GLB remains byte-identical to the reviewed CC0-labelled legacy original:
+https://github.com/PabloFMM/numinia-digital-goods-data/blob/952a01987b2adefe305864956d59e8bf8cc9e5de/content/models/pot-vapor-02.glb
+
+Three textures match the upstream exactly and the unique vertex-position
+sets match after an axis conversion. This does not assert identical topology,
+UVs or FBX/GLB binaries. The catalogue's PabloFMM credit is retained as a
+historical credit, not asserted as original authorship. The converter's
+identity is not independently established. See the canonical evidence record.

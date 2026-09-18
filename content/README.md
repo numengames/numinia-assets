@@ -1,7 +1,10 @@
 # Resource files
 
-No resources are included in the foundation PR. The first import is a
-separate, verified-CC0-only cut. Existing resources remain at their sources.
+The first CC0 intake contains Avocado and Pot Vapor 02 with unchanged bytes
+and original identifiers. No thumbnails are included. Their
+[canonical records](https://github.com/numengames/numinia-archive/blob/main/system/SYS-005-digital-resource-register.md)
+and the complete candidate review live in the archive; no second editable
+catalogue is maintained here. Legacy originals remain untouched.
 
 Place admitted files below this directory, grouped by their media type as
 needed (for example audio, images, models or avatars). Do not create empty
