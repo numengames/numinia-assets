@@ -1,0 +1,22 @@
+Numinia Assets — licensing notice
+
+There is no single licence covering every file in this repository.
+Licences are declared per file in SPDX headers, adjacent .license files or
+REUSE.toml. Full licence texts are in LICENSES/.
+
+Repository documentation: CC-BY-4.0, on the explicit paths in REUSE.toml.
+Repository metadata: CC0-1.0, where explicitly declared.
+Tests and CI tooling: MIT, where explicitly declared.
+Resources: only their own explicit declarations apply. The initial migration
+is restricted to verified CC0-1.0 resources; this notice does not waive rights
+in any unlisted, future or third-party resource.
+
+The licence of one file is not inherited by a neighbouring file. No copyright
+permission is granted for a file with no applicable declaration. A declaration
+cannot grant rights that its declarant does not hold. Existing grants by
+rightsholders are not revoked by moving files into or out of this repository.
+
+Copyright holders are identified in each file's declaration, not assigned
+wholesale to Numen Games S.L. Third-party attribution must be preserved.
+
+No trademark rights are granted. See TRADEMARKS.md.
