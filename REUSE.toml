@@ -15,3 +15,12 @@ path = [
 ]
 SPDX-FileCopyrightText = "2026 Numen Games S.L."
 SPDX-License-Identifier = "CC-BY-4.0"
+
+# Repository configuration copied byte-for-byte from numinia-archive (the
+# family keeps these files identical by hand — STD-015 § The family
+# pipeline); the auto-merge workflow carries no header there either, so it
+# is declared here, by name, never by a glob.
+[[annotations]]
+path = [".github/workflows/dependabot-auto-merge.yml"]
+SPDX-FileCopyrightText = "2026 Numen Games S.L."
+SPDX-License-Identifier = "CC0-1.0"

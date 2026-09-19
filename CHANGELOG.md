@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- CI takes the family shape (numinia-archive STD-015 § The family pipeline):
+  `check.yml` becomes `ci.yml`, its job is literally named `build` (the one
+  check the branch ruleset requires in every Numen repository), every step
+  is commented, the token is read-only, and a `checklist` job reports the
+  files the standards require without blocking while STD-015 is draft.
+  Same two checks as before: `reuse lint` over every file and the tests that
+  prove a missing declaration is refused.
+- `.github/dependabot.yml` (GitHub Actions and pip, daily),
+  `dependabot-auto-merge.yml` and `scorecard.yml` copied from the archive;
+  `.github/CODEOWNERS` naming the licence map, the licence texts and the
+  workflows.
 - Import unchanged Avocado and Pot Vapor 02 originals, with primary Polygonal
   Mind CC0 evidence and explicit per-file notices.
 - Link the canonical records and the complete review of 32 candidates.

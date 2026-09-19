@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Numen Games S.L.
+# SPDX-License-Identifier: CC0-1.0
+#
+# SEC-010 (numinia-archive standards/STD-015-engineering-checks.md):
+# sensitive paths require Oracle review. Enforcement needs "require review
+# from Code Owners" in the branch ruleset, an organisation setting, not a
+# file in this tree: until it is on, the list below is advisory. Here the
+# sensitive paths are the licence map and the licence texts — a change to
+# either relicenses every file it covers — and the workflows.
+/LICENSE* @PabloFMM
+/LICENSES/ @PabloFMM
+/REUSE.toml @PabloFMM
+/.github/ @PabloFMM
