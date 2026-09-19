@@ -6,8 +6,8 @@ including its transition regime. Changes here enter through reviewed PRs.
 
 ## Before importing a resource
 
-This foundation imports no resources. The first ingestion is a separate PR,
-limited to verified CC0 works. For that cut:
+The initial intake is limited to verified CC0 works. The accepted originals
+and pending candidates are recorded in the archive. For each further intake:
 
 - Link the canonical resource record in numinia-archive; do not add another
   editable catalogue here. Preserve existing resource identifiers.
@@ -23,8 +23,9 @@ limited to verified CC0 works. For that cut:
 - Do not migrate accounts, personal state, invoices, secrets or logs. Leave
   original repositories and excluded resources untouched.
 
-Automatic integrity checks, canonical record schemas and the first approved
-resource list are outside this foundation. No download service is deployed.
+Intake tests pin the accepted bytes and reject unexpected media. A general
+resource schema and storage integration remain separate cuts.
+No download service is deployed.
 
 ## Changes to the scaffolding
 

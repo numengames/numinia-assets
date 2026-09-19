@@ -1,0 +1,15 @@
+SPDX-FileCopyrightText: Polygonal Mind
+SPDX-License-Identifier: CC0-1.0
+
+Resource: Avocado (upstream title: 88_Avocado).
+Canonical record: https://github.com/numengames/numinia-archive/blob/main/system/SYS-005-digital-resource-register.md#avocado
+
+The original bytes match the official upstream file:
+https://github.com/PolygonalMind/100Avatars/blob/ff07c2ad0017819c4e5366656ee1e5bcc4029bd4/100Avatars_088/100Avatars_088_Avocado.vrm
+
+Polygonal Mind expressly offers the avatars under CC0 in release v24.02.1:
+https://github.com/PolygonalMind/100Avatars/releases/tag/v24.02.1
+The VRM also declares CC0 and Polygonal Mind. Older upstream CC-BY and
+no-resale notices are disclosed in the canonical record; this annotation
+relies on the specific CC0 offer, not the legacy catalogue's default label.
+No metadata or bytes inside this VRM have been changed.

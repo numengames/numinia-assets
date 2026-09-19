@@ -5,8 +5,8 @@ The organisational source is
 including the MVP-to-alpha transition regime. This is a resource depot,
 not another constitution or canonical catalogue.
 
-- Scope of this first cut: repository scaffolding and declaration checks;
-  no imported media, no licence changes to existing works, no deployment.
+- First intake: Avocado and Pot Vapor 02, with primary CC0 evidence and
+  unchanged originals; no deployment or rewriting of existing grants.
 - First ingestion: verified CC0 only, with evidence reviewed by the operator.
 - Keep canonical resource records in the archive. Preserve IDs, original
   bytes, attribution and provenance when the ingestion cut is approved.

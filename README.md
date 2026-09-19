@@ -9,7 +9,9 @@ The sites consume both; neither maintains another editable master catalogue.
 ## Scope
 
 `content/` is the home for admitted images, audio, video, models, avatars and
-editable originals. There are **no imported resources in this foundation**.
+editable originals. The first intake includes **Avocado and Pot Vapor 02**.
+Their canonical records and the review of all 32 candidates live in the
+[resource register](https://github.com/numengames/numinia-archive/blob/main/system/SYS-005-digital-resource-register.md).
 Only resources with verified CC0 provenance enter the first migration.
 CC-BY, unknown and conflicting cases remain at their original source until a
 separate decision; none are deleted or relicensed by this repository.
@@ -44,8 +46,11 @@ python3 -m venv .venv
 
 CI runs both commands. The tests deliberately introduce unlicensed resources
 in temporary copies and verify that the gate rejects them. No test writes an
-asset into the repository or requires external services.
+asset into the repository or requires external services. Intake tests also
+pin the admitted files by SHA-256 and size, reject unexpected media, and
+check that the model containers need no external buffer or texture files.
 
 **A green check verifies licence declarations, not ownership, consent,
-embedded media metadata, eligibility for CC0, or byte integrity.** Those need
+eligibility for CC0, or all embedded media metadata.** Intake tests verify
+byte integrity and the admitted VRM licence, not legal entitlement. Rights need
 an evidenced review before a resource is admitted. See [CONTRIBUTING.md](CONTRIBUTING.md).
