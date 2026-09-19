@@ -1,0 +1,138 @@
+# SPDX-FileCopyrightText: 2026 Numen Games S.L.
+# SPDX-License-Identifier: MIT
+#
+# This workflow is the depot's feedback loop: it is where a rule stops
+# being prose and starts refusing merges. Each step below says what it
+# checks and how to fix it when it turns red.
+#
+# A depot has no site. Per the archive's STD-015 § The family pipeline,
+# its ARTEFACT guards are its own declaration checks — every file names
+# its licence, and the tests prove a missing declaration is refused — and
+# the job that runs them is literally named `build`: the branch ruleset can
+# only require a check by NAME, so the name means the same in every Numen
+# repository. Renaming it leaves the required check pending forever.
+#
+# RULE steps (the repository checklist) verify a practice from STD-015.
+# While that register is `draft` they LOOK BUT DO NOT BITE: findings go to
+# the log and the job summary, and the job exits 0 (ENG-067).
+#
+# Security (STD-015): third-party actions pinned by commit SHA (SEC-007);
+# the workflow token is read-only and no job asks for more (SEC-008); no
+# secret is read (SEC-004); the checkout keeps no credential.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: read-all
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── ARTEFACT · the required check ──────────────────────────────────────
+  # Every file in the tree carries a reviewed licence declaration, and the
+  # checker that enforces it is itself tested. Red here means a file was
+  # added without its declaration (add the annotation in REUSE.toml — never
+  # a catch-all: an incoming resource needs its own reviewed line) or a
+  # licence text named by the map is missing from LICENSES/.
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Checkout of the PR head, pinned by SHA; the token is not persisted.
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      # Python for the REUSE tool, pip cache keyed on the pinned requirement.
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.1.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-check.txt
+
+      # reuse, pinned in requirements-check.txt to the version every Numen
+      # repository runs. Not a check.
+      - name: Install checker
+        run: python -m pip install -r requirements-check.txt
+
+      # ARC-003 (STD-015): REUSE 3.3 — every file under a REUSE.toml
+      # annotation or an SPDX header, the text of every named licence in
+      # LICENSES/. Bites: this is the depot's artefact, there is nothing
+      # else to build.
+      - name: Check every file declaration
+        run: python -m reuse lint
+
+      # The tests in tests/ create a file WITHOUT a declaration in a scratch
+      # copy and prove the checker refuses it. A green lint above with a
+      # broken checker would be silence mistaken for success; this step
+      # makes the checker's own honesty observable (TRC-006).
+      - name: Exercise rejection of missing declarations
+        run: python -m unittest discover -s tests -v
+
+      # TRC-007 (STD-015): every guard declares what it does NOT look at.
+      - name: What this guard does not see
+        if: always()
+        run: |
+          echo "This guard does NOT check:"
+          echo "  - whether a declared licence is TRUE for the bytes (provenance is reviewed by a person, recorded in the archive's SYS-005)"
+          echo "  - media metadata, integrity hashes or that an original is unchanged (the intake PR carries those)"
+          echo "  - anything a site does with these files (the consumers' own CI)"
+
+  # ── RULE (looks, does not bite) ────────────────────────────────────────
+  # STD-015's repository checklist: the files every Numen repository
+  # carries, and the pointer at the archive that AGENTS.md must open with
+  # (the rules live in numinia-archive, not here). Findings go to the job
+  # summary as warnings; exit 0 while STD-015 is draft (ENG-067). Fix a
+  # finding by adding the file — never by editing the list to match the
+  # tree. This depot has no CLAUDE.md by design (AGENTS.md is the
+  # platform-neutral layer); the list here reads AGENTS.md instead.
+  checklist:
+    name: Repository checklist (reports, does not block)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Files the standards require, and the AGENTS.md pointer
+        run: |
+          findings=()
+          for f in README.md AGENTS.md SECURITY.md CONTRIBUTING.md CODE_OF_CONDUCT.md \
+                   CHANGELOG.md TRADEMARKS.md LICENSE REUSE.toml \
+                   .editorconfig \
+                   .github/CODEOWNERS .github/dependabot.yml; do
+            [ -f "$f" ] || findings+=("missing file: $f — required by the repository checklist (STD-015)")
+          done
+          [ -f .github/PULL_REQUEST_TEMPLATE.md ] || [ -f .github/pull_request_template.md ] \
+            || findings+=("missing file: .github/PULL_REQUEST_TEMPLATE.md")
+          [ -d LICENSES ] || findings+=("missing directory: LICENSES/")
+          grep -q "numinia-archive" AGENTS.md \
+            || findings+=("AGENTS.md does not point at numinia-archive (the rules live there)")
+
+          if [ "${#findings[@]}" -eq 0 ]; then
+            echo "Repository checklist: every required file is present."
+            echo "Repository checklist: clean." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "### Repository checklist — ${#findings[@]} finding(s), not blocking while STD-015 is draft"
+            echo
+            for x in "${findings[@]}"; do echo "- $x"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+          for x in "${findings[@]}"; do echo "::warning::$x"; done
+          exit 0
+
+      - name: What this guard does not see
+        if: always()
+        run: |
+          echo "This guard does NOT check:"
+          echo "  - whether the files say anything true (only that they exist)"
+          echo "  - licence declarations per file (the build job does, and bites)"
