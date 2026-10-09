@@ -24,3 +24,12 @@ SPDX-License-Identifier = "CC-BY-4.0"
 path = [".github/workflows/dependabot-auto-merge.yml"]
 SPDX-FileCopyrightText = "2026 Numen Games S.L."
 SPDX-License-Identifier = "CC0-1.0"
+
+# The public worlds fleet's orders (numinia-archive ADR-069): machine data,
+# CC0 like the archive's records. JSON cannot carry a header, so the folder's
+# orders are declared here. The glob reaches only `.json` orders inside
+# open-worlds/, never media: tests/test_open_worlds.py refuses any other file there.
+[[annotations]]
+path = ["open-worlds/*.json"]
+SPDX-FileCopyrightText = "2026 Numen Games S.L."
+SPDX-License-Identifier = "CC0-1.0"
