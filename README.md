@@ -16,6 +16,13 @@ Only resources with verified CC0 provenance enter the first migration.
 CC-BY, unknown and conflicting cases remain at their original source until a
 separate decision; none are deleted or relicensed by this repository.
 
+`open-worlds/` holds, for its trial only, the orders of the public 3D
+worlds fleet: one small JSON file per world that the fleet's servers read
+(numinia-archive `ADR-069`). The orders are not resources. Each one points
+to its world's card in the archive and never copies it. The folder moves to
+a repository of its own when the depot gets heavy, when the trial passes
+eight worlds, or when the trial ends. See [open-worlds/README.md](open-worlds/README.md).
+
 Do not copy the legacy `data/` tree: user records, sessions, favourites,
 moderation and billing are not public asset content. Large-object storage,
 resource schemas, IDs and versioning remain separate integration cuts.

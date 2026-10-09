@@ -11,6 +11,8 @@ not another constitution or canonical catalogue.
 - Keep canonical resource records in the archive. Preserve IDs, original
   bytes, attribution and provenance when the ingestion cut is approved.
 - Do not copy the legacy data tree, personal information or operational state.
+- `open-worlds/` holds the public fleet's orders (numinia-archive ADR-069):
+  no IP address, key or client name ever goes there; the servers read it.
 - Local verification: `python -m reuse lint` and
   `python -m unittest discover -s tests -v`, after installing
   `requirements-check.txt` into a virtual environment (Python 3.11+).

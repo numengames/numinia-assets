@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `open-worlds/`: the public 3D worlds fleet's orders, for its trial
+  (numinia-archive ADR-069). It holds a README that defines an order and no
+  orders yet. `tests/test_open_worlds.py` refuses an order that is malformed,
+  is not pinned to one engine build, or holds an IP address or a secret, and
+  refuses any other kind of file in the folder. The orders are CC0, declared
+  in `REUSE.toml`.
 - CI takes the family shape (numinia-archive STD-015 § The family pipeline):
   `check.yml` becomes `ci.yml`, its job is literally named `build` (the one
   check the branch ruleset requires in every Numen repository), every step
