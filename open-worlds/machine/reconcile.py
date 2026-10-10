@@ -41,7 +41,7 @@ REGISTRY = "ghcr.io/numengames/"  # the only place an engine image may come from
 ZONE = ".numen.games"  # the only zone a world's domain may sit in
 
 
-def trusted(order: dict) -> str | None:
+def refusal(order: dict) -> str | None:
     """Why an order is refused even though it names this machine; None when it is fine.
 
     The reason names the rule, never the value: the log must stay free of
@@ -77,7 +77,7 @@ def select_orders(orders: list[dict], alias: str) -> list[dict]:
     for o in orders:
         if o.get("server") != alias or not SLUG.match(str(o.get("id", ""))):
             continue
-        why = trusted(o)
+        why = refusal(o)
         if why:
             print(f"refuse one order on this machine: {why}", file=sys.stderr)
             continue

@@ -77,7 +77,7 @@ class ReconcileTests(unittest.TestCase):
             order(id="z", card="z", domain="numen.games"),
         ]
         self.assertEqual(R.select_orders(foreign, "open-1"), [])
-        self.assertIsNone(R.trusted(order()))
+        self.assertIsNone(R.refusal(order()))
 
     def test_the_reconciler_is_installed_not_run_from_the_clone(self):
         text = (MACHINE / "bootstrap.sh").read_text()
