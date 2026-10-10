@@ -42,12 +42,16 @@ ZONE = ".numen.games"  # the only zone a world's domain may sit in
 
 
 def trusted(order: dict) -> str | None:
-    """Why an order is refused even though it names this machine; None when it is fine."""
+    """Why an order is refused even though it names this machine; None when it is fine.
+
+    The reason names the rule, never the value: the log must stay free of
+    whatever a malicious order might carry.
+    """
     image, domain = str(order.get("image", "")), str(order.get("domain", ""))
     if not image.startswith(REGISTRY):
-        return f"image {image!r} is not from {REGISTRY}"
+        return f"image is not from {REGISTRY}"
     if not domain.endswith(ZONE) or domain.count(".") != ZONE.count("."):
-        return f"domain {domain!r} is not one label under {ZONE}"
+        return f"domain is not one label under {ZONE}"
     return None
 
 
@@ -75,7 +79,7 @@ def select_orders(orders: list[dict], alias: str) -> list[dict]:
             continue
         why = trusted(o)
         if why:
-            print(f"refuse {o['id']}: {why}", file=sys.stderr)
+            print(f"refuse one order on this machine: {why}", file=sys.stderr)
             continue
         mine.append(o)
     return mine
