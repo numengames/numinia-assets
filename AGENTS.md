@@ -13,6 +13,8 @@ not another constitution or canonical catalogue.
 - Do not copy the legacy data tree, personal information or operational state.
 - `open-worlds/` holds the public fleet's orders (numinia-archive ADR-069):
   no IP address, key or client name ever goes there; the servers read it.
+  `open-worlds/machine/` is the recipe those servers are made from (AGPL);
+  the machine pulls this public book and holds no GitHub credential.
 - Local verification: `python -m reuse lint` and
   `python -m unittest discover -s tests -v`, after installing
   `requirements-check.txt` into a virtual environment (Python 3.11+).

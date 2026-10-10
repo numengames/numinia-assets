@@ -54,3 +54,10 @@ that breaks these rules.
 By pull request, reviewed by the house's usual reviewers. The fleet console
 on numinia.com only opens pull requests. No server and no automation writes
 here.
+
+## The machines
+
+The servers that read this folder are made from the recipe in
+[`machine/`](machine/README.md): one script brings a fresh server up with its
+alias, another runs every minute and keeps its containers equal to the orders
+that name that alias.

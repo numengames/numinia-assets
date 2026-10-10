@@ -12,6 +12,8 @@ path = [
   "CHANGELOG.md",
   "TRADEMARKS.md",
   "content/README.md",
+  "open-worlds/README.md",
+  "open-worlds/machine/README.md",
 ]
 SPDX-FileCopyrightText = "2026 Numen Games S.L."
 SPDX-License-Identifier = "CC-BY-4.0"

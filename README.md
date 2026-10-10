@@ -21,7 +21,8 @@ worlds fleet: one small JSON file per world that the fleet's servers read
 (numinia-archive `ADR-069`). The orders are not resources. Each one points
 to its world's card in the archive and never copies it. The folder moves to
 a repository of its own when the depot gets heavy, when the trial passes
-eight worlds, or when the trial ends. See [open-worlds/README.md](open-worlds/README.md).
+eight worlds, or when the trial ends. See [open-worlds/README.md](open-worlds/README.md)
+and, for how a server of the fleet is made, [open-worlds/machine/README.md](open-worlds/machine/README.md).
 
 Do not copy the legacy `data/` tree: user records, sessions, favourites,
 moderation and billing are not public asset content. Large-object storage,
