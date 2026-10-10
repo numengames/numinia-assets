@@ -35,6 +35,11 @@ This folder is the whole recipe. It lives beside the orders during the trial
 
 That is the whole link between the machine and the fleet: the alias.
 
+The reconciler is copied to `/usr/local/sbin/fleet-reconcile` by the
+bootstrap and run from there, never from the clone. A merge on this
+repository changes orders, not the code that obeys them. To update the
+reconciler on a machine, run the bootstrap line again.
+
 ## Bring up a world on it
 
 1. Point the world's domain (an `A` record) at the machine's IP. Caddy cannot
@@ -81,8 +86,27 @@ removes it.
 ```sh
 journalctl -u fleet-reconcile -n 20                     # what the last runs did
 docker compose -f /srv/fleet/run/docker-compose.yml ps  # what is running
-python3 /srv/fleet/book/open-worlds/machine/reconcile.py --dry-run  # the plan, touching nothing
+fleet-reconcile --dry-run                               # the plan, touching nothing
 ```
+
+## What the machine refuses
+
+- An order whose `server` is not its alias: not its business.
+- An order whose image is not from `ghcr.io/numengames/` or whose domain is
+  not one label under `numen.games`: refused and logged, even if merged.
+- A `running` order with no `env/<id>.env` on the machine: not started, logged.
+
+## Security, in one table
+
+| If this is stolen… | …the thief gets | …and does not get |
+|---|---|---|
+| the machine | its worlds' data and keys | GitHub (no credential), the other machines, the console |
+| the console (numinia.com) | the power to open pull requests | any machine (no key to them), any world's keys |
+| a reviewer's account | the power to merge orders | code execution on machines (the reconciler is installed, not pulled); images outside the house's registry; domains outside the zone |
+
+Log in to the machine with an SSH key, never a password (OVH offers the key
+at creation). Docker itself runs as root; the engine runs as its own user
+inside the container.
 
 ## Why a script and not Doco-CD
 

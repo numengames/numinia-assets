@@ -69,6 +69,22 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual([o["id"] for o in R.select_orders(orders, "open-2")], ["otro"])
         self.assertEqual(R.select_orders(orders, "open-9"), [])
 
+    def test_an_order_with_a_foreign_image_or_domain_is_refused(self):
+        foreign = [
+            order(image="docker.io/evil/hyperfy:sha-0123456"),
+            order(id="x", card="x", domain="plaza.evil.example"),
+            order(id="y", card="y", domain="deep.plaza.numen.games"),
+            order(id="z", card="z", domain="numen.games"),
+        ]
+        self.assertEqual(R.select_orders(foreign, "open-1"), [])
+        self.assertIsNone(R.trusted(order()))
+
+    def test_the_reconciler_is_installed_not_run_from_the_clone(self):
+        text = (MACHINE / "bootstrap.sh").read_text()
+        self.assertIn("install -m 0755", text)
+        self.assertIn("ExecStart=/usr/local/sbin/fleet-reconcile", text)
+        self.assertNotIn("ExecStart=/usr/bin/python3", text)
+
     def test_a_running_world_without_keys_is_reported_and_not_started(self):
         p = Book([order()], keys=()).plan()
         self.assertEqual(p["keyless"], ["plaza"])

@@ -10,8 +10,12 @@
 # The one argument is the machine's alias, the word orders use in `server`.
 # What it does, in order: Docker, the firewall (22, 80, 443 only), unattended
 # upgrades, a clone of the order book, the alias, and a systemd timer that runs
-# reconcile.py every minute. It then runs the reconciler once. Nothing here
+# the reconciler every minute. It then runs the reconciler once. Nothing here
 # needs a GitHub credential: the order book is public.
+#
+# The reconciler is INSTALLED to /usr/local/sbin from this same commit and run
+# from there, never from the pulled clone: a merge on the book changes orders,
+# not the code that obeys them. To update the reconciler, run this script again.
 #
 # Re-running it is safe; every step checks before it acts.
 
@@ -69,6 +73,9 @@ else
   git clone --quiet --depth 1 "$BOOK_URL" "$BOOK_DIR"
 fi
 
+echo "== the reconciler, installed once"
+install -m 0755 "$BOOK_DIR/open-worlds/machine/reconcile.py" /usr/local/sbin/fleet-reconcile
+
 echo "== alias: $ALIAS"
 mkdir -p /etc/fleet
 echo "$ALIAS" > /etc/fleet/alias
@@ -82,7 +89,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 $BOOK_DIR/open-worlds/machine/reconcile.py
+ExecStart=/usr/local/sbin/fleet-reconcile
 EOF
 cat > /etc/systemd/system/fleet-reconcile.timer <<EOF
 [Unit]
@@ -100,7 +107,7 @@ systemctl daemon-reload
 systemctl enable --now fleet-reconcile.timer
 
 echo "== first run"
-python3 "$BOOK_DIR/open-worlds/machine/reconcile.py"
+/usr/local/sbin/fleet-reconcile
 
 cat <<EOF
 
@@ -110,4 +117,5 @@ Done. This machine is "$ALIAS".
   a world's folder:  $HOME_DIR/data/<id>/
   what is running:   docker compose -f $HOME_DIR/run/docker-compose.yml ps
   the reconciler:    journalctl -u fleet-reconcile -n 20
+  update it:         run this script again (the clone's copy is never executed)
 EOF

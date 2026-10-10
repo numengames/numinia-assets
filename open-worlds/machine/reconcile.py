@@ -13,6 +13,12 @@ skipped and reported — it never starts with an empty admin code.
 The machine never writes to git. It holds no GitHub credential: the order
 book is public and is pulled like anyone would.
 
+Two rails against a bad merge on the book: this file is INSTALLED once by
+bootstrap.sh (to /usr/local/sbin) and never run from the pulled tree, so a
+merged pull request changes orders, not code; and an order is obeyed only if
+its image comes from the house's registry and its domain is under the
+house's zone.
+
 Pure functions first (select, render), the shell last (main). The tests in
 tests/test_machine.py cover the pure part; the shell part is three commands.
 """
@@ -31,6 +37,18 @@ HOME = Path("/srv/fleet")  # data/, env/, run/ live here, outside the clone
 ALIAS_FILE = Path("/etc/fleet/alias")
 CADDY_IMAGE = "caddy:2-alpine"
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+REGISTRY = "ghcr.io/numengames/"  # the only place an engine image may come from
+ZONE = ".numen.games"  # the only zone a world's domain may sit in
+
+
+def trusted(order: dict) -> str | None:
+    """Why an order is refused even though it names this machine; None when it is fine."""
+    image, domain = str(order.get("image", "")), str(order.get("domain", ""))
+    if not image.startswith(REGISTRY):
+        return f"image {image!r} is not from {REGISTRY}"
+    if not domain.endswith(ZONE) or domain.count(".") != ZONE.count("."):
+        return f"domain {domain!r} is not one label under {ZONE}"
+    return None
 
 
 def read_orders(folder: Path) -> list[dict]:
@@ -50,12 +68,17 @@ def read_orders(folder: Path) -> list[dict]:
 
 
 def select_orders(orders: list[dict], alias: str) -> list[dict]:
-    """The orders this machine is responsible for: its alias, a sane id, a domain."""
-    return [
-        o
-        for o in orders
-        if o.get("server") == alias and SLUG.match(str(o.get("id", ""))) and o.get("domain")
-    ]
+    """The orders this machine obeys: its alias, a sane id, a trusted image and domain."""
+    mine = []
+    for o in orders:
+        if o.get("server") != alias or not SLUG.match(str(o.get("id", ""))):
+            continue
+        why = trusted(o)
+        if why:
+            print(f"refuse {o['id']}: {why}", file=sys.stderr)
+            continue
+        mine.append(o)
+    return mine
 
 
 def split_by_keys(orders: list[dict], env_dir: Path) -> tuple[list[dict], list[dict]]:
