@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `open-worlds/machine/reconcile.py`: a world's domain may be one label under
+  either house zone, `numinia.com` or `numen.games`, or a client's own domain
+  listed by an Oracle in `/etc/fleet/domains` on the machine (exact host or
+  `*.zone`). The order book's rule is unchanged; the machine's rail widens.
+
 - `open-worlds/machine/`: the recipe of a fleet machine (numinia-archive
   `MIS-156`). `bootstrap.sh` turns a fresh Debian 12 VPS into a machine with
   one line and one argument, its alias; `reconcile.py` runs every minute and
