@@ -16,8 +16,9 @@ book is public and is pulled like anyone would.
 Two rails against a bad merge on the book: this file is INSTALLED once by
 bootstrap.sh (to /usr/local/sbin) and never run from the pulled tree, so a
 merged pull request changes orders, not code; and an order is obeyed only if
-its image comes from the house's registry and its domain is under the
-house's zone.
+its image comes from the house's registry and its domain is one label under
+a house zone (numinia.com, numen.games) or a client domain an Oracle listed
+on this machine in /etc/fleet/domains.
 
 Pure functions first (select, render), the shell last (main). The tests in
 tests/test_machine.py cover the pure part; the shell part is three commands.
@@ -38,20 +39,43 @@ ALIAS_FILE = Path("/etc/fleet/alias")
 CADDY_IMAGE = "caddy:2-alpine"
 SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 REGISTRY = "ghcr.io/numengames/"  # the only place an engine image may come from
-ZONE = ".numen.games"  # the only zone a world's domain may sit in
+HOUSE_ZONES = ("numinia.com", "numen.games")  # one label under either is always allowed
+DOMAINS_FILE = Path("/etc/fleet/domains")  # a client's own domains, one per line, written by an Oracle
 
 
-def refusal(order: dict) -> str | None:
+def read_allowed_domains(path: Path = DOMAINS_FILE) -> set[str]:
+    """Client domains this machine may serve: exact hosts, or `*.example.com` for a zone."""
+    if not path.is_file():
+        return set()
+    return {
+        line.strip().lower()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    }
+
+
+def domain_allowed(domain: str, allowed: set[str] = frozenset()) -> bool:
+    """One label under a house zone, or listed on this machine (exact or `*.zone`)."""
+    for zone in HOUSE_ZONES:
+        if domain.endswith("." + zone) and domain.count(".") == zone.count(".") + 1:
+            return True
+    if domain in allowed:
+        return True
+    parent = domain.partition(".")[2]
+    return bool(parent) and f"*.{parent}" in allowed
+
+
+def refusal(order: dict, allowed: set[str] = frozenset()) -> str | None:
     """Why an order is refused even though it names this machine; None when it is fine.
 
     The reason names the rule, never the value: the log must stay free of
     whatever a malicious order might carry.
     """
-    image, domain = str(order.get("image", "")), str(order.get("domain", ""))
+    image, domain = str(order.get("image", "")), str(order.get("domain", "")).lower()
     if not image.startswith(REGISTRY):
         return f"image is not from {REGISTRY}"
-    if not domain.endswith(ZONE) or domain.count(".") != ZONE.count("."):
-        return f"domain is not one label under {ZONE}"
+    if not domain_allowed(domain, allowed):
+        return f"domain is neither one label under {'/'.join(HOUSE_ZONES)} nor listed in {DOMAINS_FILE}"
     return None
 
 
@@ -71,13 +95,13 @@ def read_orders(folder: Path) -> list[dict]:
     return orders
 
 
-def select_orders(orders: list[dict], alias: str) -> list[dict]:
+def select_orders(orders: list[dict], alias: str, allowed: set[str] = frozenset()) -> list[dict]:
     """The orders this machine obeys: its alias, a sane id, a trusted image and domain."""
     mine = []
     for o in orders:
         if o.get("server") != alias or not SLUG.match(str(o.get("id", ""))):
             continue
-        why = refusal(o)
+        why = refusal(o, allowed)
         if why:
             print(f"refuse one order on this machine: {why}", file=sys.stderr)
             continue
@@ -145,9 +169,11 @@ def render_caddyfile(running: list[dict]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def plan(book: Path, home: Path, alias: str) -> dict:
+def plan(book: Path, home: Path, alias: str, allowed: set[str] | None = None) -> dict:
     """Everything the shell part needs, computed without touching Docker."""
-    mine = select_orders(read_orders(book / "open-worlds"), alias)
+    if allowed is None:
+        allowed = read_allowed_domains()
+    mine = select_orders(read_orders(book / "open-worlds"), alias, allowed)
     ready, keyless = split_by_keys(mine, home / "env")
     stopped = [o["id"] for o in mine if o.get("state") == "stopped"]
     return {

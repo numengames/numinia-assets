@@ -43,7 +43,10 @@ reconciler on a machine, run the bootstrap line again.
 ## Bring up a world on it
 
 1. Point the world's domain (an `A` record) at the machine's IP. Caddy cannot
-   issue the certificate before the name resolves.
+   issue the certificate before the name resolves. While the fleet has one
+   machine, a wildcard record (`*.numinia.com` → the machine) covers every
+   world at once. For a client's own domain, also add it to
+   `/etc/fleet/domains` on the machine (see *What the machine refuses*).
 2. On the machine, write the world's keys — the only thing done by hand, and
    the only thing that never enters git:
 
@@ -80,6 +83,7 @@ removes it.
 | `/srv/fleet/run/` | the generated `docker-compose.yml`, `Caddyfile` and Caddy's state |
 | `/srv/fleet/copies/` | the nightly copies (`MIS-158`, not yet) |
 | `/etc/fleet/alias` | this machine's alias |
+| `/etc/fleet/domains` | client domains this machine may serve (optional) |
 
 ## Look
 
@@ -92,8 +96,13 @@ fleet-reconcile --dry-run                               # the plan, touching not
 ## What the machine refuses
 
 - An order whose `server` is not its alias: not its business.
-- An order whose image is not from `ghcr.io/numengames/` or whose domain is
-  not one label under `numen.games`: refused and logged, even if merged.
+- An order whose image is not from `ghcr.io/numengames/`: refused and
+  logged, even if merged.
+- An order whose domain is not one label under a house zone (`numinia.com`,
+  `numen.games`) and is not listed in `/etc/fleet/domains` on the machine:
+  refused and logged. A client's own domain (`mundo.cliente.example`, or
+  `*.cliente.example` for all of them) is written there by an Oracle when
+  the client's DNS is set up; one line per domain, `#` for comments.
 - A `running` order with no `env/<id>.env` on the machine: not started, logged.
 
 ## Security, in one table
@@ -102,7 +111,7 @@ fleet-reconcile --dry-run                               # the plan, touching not
 |---|---|---|
 | the machine | its worlds' data and keys | GitHub (no credential), the other machines, the console |
 | the console (numinia.com) | the power to open pull requests | any machine (no key to them), any world's keys |
-| a reviewer's account | the power to merge orders | code execution on machines (the reconciler is installed, not pulled); images outside the house's registry; domains outside the zone |
+| a reviewer's account | the power to merge orders | code execution on machines (the reconciler is installed, not pulled); images outside the house's registry; domains outside the house zones or the machine's list |
 
 Log in to the machine with an SSH key, never a password (OVH offers the key
 at creation). Docker itself runs as root; the engine runs as its own user
