@@ -84,12 +84,14 @@ class OpenWorldsTests(unittest.TestCase):
             with self.subTest(order=path.name):
                 self.assertEqual(problems(path), [])
 
-    def test_the_fleet_holds_only_orders_and_its_readme(self):
+    def test_the_fleet_holds_only_orders_its_readme_and_the_machine_recipe(self):
         others = [
             p.name for p in FLEET.iterdir()
-            if p.name != "README.md" and p.suffix != ".json"
+            if p.name not in ("README.md", "machine") and p.suffix != ".json"
         ]
         self.assertEqual(others, [])
+        recipe = sorted(p.name for p in (FLEET / "machine").iterdir() if p.name != "__pycache__")
+        self.assertEqual(recipe, ["README.md", "bootstrap.sh", "reconcile.py"])
 
     def check(self, order, name="example-world"):
         with tempfile.TemporaryDirectory(prefix="open-worlds-test-") as temp:

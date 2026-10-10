@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `open-worlds/machine/`: the recipe of a fleet machine (numinia-archive
+  `MIS-156`). `bootstrap.sh` turns a fresh Debian 12 VPS into a machine with
+  one line and one argument, its alias; `reconcile.py` runs every minute and
+  makes the containers equal to the orders whose `server` is that alias —
+  `running` up, `stopped` or gone down, a world without keys on the machine
+  never started. The machine pulls the public book and holds no GitHub
+  credential. Scripts are AGPL-3.0-only; `tests/test_machine.py` covers the
+  pure part and the two refusals of the bootstrap.
+
 - `open-worlds/`: the public 3D worlds fleet's orders, for its trial
   (numinia-archive ADR-069). It holds a README that defines an order and no
   orders yet. `tests/test_open_worlds.py` refuses an order that is malformed,
