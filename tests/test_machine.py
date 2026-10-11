@@ -59,7 +59,7 @@ class Book:
             (self.home / "env" / f"{wid}.env").write_text("JWT_SECRET=x\nADMIN_CODE=y\n", encoding="utf-8")
 
     def plan(self, alias="open-1"):
-        return R.plan(self.book, self.home, alias)
+        return R.plan(self.book, self.home, alias, allowed=set())
 
 
 class ReconcileTests(unittest.TestCase):
@@ -75,9 +75,27 @@ class ReconcileTests(unittest.TestCase):
             order(id="x", card="x", domain="plaza.evil.example"),
             order(id="y", card="y", domain="deep.plaza.numen.games"),
             order(id="z", card="z", domain="numen.games"),
+            order(id="w", card="w", domain="plaza.numinia.com.evil.example"),
         ]
         self.assertEqual(R.select_orders(foreign, "open-1"), [])
         self.assertIsNone(R.refusal(order()))
+
+    def test_both_house_zones_are_allowed(self):
+        self.assertIsNone(R.refusal(order(domain="p1.numinia.com")))
+        self.assertIsNone(R.refusal(order(domain="p1.numen.games")))
+        self.assertIsNone(R.refusal(order(domain="P1.Numinia.com")))
+
+    def test_a_clients_domain_is_allowed_only_when_listed_on_the_machine(self):
+        client = order(domain="mundo.cliente.example")
+        self.assertIsNotNone(R.refusal(client))
+        self.assertIsNone(R.refusal(client, {"mundo.cliente.example"}))
+        self.assertIsNone(R.refusal(client, {"*.cliente.example"}))
+        self.assertIsNotNone(R.refusal(order(domain="a.b.cliente.example"), {"*.cliente.example"}))
+        with tempfile.TemporaryDirectory() as temp:
+            f = Path(temp) / "domains"
+            f.write_text("# client X\n*.cliente.example\n\nsolo.otro.example\n", encoding="utf-8")
+            self.assertEqual(R.read_allowed_domains(f), {"*.cliente.example", "solo.otro.example"})
+        self.assertEqual(R.read_allowed_domains(Path("/nonexistent/domains")), set())
 
     def test_the_reconciler_is_installed_not_run_from_the_clone(self):
         text = (MACHINE / "bootstrap.sh").read_text()
