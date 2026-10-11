@@ -2,15 +2,16 @@
 # SPDX-FileCopyrightText: 2026 Numen Games S.L.
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# Turn a fresh Debian 12 VPS into a machine of the public worlds fleet.
+# Turn a fresh Debian 12 or Ubuntu (24.04 or later) VPS into a machine of the
+# public worlds fleet.
 #
 #   curl -fsSL https://raw.githubusercontent.com/numengames/numinia-assets/main/open-worlds/machine/bootstrap.sh \
 #     | sudo bash -s -- open-1
 #
 # The one argument is the machine's alias, the word orders use in `server`.
-# What it does, in order: Docker, the firewall (22, 80, 443 only), unattended
-# upgrades, a clone of the order book, the alias, and a systemd timer that runs
-# the reconciler every minute. It then runs the reconciler once. Nothing here
+# What it does, in order: Docker, a 2 GB swap file, the firewall (22, 80, 443
+# only), unattended upgrades, a clone of the order book, the alias, and a
+# systemd timer that runs the reconciler every minute. It then runs the reconciler once. Nothing here
 # needs a GitHub credential: the order book is public.
 #
 # The reconciler is INSTALLED to /usr/local/sbin from this same commit and run
@@ -34,6 +35,12 @@ if [[ "$(id -u)" -ne 0 ]]; then
   echo "run as root (sudo)" >&2
   exit 2
 fi
+OS_ID="$(. /etc/os-release && echo "$ID")"
+OS_CODENAME="$(. /etc/os-release && echo "${VERSION_CODENAME:-}")"
+if [[ "$OS_ID" != debian && "$OS_ID" != ubuntu ]]; then
+  echo "this recipe knows Debian and Ubuntu; this machine is $OS_ID" >&2
+  exit 2
+fi
 
 echo "== packages"
 export DEBIAN_FRONTEND=noninteractive
@@ -42,15 +49,38 @@ apt-get install -y -q ca-certificates curl git python3 ufw unattended-upgrades s
 
 echo "== docker"
 if ! command -v docker >/dev/null; then
-  install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-  chmod a+r /etc/apt/keyrings/docker.asc
-  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-    > /etc/apt/sources.list.d/docker.list
-  apt-get update -q
-  apt-get install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  if [[ "$OS_ID" == ubuntu ]]; then
+    # Ubuntu's own archive carries Docker and Compose v2, and knows its newest
+    # release before Docker's repository does.
+    apt-get install -y -q docker.io docker-compose-v2
+  else
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $OS_CODENAME stable" \
+      > /etc/apt/sources.list.d/docker.list
+    apt-get update -q
+    apt-get install -y -q docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  fi
 fi
 systemctl enable --now docker
+if ! docker compose version >/dev/null 2>&1; then
+  echo "docker is here but 'docker compose' (v2) is not; install docker-compose-v2 or docker-compose-plugin" >&2
+  exit 1
+fi
+
+echo "== swap: 2 GB, so a full machine slows down instead of killing a world"
+if [[ -z "$(swapon --show=NAME --noheadings)" ]]; then
+  if [[ ! -f /swapfile ]]; then
+    fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+  fi
+  swapon /swapfile
+fi
+if [[ -f /swapfile ]] && ! grep -q '^/swapfile ' /etc/fstab; then
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
 
 echo "== firewall: 22, 80, 443"
 ufw --force reset >/dev/null

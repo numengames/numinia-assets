@@ -13,12 +13,18 @@ skipped and reported — it never starts with an empty admin code.
 The machine never writes to git. It holds no GitHub credential: the order
 book is public and is pulled like anyone would.
 
-Two rails against a bad merge on the book: this file is INSTALLED once by
-bootstrap.sh (to /usr/local/sbin) and never run from the pulled tree, so a
-merged pull request changes orders, not code; and an order is obeyed only if
-its image comes from the house's registry and its domain is one label under
-a house zone (numinia.com, numen.games) or a client domain an Oracle listed
-on this machine in /etc/fleet/domains.
+Three rails against a bad merge on the book:
+
+- this file is INSTALLED once by bootstrap.sh (to /usr/local/sbin) and never
+  run from the pulled tree, so a merged pull request changes orders, not code;
+- an order is obeyed only if its image comes from the house's registry,
+  pinned to one build, and its domain is one label under a house zone
+  (numinia.com, numen.games) or a client domain an Oracle listed on this
+  machine in /etc/fleet/domains;
+- every field that reaches the compose file or the Caddyfile must match a
+  strict, anchored pattern first, and the compose file is built as data and
+  written as JSON (which is YAML), so no field can add a setting — a domain
+  that smuggles `privileged: true` is refused, never rendered.
 
 Pure functions first (select, render), the shell last (main). The tests in
 tests/test_machine.py cover the pure part; the shell part is three commands.
@@ -37,46 +43,96 @@ BOOK = Path("/srv/fleet/book")  # the clone of numinia-assets
 HOME = Path("/srv/fleet")  # data/, env/, run/ live here, outside the clone
 ALIAS_FILE = Path("/etc/fleet/alias")
 CADDY_IMAGE = "caddy:2-alpine"
-SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-REGISTRY = "ghcr.io/numengames/"  # the only place an engine image may come from
+CADDY_SERVICE = "caddy"  # a world may not take this name
 HOUSE_ZONES = ("numinia.com", "numen.games")  # one label under either is always allowed
 DOMAINS_FILE = Path("/etc/fleet/domains")  # a client's own domains, one per line, written by an Oracle
 
+# Every pattern is used with re.fullmatch: `$` alone would let a trailing
+# newline through, and a newline is how text turns into a new setting.
+SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+HOST = re.compile(r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
+IMAGE = re.compile(
+    r"ghcr\.io/numengames/[a-z0-9]+(?:[._/-][a-z0-9]+)*"  # the only registry an engine may come from
+    r"(?::sha-[0-9a-f]{7,40}|@sha256:[0-9a-f]{64})"  # pinned to one build, never a moving tag
+)
+MEMORY = re.compile(r"[0-9]+(?:\.[0-9]+)?[mg]")
+CPUS = re.compile(r"[0-9]+(?:\.[0-9]+)?")
+STATES = ("running", "stopped")
+
+
+def matches(pattern: re.Pattern[str], value: object) -> bool:
+    """True only for a string the whole of which the pattern matches."""
+    return isinstance(value, str) and pattern.fullmatch(value) is not None
+
 
 def read_allowed_domains(path: Path = DOMAINS_FILE) -> set[str]:
-    """Client domains this machine may serve: exact hosts, or `*.example.com` for a zone."""
+    """Client domains this machine may serve: exact hosts, or `*.example.com` for a zone.
+
+    Lines that are not a host name (or `*.` and one) are ignored, so a typo
+    on the machine can never widen what it serves.
+    """
     if not path.is_file():
         return set()
-    return {
-        line.strip().lower()
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.startswith("#")
-    }
+    allowed = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        entry = line.strip().lower()
+        if not entry or entry.startswith("#"):
+            continue
+        if matches(HOST, entry.removeprefix("*.")):
+            allowed.add(entry)
+    return allowed
 
 
-def domain_allowed(domain: str, allowed: set[str] = frozenset()) -> bool:
+def domain_allowed(domain: str, allowed: set[str] | frozenset[str] = frozenset()) -> bool:
     """One label under a house zone, or listed on this machine (exact or `*.zone`)."""
-    for zone in HOUSE_ZONES:
-        if domain.endswith("." + zone) and domain.count(".") == zone.count(".") + 1:
-            return True
-    if domain in allowed:
+    if not matches(HOST, domain):
+        return False
+    label, _, parent = domain.partition(".")
+    if parent in HOUSE_ZONES and matches(LABEL, label):
         return True
-    parent = domain.partition(".")[2]
-    return bool(parent) and f"*.{parent}" in allowed
+    return domain in allowed or f"*.{parent}" in allowed
 
 
-def refusal(order: dict, allowed: set[str] = frozenset()) -> str | None:
+def refusal(order: dict, allowed: set[str] | frozenset[str] = frozenset()) -> str | None:
     """Why an order is refused even though it names this machine; None when it is fine.
 
     The reason names the rule, never the value: the log must stay free of
     whatever a malicious order might carry.
     """
-    image, domain = str(order.get("image", "")), str(order.get("domain", "")).lower()
-    if not image.startswith(REGISTRY):
-        return f"image is not from {REGISTRY}"
-    if not domain_allowed(domain, allowed):
+    if not matches(SLUG, order.get("id")) or order.get("id") == CADDY_SERVICE:
+        return "id is not lowercase letters, digits and hyphens, or is reserved"
+    if order.get("state") not in STATES:
+        return f"state is not one of {'/'.join(STATES)}"
+    if not matches(IMAGE, order.get("image")):
+        return "image is not from ghcr.io/numengames/ pinned to a sha- tag or a digest"
+    domain = order.get("domain")
+    if not isinstance(domain, str) or not domain_allowed(domain.lower(), allowed):
         return f"domain is neither one label under {'/'.join(HOUSE_ZONES)} nor listed in {DOMAINS_FILE}"
+    limits = order.get("limits")
+    if not isinstance(limits, dict):
+        return "limits is not an object"
+    if not matches(MEMORY, limits.get("memory")):
+        return "limits.memory is not like 512m or 2g"
+    if not matches(CPUS, limits.get("cpus")):
+        return "limits.cpus is not a number such as 1.5"
+    upload = limits.get("maxUploadMb")
+    # bool is an int in Python; True must not pass as 1.
+    if isinstance(upload, bool) or not isinstance(upload, int) or upload <= 0:
+        return "limits.maxUploadMb is not a positive whole number"
     return None
+
+
+def clean(order: dict) -> dict:
+    """The order reduced to the fields the machine uses, each one already checked."""
+    limits = order["limits"]
+    return {
+        "id": order["id"],
+        "state": order["state"],
+        "domain": order["domain"].lower(),
+        "image": order["image"],
+        "limits": {"memory": limits["memory"], "cpus": limits["cpus"], "maxUploadMb": limits["maxUploadMb"]},
+    }
 
 
 def read_orders(folder: Path) -> list[dict]:
@@ -95,17 +151,17 @@ def read_orders(folder: Path) -> list[dict]:
     return orders
 
 
-def select_orders(orders: list[dict], alias: str, allowed: set[str] = frozenset()) -> list[dict]:
-    """The orders this machine obeys: its alias, a sane id, a trusted image and domain."""
+def select_orders(orders: list[dict], alias: str, allowed: set[str] | frozenset[str] = frozenset()) -> list[dict]:
+    """The orders this machine obeys, cleaned: its alias, and every field checked."""
     mine = []
     for o in orders:
-        if o.get("server") != alias or not SLUG.match(str(o.get("id", ""))):
+        if o.get("server") != alias:
             continue
         why = refusal(o, allowed)
         if why:
             print(f"refuse one order on this machine: {why}", file=sys.stderr)
             continue
-        mine.append(o)
+        mine.append(clean(o))
     return mine
 
 
@@ -113,52 +169,52 @@ def split_by_keys(orders: list[dict], env_dir: Path) -> tuple[list[dict], list[d
     """Running orders with keys on this machine, and running orders without them."""
     ready, keyless = [], []
     for o in orders:
-        if o.get("state") != "running":
+        if o["state"] != "running":
             continue
         (ready if (env_dir / f"{o['id']}.env").is_file() else keyless).append(o)
     return ready, keyless
 
 
-def render_compose(running: list[dict], home: Path) -> str:
+def compose_dict(running: list[dict], home: Path) -> dict:
     """One Caddy, one service per running world. Only Caddy publishes ports."""
-    lines = [
-        "# Generated by open-worlds/machine/reconcile.py — do not edit, change the order.",
-        "services:",
-        "  caddy:",
-        f"    image: {CADDY_IMAGE}",
-        "    restart: unless-stopped",
-        '    ports: ["80:80", "443:443"]',
-        "    volumes:",
-        f"      - {home}/run/Caddyfile:/etc/caddy/Caddyfile:ro",
-        f"      - {home}/run/caddy-data:/data",
-        f"      - {home}/run/caddy-config:/config",
-    ]
+    services: dict[str, dict] = {
+        CADDY_SERVICE: {
+            "image": CADDY_IMAGE,
+            "restart": "unless-stopped",
+            "ports": ["80:80", "443:443"],
+            "volumes": [
+                f"{home}/run/Caddyfile:/etc/caddy/Caddyfile:ro",
+                f"{home}/run/caddy-data:/data",
+                f"{home}/run/caddy-config:/config",
+            ],
+        }
+    }
     for o in running:
         wid, domain, limits = o["id"], o["domain"], o["limits"]
-        lines += [
-            f"  {wid}:",
-            f"    image: {o['image']}",
-            "    restart: unless-stopped",
-            f"    env_file: {home}/env/{wid}.env",
-            "    environment:",
-            "      WORLD: world",
-            "      PORT: '3000'",
-            "      ASSETS: local",
-            "      DB_URI: local",
-            "      COLLECTIONS: local",
-            f"      PUBLIC_WS_URL: wss://{domain}/ws",
-            f"      PUBLIC_API_URL: https://{domain}/api",
-            f"      PUBLIC_ASSETS_URL: https://{domain}/assets",
-            f"      PUBLIC_MAX_UPLOAD_SIZE: '{limits['maxUploadMb']}'",
-            "    volumes:",
-            f"      - {home}/data/{wid}:/app/world",
-            "    deploy:",
-            "      resources:",
-            "        limits:",
-            f"          memory: {limits['memory']}",
-            f"          cpus: '{limits['cpus']}'",
-        ]
-    return "\n".join(lines) + "\n"
+        services[wid] = {
+            "image": o["image"],
+            "restart": "unless-stopped",
+            "env_file": f"{home}/env/{wid}.env",
+            "environment": {
+                "WORLD": "world",
+                "PORT": "3000",
+                "ASSETS": "local",
+                "DB_URI": "local",
+                "COLLECTIONS": "local",
+                "PUBLIC_WS_URL": f"wss://{domain}/ws",
+                "PUBLIC_API_URL": f"https://{domain}/api",
+                "PUBLIC_ASSETS_URL": f"https://{domain}/assets",
+                "PUBLIC_MAX_UPLOAD_SIZE": str(limits["maxUploadMb"]),
+            },
+            "volumes": [f"{home}/data/{wid}:/app/world"],
+            "deploy": {"resources": {"limits": {"memory": limits["memory"], "cpus": limits["cpus"]}}},
+        }
+    return {"services": services}
+
+
+def render_compose(running: list[dict], home: Path) -> str:
+    """The compose file as JSON — valid YAML that no field can restructure."""
+    return json.dumps(compose_dict(running, home), indent=2) + "\n"
 
 
 def render_caddyfile(running: list[dict]) -> str:
@@ -175,7 +231,7 @@ def plan(book: Path, home: Path, alias: str, allowed: set[str] | None = None) ->
         allowed = read_allowed_domains()
     mine = select_orders(read_orders(book / "open-worlds"), alias, allowed)
     ready, keyless = split_by_keys(mine, home / "env")
-    stopped = [o["id"] for o in mine if o.get("state") == "stopped"]
+    stopped = [o["id"] for o in mine if o["state"] == "stopped"]
     return {
         "alias": alias,
         "running": [o["id"] for o in ready],

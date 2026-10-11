@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- `open-worlds/machine/reconcile.py`: an order is data, never configuration.
+  Every field that reaches the compose file or the Caddyfile must match a
+  strict, anchored pattern (`re.fullmatch`) or the order is refused: `id`,
+  `state`, the domain (one label under a house zone, or listed on the
+  machine), the image (`ghcr.io/numengames/…` pinned to `:sha-…` or
+  `@sha256:…` — the "never `latest`" rule now holds on the machine too), and
+  `limits.memory`, `limits.cpus`, `limits.maxUploadMb` (a positive whole
+  number; `true` is not 1). The compose file is built as a dict and written
+  as JSON, which is YAML, so no value can add a setting. Closes a hole a
+  reviewer found: a domain carrying newlines put `privileged: true` and a
+  mount of the host's `/` into the compose file. A malformed order is now
+  refused alone instead of stopping the reconciler, and `caddy` is reserved.
+- `open-worlds/machine/bootstrap.sh`: Ubuntu as well as Debian (Docker from
+  Ubuntu's archive there; an existing Docker is kept; `docker compose` v2 is
+  checked), and a 2 GB swap file, so a full machine slows down instead of
+  the kernel killing a world. The README says which login user each image
+  has and that OVH's VPS order asks for no SSH key.
+- `tests/test_open_worlds.py`: the book's own test uses `fullmatch` too, so a
+  trailing newline no longer passes, and `true` is not a valid upload limit.
+
 - `open-worlds/machine/reconcile.py`: a world's domain may be one label under
   either house zone, `numinia.com` or `numen.games`, or a client's own domain
   listed by an Oracle in `/etc/fleet/domains` on the machine (exact host or

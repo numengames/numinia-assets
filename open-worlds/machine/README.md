@@ -13,23 +13,29 @@ This folder is the whole recipe. It lives beside the orders during the trial
 
 | File | Does |
 |---|---|
-| `bootstrap.sh` | turns a fresh Debian 12 VPS into a fleet machine, in one line |
+| `bootstrap.sh` | turns a fresh Debian 12 or Ubuntu (24.04 or later) VPS into a fleet machine, in one line |
 | `reconcile.py` | every minute: what runs equals what the orders say |
 | `../../tests/test_machine.py` | the tests, run by the depot's `python -m unittest` |
 
 ## Bring up a machine
 
-1. Buy a VPS (OVH, France; Debian 12). Note its public IP — it goes in DNS,
-   never in this repository.
-2. Log in once and run, replacing `open-1` with the machine's alias:
+1. Buy a VPS (OVH, France; Debian 12 or Ubuntu 24.04 or later). Note its
+   public IP — it goes in DNS, never in this repository.
+2. Log in. The user depends on the image: `debian` on Debian, `ubuntu` on
+   Ubuntu. OVH's VPS order does not ask for an SSH key (its Public Cloud
+   does): the first login uses the password OVH emails, which it makes you
+   change; then copy your key in with `ssh-copy-id` and use the key from
+   then on.
+3. Run, replacing `open-1` with the machine's alias:
 
    ```sh
    curl -fsSL https://raw.githubusercontent.com/numengames/numinia-assets/main/open-worlds/machine/bootstrap.sh \
      | sudo bash -s -- open-1
    ```
 
-   It installs Docker, opens only ports 22, 80 and 443, turns on unattended
-   upgrades, clones this repository to `/srv/fleet/book`, writes the alias to
+   It installs Docker (from Docker's repository on Debian, from Ubuntu's own
+   archive on Ubuntu; an existing Docker is kept), adds a 2 GB swap file,
+   opens only ports 22, 80 and 443, turns on unattended upgrades, clones this repository to `/srv/fleet/book`, writes the alias to
    `/etc/fleet/alias` and starts a timer that runs `reconcile.py` every
    minute. Running it again is safe.
 
@@ -96,13 +102,22 @@ fleet-reconcile --dry-run                               # the plan, touching not
 ## What the machine refuses
 
 - An order whose `server` is not its alias: not its business.
-- An order whose image is not from `ghcr.io/numengames/`: refused and
-  logged, even if merged.
+- An order whose image is not from `ghcr.io/numengames/` pinned to one build
+  (`:sha-…` or `@sha256:…`; never `dev` or `latest`): refused and logged,
+  even if merged.
 - An order whose domain is not one label under a house zone (`numinia.com`,
   `numen.games`) and is not listed in `/etc/fleet/domains` on the machine:
   refused and logged. A client's own domain (`mundo.cliente.example`, or
   `*.cliente.example` for all of them) is written there by an Oracle when
   the client's DNS is set up; one line per domain, `#` for comments.
+- An order any of whose fields does not match its strict pattern — `id` and
+  the domain's labels are lowercase letters, digits and hyphens, `state` is
+  `running` or `stopped`, `limits.memory` is like `512m` or `2g`,
+  `limits.cpus` like `1.5`, `limits.maxUploadMb` a positive whole number —
+  or whose `id` is `caddy`: refused and logged. Only checked values reach the
+  compose file, and that file is built as data and written as JSON (which is
+  YAML), so no field can add a setting to it. The log names the broken rule,
+  never the value.
 - A `running` order with no `env/<id>.env` on the machine: not started, logged.
 
 ## Security, in one table
@@ -111,11 +126,11 @@ fleet-reconcile --dry-run                               # the plan, touching not
 |---|---|---|
 | the machine | its worlds' data and keys | GitHub (no credential), the other machines, the console |
 | the console (numinia.com) | the power to open pull requests | any machine (no key to them), any world's keys |
-| a reviewer's account | the power to merge orders | code execution on machines (the reconciler is installed, not pulled); images outside the house's registry; domains outside the house zones or the machine's list |
+| a reviewer's account | the power to merge orders: start, stop or add worlds that run the house's own engine images | code execution on machines (the reconciler is installed, not pulled, and an order's fields are checked values, never configuration); images outside the house's registry or unpinned; domains outside the house zones or the machine's list |
 
-Log in to the machine with an SSH key, never a password (OVH offers the key
-at creation). Docker itself runs as root; the engine runs as its own user
-inside the container.
+Log in to the machine with an SSH key, never a password (after the first
+login, see *Bring up a machine*). Docker itself runs as root; the engine runs
+as its own user inside the container.
 
 ## Why a script and not Doco-CD
 
