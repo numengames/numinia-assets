@@ -4,7 +4,9 @@
 """The fleet machine's reconciler keeps to its alias, its keys and the order's shape."""
 
 from pathlib import Path
+import contextlib
 import importlib.util
+import io
 import json
 import subprocess
 import sys
@@ -367,8 +369,83 @@ class ReconcileTests(unittest.TestCase):
 
         with mock.patch.object(R, "sh", fake_sh):
             R.apply(b.plan(admin_code=CODE), b.home, CODE)
-        self.assertEqual(seen, [(("docker", "compose"), True)])
+        self.assertTrue(seen)
+        self.assertEqual(seen[0], (("docker", "compose"), True))
         self.assertTrue((b.home / "data" / "plaza").is_dir())
+
+    # --- Caddy learns about new sites ---------------------------------------
+
+    def caddy_calls(self, b, p, fail=False):
+        """apply() with a fake shell; the commands it ran, in order."""
+        calls = []
+
+        def fake_sh(*cmd):
+            calls.append(cmd)
+            if fail and "reload" in cmd:
+                raise subprocess.CalledProcessError(1, cmd)
+
+        with mock.patch.object(R, "sh", fake_sh):
+            R.apply(p, b.home, CODE)
+        return calls
+
+    def test_a_new_site_makes_caddy_reload_after_the_containers_are_up(self):
+        b = Book([order()], keys=["plaza"])
+        calls = self.caddy_calls(b, b.plan(admin_code=CODE))
+        self.assertEqual(len(calls), 2)
+        self.assertIn("up", calls[0])
+        compose = str(b.home / "run" / "docker-compose.yml")
+        self.assertEqual(
+            calls[1],
+            ("docker", "compose", "-f", compose, "exec", "-T", "caddy",
+             "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"),
+        )
+        self.assertEqual(
+            (b.home / "run" / "Caddyfile.applied").read_text(encoding="utf-8"),
+            (b.home / "run" / "Caddyfile").read_text(encoding="utf-8"),
+        )
+
+    def test_caddy_is_not_reloaded_when_its_sites_did_not_change(self):
+        b = Book([order()], keys=["plaza"])
+        self.caddy_calls(b, b.plan(admin_code=CODE))
+        again = self.caddy_calls(b, b.plan(admin_code=CODE))
+        self.assertEqual(len(again), 1)
+        self.assertIn("up", again[0])
+
+    def test_a_world_added_later_reaches_caddy(self):
+        """What happened on open-1: Caddy started with no site, then a world came."""
+        b = Book([], keys=["plaza"])
+        self.caddy_calls(b, b.plan(admin_code=CODE))
+        (b.book / "open-worlds" / "plaza.json").write_text(json.dumps(order()), encoding="utf-8")
+        calls = self.caddy_calls(b, b.plan(admin_code=CODE))
+        self.assertIn("reload", calls[-1])
+        self.assertIn("plaza.numen.games", (b.home / "run" / "Caddyfile.applied").read_text(encoding="utf-8"))
+
+    def test_a_failed_reload_is_reported_and_tried_again_on_the_next_run(self):
+        b = Book([order()], keys=["plaza"])
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.caddy_calls(b, b.plan(admin_code=CODE), fail=True)
+        self.assertIn("next run tries again", err.getvalue())
+        self.assertFalse((b.home / "run" / "Caddyfile.applied").exists())
+        calls = self.caddy_calls(b, b.plan(admin_code=CODE))
+        self.assertIn("reload", calls[-1])
+
+    def test_a_caddy_started_before_this_check_is_put_right_on_the_first_run(self):
+        """The Caddyfile already on disk is no proof Caddy read it: only the applied copy is."""
+        b = Book([order()], keys=["plaza"])
+        p = b.plan(admin_code=CODE)
+        (b.home / "run").mkdir(parents=True)
+        (b.home / "run" / "Caddyfile").write_text(p["caddyfile"], encoding="utf-8")
+        calls = self.caddy_calls(b, p)
+        self.assertIn("reload", calls[-1])
+
+    def test_caddy_needs_reload_reads_only_the_applied_copy(self):
+        with tempfile.TemporaryDirectory() as temp:
+            applied = Path(temp) / "Caddyfile.applied"
+            self.assertTrue(R.caddy_needs_reload("a\n", applied))
+            applied.write_text("a\n", encoding="utf-8")
+            self.assertFalse(R.caddy_needs_reload("a\n", applied))
+            self.assertTrue(R.caddy_needs_reload("b\n", applied))
 
     def test_apply_refuses_to_key_without_an_admin_code(self):
         b = Book([order()])

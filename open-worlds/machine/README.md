@@ -57,8 +57,10 @@ reconciler on a machine, run the bootstrap line again.
    `/etc/fleet/domains` on the machine (see *What the machine refuses*).
 2. Open a pull request with the order `open-worlds/<id>.json`, `"server"`
    equal to the alias, `"state": "running"`. When it merges, the machine
-   pulls it within a minute, makes the world's keys and the world comes up
-   at `https://<domain>`. Nothing is done on the machine by hand.
+   pulls it within a minute, makes the world's keys, starts the world and
+   tells Caddy about its address (a reload: the worlds already open stay
+   connected), and the world comes up at `https://<domain>`. Nothing is done
+   on the machine by hand.
 3. To administer the world, open it and type `/admin <code>` in its chat,
    with the machine's admin code. The engine remembers the rank for that
    browser.
@@ -98,7 +100,7 @@ removes it.
 | `/srv/fleet/book/` | the clone of this repository |
 | `/srv/fleet/env/<id>.env` | the world's keys (mode 600, made by the machine, never in git) |
 | `/srv/fleet/data/<id>/` | the world: `db.sqlite` and `assets/` |
-| `/srv/fleet/run/` | the generated `docker-compose.yml`, `Caddyfile` and Caddy's state |
+| `/srv/fleet/run/` | the generated `docker-compose.yml`, `Caddyfile` and Caddy's state; `Caddyfile.applied` is the list of sites Caddy last accepted |
 | `/srv/fleet/copies/` | the nightly copies (`MIS-158`, not yet) |
 | `/etc/fleet/alias` | this machine's alias |
 | `/etc/fleet/admin-code` | the admin code every world keyed here gets (mode 600) |

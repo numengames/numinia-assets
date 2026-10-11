@@ -6,6 +6,8 @@
 Runs every minute from a systemd timer. It pulls the order book, keeps the
 orders whose `server` is this machine's alias, renders a docker-compose file
 and a Caddyfile from them, and asks Docker to make the containers match.
+When the list of sites changed, it asks Caddy to read it again (a reload:
+open worlds stay connected); Caddy never re-reads the file on its own.
 A world whose order says `stopped`, or whose order is gone, is taken down and
 its folder on disk is left alone.
 
@@ -52,6 +54,10 @@ ADMIN_CODE_FILE = Path("/etc/fleet/admin-code")  # made once by bootstrap.sh; ev
 SAVE_INTERVAL = "60"  # seconds between two saves of a world; the engine refuses to boot without it
 CADDY_IMAGE = "caddy:2-alpine"
 CADDY_SERVICE = "caddy"  # a world may not take this name
+CADDYFILE_INSIDE = "/etc/caddy/Caddyfile"  # where Caddy sees run/Caddyfile, mounted read-only
+# The sites Caddy is known to serve: a copy of the Caddyfile, written only
+# after Caddy accepted a reload of exactly that text.
+CADDY_APPLIED = "Caddyfile.applied"
 INDEX_FILE = "index.json"  # the book's table of contents (the console reads it); never an order
 RESERVED_IDS = frozenset({CADDY_SERVICE, INDEX_FILE[: -len(".json")]})
 HOUSE_ZONES = ("numinia.com", "numen.games")  # one label under either is always allowed
@@ -230,7 +236,7 @@ def compose_dict(running: list[dict], home: Path) -> dict:
             "restart": "unless-stopped",
             "ports": ["80:80", "443:443"],
             "volumes": [
-                f"{home}/run/Caddyfile:/etc/caddy/Caddyfile:ro",
+                f"{home}/run/Caddyfile:{CADDYFILE_INSIDE}:ro",
                 f"{home}/run/caddy-data:/data",
                 f"{home}/run/caddy-config:/config",
             ],
@@ -309,6 +315,22 @@ def plan(
     }
 
 
+def caddy_needs_reload(caddyfile: str, applied: Path) -> bool:
+    """Whether Caddy must be told to read its sites again.
+
+    Caddy reads its Caddyfile when it starts and never again on its own, and
+    `docker compose up` leaves a running Caddy alone when only the file's text
+    changed — so a world added after Caddy started got no site at all. True
+    until Caddy accepted a reload of exactly this text: a failed reload is
+    tried again on the next run, and a machine whose Caddy started before this
+    check existed is put right on its first run.
+    """
+    try:
+        return applied.read_text(encoding="utf-8") != caddyfile
+    except FileNotFoundError:
+        return True
+
+
 def sh(*cmd: str) -> None:
     subprocess.run(cmd, check=True)
 
@@ -323,9 +345,20 @@ def apply(p: dict, home: Path, admin_code: str | None = None) -> None:
     run.mkdir(parents=True, exist_ok=True)
     for wid in p["running"]:
         (home / "data" / wid).mkdir(parents=True, exist_ok=True)
-    (run / "docker-compose.yml").write_text(p["compose"], encoding="utf-8")
+    compose = run / "docker-compose.yml"
+    compose.write_text(p["compose"], encoding="utf-8")
     (run / "Caddyfile").write_text(p["caddyfile"], encoding="utf-8")
-    sh("docker", "compose", "-f", str(run / "docker-compose.yml"), "up", "-d", "--remove-orphans")
+    sh("docker", "compose", "-f", str(compose), "up", "-d", "--remove-orphans")
+    applied = run / CADDY_APPLIED
+    if caddy_needs_reload(p["caddyfile"], applied):
+        # A reload, not a restart: the worlds already open stay connected.
+        try:
+            sh("docker", "compose", "-f", str(compose), "exec", "-T", CADDY_SERVICE,
+               "caddy", "reload", "--config", CADDYFILE_INSIDE, "--adapter", "caddyfile")
+        except subprocess.CalledProcessError:
+            print("caddy did not take the new list of sites; the next run tries again", file=sys.stderr)
+        else:
+            applied.write_text(p["caddyfile"], encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:

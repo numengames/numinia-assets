@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `open-worlds/machine/reconcile.py`: a world added after Caddy started got
+  no address. Caddy reads its Caddyfile only when it starts, and
+  `docker compose up` leaves a running Caddy alone when only that file's
+  text changed — so on open-1 the first world, `prueba`, ran healthy for
+  minutes while its address was refused, until Caddy was reloaded by hand.
+  The reconciler now asks Caddy to reload whenever the list of sites
+  differs from the last one Caddy accepted (`run/Caddyfile.applied`, written
+  only after a reload that worked). A reload keeps open worlds connected; a
+  failed one is reported and tried again the next minute; a machine whose
+  Caddy started before this fix is put right on its first run.
+
 - `open-worlds/machine/`: a world is born with nothing done by hand on the
   machine. The reconciler makes a world's keys the first time its order
   runs — a JWT secret of its own and the machine's admin code, which the
