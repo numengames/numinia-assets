@@ -10,9 +10,10 @@
 #
 # The one argument is the machine's alias, the word orders use in `server`.
 # What it does, in order: Docker, a 2 GB swap file, the firewall (22, 80, 443
-# only), unattended upgrades, a clone of the order book, the alias, and a
-# systemd timer that runs the reconciler every minute. It then runs the reconciler once. Nothing here
-# needs a GitHub credential: the order book is public.
+# only), unattended upgrades, a clone of the order book, the alias, the
+# machine's admin code, and a systemd timer that runs the reconciler every
+# minute. It then runs the reconciler once and shows the admin code. Nothing
+# here needs a GitHub credential: the order book is public.
 #
 # The reconciler is INSTALLED to /usr/local/sbin from this same commit and run
 # from there, never from the pulled clone: a merge on the book changes orders,
@@ -44,6 +45,13 @@ fi
 
 echo "== packages"
 export DEBIAN_FRONTEND=noninteractive
+# An earlier version of this script wrote Docker's Debian source on Ubuntu
+# machines too. That source answers 404 for Ubuntu's release names, and under
+# `set -e` its error stopped every later run at the first update below. Ubuntu
+# takes Docker from its own archive, so the stray file goes before any update.
+if [[ "$OS_ID" == ubuntu ]] && grep -qs 'download.docker.com/linux/debian' /etc/apt/sources.list.d/docker.list; then
+  rm -f /etc/apt/sources.list.d/docker.list
+fi
 apt-get update -q
 apt-get install -y -q ca-certificates curl git python3 ufw unattended-upgrades sqlite3 zip
 
@@ -110,6 +118,14 @@ echo "== alias: $ALIAS"
 mkdir -p /etc/fleet
 echo "$ALIAS" > /etc/fleet/alias
 
+echo "== the machine's admin code, made once"
+# Every world this machine keys gets it: type /admin <code> in a world's chat.
+# One code for all the machine's worlds is a debt of the trial (see README).
+if [[ ! -s /etc/fleet/admin-code ]]; then
+  (umask 077 && python3 -c 'import secrets; print(secrets.token_hex(6))' > /etc/fleet/admin-code)
+fi
+chmod 600 /etc/fleet/admin-code
+
 echo "== systemd: reconcile every minute"
 cat > /etc/systemd/system/fleet-reconcile.service <<EOF
 [Unit]
@@ -134,18 +150,29 @@ AccuracySec=10s
 WantedBy=timers.target
 EOF
 systemctl daemon-reload
-systemctl enable --now fleet-reconcile.timer
 
 echo "== first run"
-/usr/local/sbin/fleet-reconcile
+# Before the timer starts, so the two never race on a fresh machine. A failed
+# first run does not stop the script: the timer tries again every minute, and
+# the summary below (with the admin code) is still shown.
+if ! /usr/local/sbin/fleet-reconcile; then
+  echo "the first run did not finish; the timer tries again every minute (journalctl -u fleet-reconcile -n 20)" >&2
+fi
+systemctl enable --now fleet-reconcile.timer
 
 cat <<EOF
 
 Done. This machine is "$ALIAS".
   orders it obeys:   $BOOK_DIR/open-worlds/*.json with "server": "$ALIAS"
-  a world's keys:    $HOME_DIR/env/<id>.env   (JWT_SECRET, ADMIN_CODE; see machine/README.md)
+  a world's keys:    made by the machine in $HOME_DIR/env/<id>.env (see machine/README.md)
   a world's folder:  $HOME_DIR/data/<id>/
   what is running:   docker compose -f $HOME_DIR/run/docker-compose.yml ps
   the reconciler:    journalctl -u fleet-reconcile -n 20
   update it:         run this script again (the clone's copy is never executed)
+
+The admin code of every world on this machine (type /admin <code> in a world's chat):
+
+    $(cat /etc/fleet/admin-code)
+
+Keep it somewhere safe and never in git. To see it again: sudo cat /etc/fleet/admin-code
 EOF

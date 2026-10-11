@@ -17,7 +17,7 @@ A world is kept in three places, and each part lives in only one of them:
 |---|---|---|
 | The card | numinia-archive, `objects/<card>.md` (`entity: world`) | what the world is, who it was made for, where its copies are |
 | The order | here, `open-worlds/<id>.json` | where and how it runs |
-| The keys | on its server only | never in git, encrypted or not |
+| The keys | on its server only, made there by the machine | never in git, encrypted or not |
 
 An order never copies the card. It names the card and nothing more.
 

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +35,7 @@ ORDER = {
     "image": "ghcr.io/numengames/numinia-hyperfy2:sha-0123456",
     "limits": {"memory": "2g", "cpus": "1.5", "maxUploadMb": 50},
 }
+CODE = "a1b2c3d4e5f6"  # a machine's admin code, as bootstrap.sh makes them
 
 
 def order(**over):
@@ -58,8 +60,8 @@ class Book:
         for wid in keys:
             (self.home / "env" / f"{wid}.env").write_text("JWT_SECRET=x\nADMIN_CODE=y\n", encoding="utf-8")
 
-    def plan(self, alias="open-1"):
-        return R.plan(self.book, self.home, alias, allowed=set())
+    def plan(self, alias="open-1", admin_code=None):
+        return R.plan(self.book, self.home, alias, allowed=set(), admin_code=admin_code)
 
 
 class ReconcileTests(unittest.TestCase):
@@ -103,9 +105,10 @@ class ReconcileTests(unittest.TestCase):
         self.assertIn("ExecStart=/usr/local/sbin/fleet-reconcile", text)
         self.assertNotIn("ExecStart=/usr/bin/python3", text)
 
-    def test_a_running_world_without_keys_is_reported_and_not_started(self):
+    def test_a_running_world_without_keys_on_a_machine_without_admin_code_is_reported_and_not_started(self):
         p = Book([order()], keys=()).plan()
         self.assertEqual(p["keyless"], ["plaza"])
+        self.assertEqual(p["new_keys"], [])
         self.assertEqual(p["running"], [])
         self.assertNotIn("plaza:", p["compose"])
 
@@ -258,6 +261,156 @@ class ReconcileTests(unittest.TestCase):
         for word in ("GITHUB_TOKEN", "ghp_", "x-access-token", "deploy key", "id_ed25519"):
             self.assertNotIn(word, text)
         self.assertIn("https://github.com/numengames/numinia-assets.git", text)
+
+    # --- the engine boots ---------------------------------------------------
+
+    def test_the_engine_gets_every_setting_it_needs_to_boot(self):
+        """numinia-hyperfy2's `check envs` block (src/server/index.js, pinned build) throws without these.
+
+        JWT_SECRET is the one it gets from the world's key file instead.
+        """
+        p = Book([order()], keys=["plaza"]).plan()
+        env = json.loads(p["compose"])["services"]["plaza"]["environment"]
+        for name in ("WORLD", "SAVE_INTERVAL", "PUBLIC_MAX_UPLOAD_SIZE", "PUBLIC_WS_URL",
+                     "PUBLIC_API_URL", "ASSETS", "ASSETS_BASE_URL"):
+            with self.subTest(setting=name):
+                self.assertTrue(env.get(name))
+        self.assertEqual(env["ASSETS_BASE_URL"], "https://plaza.numen.games/assets")
+        self.assertEqual(env["SAVE_INTERVAL"], "60")
+        self.assertTrue(env["PUBLIC_WS_URL"].startswith("wss://"))
+        self.assertNotIn("PUBLIC_ASSETS_URL", env)  # a name this engine never reads
+        for key in ("JWT_SECRET", "ADMIN_CODE"):
+            self.assertNotIn(key, env)  # keys live in the key file, never in the compose file
+
+    # --- the machine makes the keys ----------------------------------------
+
+    def test_a_running_world_without_keys_gets_them_from_the_machine(self):
+        p = Book([order()], keys=()).plan(admin_code=CODE)
+        self.assertEqual(p["new_keys"], ["plaza"])
+        self.assertEqual(p["keyless"], [])
+        self.assertEqual(p["running"], ["plaza"])
+        self.assertIn("plaza.numen.games {\n\treverse_proxy plaza:3000\n}", p["caddyfile"])
+        self.assertNotIn(CODE, p["compose"])
+
+    def test_a_world_with_keys_or_a_stopped_one_is_never_keyed(self):
+        self.assertEqual(Book([order()], keys=["plaza"]).plan(admin_code=CODE)["new_keys"], [])
+        self.assertEqual(Book([order(state="stopped")]).plan(admin_code=CODE)["new_keys"], [])
+
+    def test_new_and_keyed_worlds_run_together_in_id_order(self):
+        two = [order(), order(id="foro", card="foro", domain="foro.numen.games")]
+        p = Book(two, keys=["plaza"]).plan(admin_code=CODE)
+        self.assertEqual(p["running"], ["foro", "plaza"])
+        self.assertEqual(p["new_keys"], ["foro"])
+
+    def test_an_admin_code_that_is_not_plain_keys_nothing(self):
+        for bad in (None, "", "short", "has space 1", "abc12345\nJWT_SECRET=x", "abc$12345", "abc=12345", "abc'1234"):
+            with self.subTest(code=bad):
+                p = Book([order()]).plan(admin_code=bad)
+                self.assertEqual(p["keyless"], ["plaza"])
+                self.assertEqual(p["new_keys"], [])
+                self.assertEqual(p["running"], [])
+
+    def test_the_machines_admin_code_is_read_plain_or_not_at_all(self):
+        with tempfile.TemporaryDirectory() as temp:
+            f = Path(temp) / "admin-code"
+            self.assertIsNone(R.read_admin_code(f))
+            f.write_text(CODE + "\n", encoding="utf-8")
+            self.assertEqual(R.read_admin_code(f), CODE)
+            for bad in ("", "\n", "short\n", f"{CODE}\nJWT_SECRET=x\n", f"{CODE} more\n", "$(reboot)xx\n"):
+                with self.subTest(content=bad):
+                    f.write_text(bad, encoding="utf-8")
+                    self.assertIsNone(R.read_admin_code(f))
+
+    def test_a_key_file_is_two_plain_lines(self):
+        jwt = "0f" * 32
+        self.assertEqual(R.world_env(CODE, jwt), f"JWT_SECRET={jwt}\nADMIN_CODE={CODE}\n")
+        for code, j in ((CODE + "\nX=1", jwt), (CODE, "x" * 64), (CODE, jwt + "\n"), ("short", jwt), (CODE, "0f")):
+            with self.subTest(code=code, jwt=j):
+                with self.assertRaises(ValueError):
+                    R.world_env(code, j)
+
+    def test_keys_are_written_once_private_and_never_overwritten(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env = Path(temp) / "env"
+            self.assertTrue(R.make_keys(env, "plaza", CODE))
+            path = env / "plaza.env"
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(env.stat().st_mode & 0o777, 0o700)
+            first = path.read_text(encoding="utf-8")
+            self.assertRegex(first, r"\AJWT_SECRET=[0-9a-f]{64}\nADMIN_CODE=a1b2c3d4e5f6\n\Z")
+            self.assertFalse(R.make_keys(env, "plaza", "zzzzzzzz9"))
+            self.assertEqual(path.read_text(encoding="utf-8"), first)
+
+    def test_a_key_file_written_by_hand_is_kept(self):
+        b = Book([order()], keys=["plaza"])
+        hand = (b.home / "env" / "plaza.env").read_text(encoding="utf-8")
+        with mock.patch.object(R, "sh"):
+            R.apply(b.plan(admin_code=CODE), b.home, CODE)
+        self.assertEqual((b.home / "env" / "plaza.env").read_text(encoding="utf-8"), hand)
+
+    def test_each_world_gets_its_own_jwt_secret_and_the_machines_admin_code(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env = Path(temp) / "env"
+            R.make_keys(env, "plaza", CODE)
+            R.make_keys(env, "foro", CODE)
+            a, b = ((env / f"{w}.env").read_text(encoding="utf-8").splitlines() for w in ("plaza", "foro"))
+            self.assertNotEqual(a[0], b[0])
+            self.assertEqual(a[1], b[1])
+            self.assertEqual(a[1], f"ADMIN_CODE={CODE}")
+
+    def test_apply_keys_the_new_worlds_before_docker_runs(self):
+        b = Book([order()])
+        seen = []
+
+        def fake_sh(*cmd):
+            seen.append((cmd[:2], (b.home / "env" / "plaza.env").is_file()))
+
+        with mock.patch.object(R, "sh", fake_sh):
+            R.apply(b.plan(admin_code=CODE), b.home, CODE)
+        self.assertEqual(seen, [(("docker", "compose"), True)])
+        self.assertTrue((b.home / "data" / "plaza").is_dir())
+
+    def test_apply_refuses_to_key_without_an_admin_code(self):
+        b = Book([order()])
+        p = b.plan(admin_code=CODE)
+        with mock.patch.object(R, "sh") as fake:
+            with self.assertRaises(ValueError):
+                R.apply(p, b.home, None)
+            fake.assert_not_called()
+        self.assertFalse((b.home / "env" / "plaza.env").exists())
+
+    def test_dry_run_names_the_worlds_it_would_key_and_writes_nothing(self):
+        b = Book([order()])
+        code = b.home / "admin-code"
+        code.write_text(CODE + "\n", encoding="utf-8")
+        out = subprocess.run(
+            [sys.executable, str(MACHINE / "reconcile.py"), "--book", str(b.book), "--home", str(b.home),
+             "--alias", "open-1", "--admin-code-file", str(code), "--dry-run"],
+            capture_output=True, text=True, check=True,
+        )
+        self.assertIn('"new_keys": [\n    "plaza"\n  ]', out.stdout)
+        self.assertNotIn(CODE, out.stdout + out.stderr)
+        self.assertFalse((b.home / "env" / "plaza.env").exists())
+
+    # --- the bootstrap ------------------------------------------------------
+
+    def test_bootstrap_is_valid_bash(self):
+        self.assertEqual(subprocess.run(["bash", "-n", str(MACHINE / "bootstrap.sh")]).returncode, 0)
+
+    def test_bootstrap_clears_a_stray_debian_docker_source_before_the_first_update(self):
+        text = (MACHINE / "bootstrap.sh").read_text()
+        self.assertLess(text.index("rm -f /etc/apt/sources.list.d/docker.list"), text.index("apt-get update"))
+
+    def test_bootstrap_makes_the_admin_code_once_privately_and_before_the_first_run(self):
+        text = (MACHINE / "bootstrap.sh").read_text()
+        self.assertIn("if [[ ! -s /etc/fleet/admin-code ]]", text)
+        self.assertIn("umask 077", text)
+        self.assertIn("chmod 600 /etc/fleet/admin-code", text)
+        self.assertLess(text.index("/etc/fleet/admin-code"), text.index("== first run"))
+
+    def test_bootstrap_runs_the_reconciler_once_before_the_timer_and_survives_a_failed_run(self):
+        text = (MACHINE / "bootstrap.sh").read_text()
+        self.assertLess(text.index("if ! /usr/local/sbin/fleet-reconcile"), text.index("enable --now fleet-reconcile.timer"))
 
 
 if __name__ == "__main__":

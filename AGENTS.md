@@ -16,7 +16,9 @@ not another constitution or canonical catalogue.
   `open-worlds/index.json` lists the orders' ids and must match the folder
   (a test enforces it): a PR that adds or removes an order touches it too.
   `open-worlds/machine/` is the recipe those servers are made from (AGPL);
-  the machine pulls this public book and holds no GitHub credential.
+  the machine pulls this public book and holds no GitHub credential. It
+  makes each world's keys itself; the only secret an Oracle sees is the
+  machine's admin code, shown by the bootstrap and never written here.
 - Local verification: `python -m reuse lint` and
   `python -m unittest discover -s tests -v`, after installing
   `requirements-check.txt` into a virtual environment (Python 3.11+).

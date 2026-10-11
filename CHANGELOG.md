@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- `open-worlds/machine/`: a world is born with nothing done by hand on the
+  machine. The reconciler makes a world's keys the first time its order
+  runs — a JWT secret of its own and the machine's admin code, which the
+  bootstrap makes once (`/etc/fleet/admin-code`, mode 600) and shows at the
+  end of every run. A key file that already exists is never touched, and a
+  machine with no admin code still starts nothing (an empty admin code makes
+  every visitor an admin). One code per machine is written in the README as
+  a debt, with what pays it.
+- `open-worlds/machine/reconcile.py`: the engine at the pinned build refused
+  to boot (`[envs] SAVE_INTERVAL not set`, then `ASSETS_BASE_URL`), so no
+  world could have come up. The compose file now passes both;
+  `PUBLIC_ASSETS_URL`, a name this engine never reads, is gone. Checked by
+  running the image with the generated settings: `/status` answers with the
+  pinned commit and `"protected": true`.
+- `open-worlds/machine/bootstrap.sh`: an earlier version wrote Docker's
+  Debian source on Ubuntu machines; its 404 stopped every later run at the
+  first `apt-get update`. The stray file is removed before any update. The
+  first reconcile now runs before the timer starts and no longer aborts the
+  script, so the summary and the admin code are always shown. The README no
+  longer says the engine runs as its own user: its image runs as root (a
+  debt, written down).
+
 - `open-worlds/index.json`: the book's table of contents — the sorted ids
   of every order, and nothing else. The fleet console on numinia.com holds
   no GitHub key, and GitHub's API gives an address only 60 keyless reads an
