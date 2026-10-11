@@ -225,6 +225,15 @@ class ReconcileTests(unittest.TestCase):
         (b.book / "open-worlds" / "ajeno.json").write_text(json.dumps(order(id="otro")), encoding="utf-8")
         self.assertEqual(b.plan()["running"], ["plaza"])
 
+    def test_the_index_is_the_books_contents_never_an_order(self):
+        b = Book([order()], keys=["plaza", "index"])
+        (b.book / "open-worlds" / "index.json").write_text('{"orders": ["plaza"]}', encoding="utf-8")
+        # Even an index shaped like a running order of this machine is not obeyed.
+        (b.book / "open-worlds" / "index.json").write_text(json.dumps(order(id="index", card="index")), encoding="utf-8")
+        plan = b.plan()
+        self.assertEqual(plan["running"], ["plaza"])
+        self.assertNotIn("index", json.dumps(plan))
+
     def test_dry_run_prints_the_plan_and_touches_nothing(self):
         b = Book([order()], keys=["plaza"])
         out = subprocess.run(
