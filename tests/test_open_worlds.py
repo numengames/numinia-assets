@@ -41,23 +41,24 @@ def problems(path):
     if order.get("id") != path.stem:
         found.append(f"{path.name}: id must equal the file name")
     for key in ("id", "card", "server"):
-        if not SLUG.match(str(order.get(key, ""))):
+        if not SLUG.fullmatch(str(order.get(key, ""))):
             found.append(f"{path.name}: {key} must be lowercase letters, digits and hyphens")
     if order.get("state") not in ("running", "stopped"):
         found.append(f"{path.name}: state must be running or stopped")
-    if not DOMAIN.match(str(order.get("domain", ""))):
+    if not DOMAIN.fullmatch(str(order.get("domain", ""))):
         found.append(f"{path.name}: domain is not a host name")
-    if not IMAGE.match(str(order.get("image", ""))):
+    if not IMAGE.fullmatch(str(order.get("image", ""))):
         found.append(f"{path.name}: image must be pinned to a sha- tag or a digest")
     limits = order.get("limits")
     if not isinstance(limits, dict) or set(limits) != LIMITS:
         found.append(f"{path.name}: limits must be exactly {sorted(LIMITS)}")
     else:
-        if not MEMORY.match(str(limits["memory"])):
+        if not MEMORY.fullmatch(str(limits["memory"])):
             found.append(f"{path.name}: limits.memory looks like 512m or 2g")
-        if not CPUS.match(str(limits["cpus"])):
+        if not CPUS.fullmatch(str(limits["cpus"])):
             found.append(f"{path.name}: limits.cpus is a number such as 1.5")
-        if not isinstance(limits["maxUploadMb"], int) or limits["maxUploadMb"] <= 0:
+        upload = limits["maxUploadMb"]
+        if isinstance(upload, bool) or not isinstance(upload, int) or upload <= 0:
             found.append(f"{path.name}: limits.maxUploadMb is a positive integer")
     if IPV4.search(text):
         found.append(f"{path.name}: holds an IP address")
@@ -114,6 +115,10 @@ class OpenWorldsTests(unittest.TestCase):
             "zero upload": {**VALID, "limits": {**VALID["limits"], "maxUploadMb": 0}},
             "extra secret field": {**VALID, "jwt_secret": "x"},
             "uppercase card": {**VALID, "card": "Example"},
+            "newline after domain": {**VALID, "domain": "example.numen.games\n"},
+            "settings in domain": {**VALID, "domain": "x\n    privileged: true\n    y.numen.games"},
+            "newline after image": {**VALID, "image": VALID["image"] + "\n"},
+            "upload as true": {**VALID, "limits": {**VALID["limits"], "maxUploadMb": True}},
         }
         for label, order in cases.items():
             with self.subTest(case=label):
