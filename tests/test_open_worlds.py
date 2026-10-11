@@ -12,6 +12,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 FLEET = ROOT / "open-worlds"
+INDEX = FLEET / "index.json"
 
 FIELDS = {"id", "card", "state", "server", "domain", "image", "limits"}
 LIMITS = {"memory", "cpus", "maxUploadMb"}
@@ -24,6 +25,11 @@ IPV4 = re.compile(r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b")
 SECRET = re.compile(
     r"(?i)(secret|password|passwd|token|api[_-]?key|private key|jwt|admin_code|livekit_)"
 )
+
+
+def order_files():
+    """The order files of the book: every .json in the folder but the index."""
+    return sorted(p for p in FLEET.glob("*.json") if p != INDEX)
 
 
 def problems(path):
@@ -43,6 +49,8 @@ def problems(path):
     for key in ("id", "card", "server"):
         if not SLUG.fullmatch(str(order.get(key, ""))):
             found.append(f"{path.name}: {key} must be lowercase letters, digits and hyphens")
+    if order.get("id") in ("index", "caddy"):
+        found.append(f"{path.name}: id {order['id']} is reserved")
     if order.get("state") not in ("running", "stopped"):
         found.append(f"{path.name}: state must be running or stopped")
     if not DOMAIN.fullmatch(str(order.get("domain", ""))):
@@ -81,9 +89,21 @@ VALID = {
 class OpenWorldsTests(unittest.TestCase):
     def test_every_order_in_the_fleet_is_valid(self):
         self.assertTrue(FLEET.is_dir(), "open-worlds/ is missing")
-        for path in sorted(FLEET.glob("*.json")):
+        for path in order_files():
             with self.subTest(order=path.name):
                 self.assertEqual(problems(path), [])
+
+    def test_the_index_names_every_order_and_nothing_else(self):
+        """index.json is the book's table of contents: the console reads it instead
+        of asking GitHub's API to list the folder (60 keyless reads an hour per
+        address). It must say exactly which orders exist, sorted, so a pull
+        request that adds or closes an order must touch it too."""
+        self.assertTrue(INDEX.is_file(), "open-worlds/index.json is missing")
+        text = INDEX.read_text(encoding="utf-8")
+        index = json.loads(text)
+        self.assertEqual(set(index), {"orders"}, "the index holds one field, orders")
+        self.assertEqual(index["orders"], [p.stem for p in order_files()])
+        self.assertEqual(text, json.dumps(index, indent=2) + "\n", "regenerate it: see the README")
 
     def test_the_fleet_holds_only_orders_its_readme_and_the_machine_recipe(self):
         others = [
@@ -123,6 +143,13 @@ class OpenWorldsTests(unittest.TestCase):
         for label, order in cases.items():
             with self.subTest(case=label):
                 self.assertNotEqual(self.check(order), [])
+        cases = {
+            "reserved id index": ({**VALID, "id": "index", "card": "index"}, "index"),
+            "reserved id caddy": ({**VALID, "id": "caddy", "card": "caddy"}, "caddy"),
+        }
+        for label, (order, name) in cases.items():
+            with self.subTest(case=label):
+                self.assertNotEqual(self.check(order, name), [])
 
 
 if __name__ == "__main__":

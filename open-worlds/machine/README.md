@@ -114,7 +114,8 @@ fleet-reconcile --dry-run                               # the plan, touching not
   the domain's labels are lowercase letters, digits and hyphens, `state` is
   `running` or `stopped`, `limits.memory` is like `512m` or `2g`,
   `limits.cpus` like `1.5`, `limits.maxUploadMb` a positive whole number —
-  or whose `id` is `caddy`: refused and logged. Only checked values reach the
+  or whose `id` is `caddy` or `index`: refused and logged. `index.json`, the
+  book's table of contents, is skipped before any order is read. Only checked values reach the
   compose file, and that file is built as data and written as JSON (which is
   YAML), so no field can add a setting to it. The log names the broken rule,
   never the value.

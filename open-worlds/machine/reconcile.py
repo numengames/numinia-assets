@@ -44,6 +44,8 @@ HOME = Path("/srv/fleet")  # data/, env/, run/ live here, outside the clone
 ALIAS_FILE = Path("/etc/fleet/alias")
 CADDY_IMAGE = "caddy:2-alpine"
 CADDY_SERVICE = "caddy"  # a world may not take this name
+INDEX_FILE = "index.json"  # the book's table of contents (the console reads it); never an order
+RESERVED_IDS = frozenset({CADDY_SERVICE, INDEX_FILE[: -len(".json")]})
 HOUSE_ZONES = ("numinia.com", "numen.games")  # one label under either is always allowed
 DOMAINS_FILE = Path("/etc/fleet/domains")  # a client's own domains, one per line, written by an Oracle
 
@@ -100,7 +102,7 @@ def refusal(order: dict, allowed: set[str] | frozenset[str] = frozenset()) -> st
     The reason names the rule, never the value: the log must stay free of
     whatever a malicious order might carry.
     """
-    if not matches(SLUG, order.get("id")) or order.get("id") == CADDY_SERVICE:
+    if not matches(SLUG, order.get("id")) or order.get("id") in RESERVED_IDS:
         return "id is not lowercase letters, digits and hyphens, or is reserved"
     if order.get("state") not in STATES:
         return f"state is not one of {'/'.join(STATES)}"
@@ -139,6 +141,8 @@ def read_orders(folder: Path) -> list[dict]:
     """Every order in the folder, as dicts, sorted by id. Malformed files are skipped loudly."""
     orders = []
     for path in sorted(folder.glob("*.json")):
+        if path.name == INDEX_FILE:
+            continue
         try:
             order = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as error:

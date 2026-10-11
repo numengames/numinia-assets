@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `open-worlds/index.json`: the book's table of contents — the sorted ids
+  of every order, and nothing else. The fleet console on numinia.com holds
+  no GitHub key, and GitHub's API gives an address only 60 keyless reads an
+  hour, so a morning of opening the room left it blind ("GitHub answered
+  403"). Listing the folder was the one API read the console could not do
+  without; with the index it reads the list and the orders as plain files,
+  which have no such quota. `tests/test_open_worlds.py` fails when the index
+  and the folder disagree, so a pull request that adds or closes an order
+  must change the index in the same commit (the console does). The
+  reconciler skips `index.json` and refuses `index` as a world's id, as it
+  refuses `caddy`.
+
 - `open-worlds/machine/reconcile.py`: an order is data, never configuration.
   Every field that reaches the compose file or the Caddyfile must match a
   strict, anchored pattern (`re.fullmatch`) or the order is refused: `id`,

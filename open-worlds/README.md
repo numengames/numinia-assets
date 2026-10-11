@@ -47,13 +47,46 @@ An order never copies the card. It names the card and nothing more.
 
 What is never written here: an IP address, a key, a password, a token, or
 a client's name. The tests in `tests/test_open_worlds.py` refuse an order
-that breaks these rules.
+that breaks these rules. Two ids are reserved: `index` (the folder's table
+of contents, below) and `caddy` (the machine's own front service).
+
+## The index
+
+`index.json` is the book's table of contents: the ids of every order in the
+folder, sorted, and nothing else.
+
+```json
+{
+  "orders": ["example-world", "other-world"]
+}
+```
+
+It exists for the fleet console on numinia.com. The console holds no GitHub
+key, and GitHub's API allows an address only 60 keyless reads an hour; the
+one read the console cannot do without is "which files are in the folder".
+With the index, the console reads that list and each order as plain files
+(`raw.githubusercontent.com`, no such quota), and the API is left for what
+can be missing for an hour: open proposals and history.
+
+The index must always match the folder. `tests/test_open_worlds.py` fails
+when it does not, so a pull request that adds or closes an order must change
+`index.json` in the same commit (the console does it by itself). To
+regenerate it by hand, from the repository root:
+
+```sh
+python3 -c 'import json,pathlib; f=pathlib.Path("open-worlds"); ids=sorted(p.stem for p in f.glob("*.json") if p.name!="index.json"); (f/"index.json").write_text(json.dumps({"orders": ids}, indent=2)+"\n")'
+```
+
+The machines never read the index: a server lists the folder itself and
+ignores `index.json`. `index` and `caddy` are reserved and cannot be a
+world's id.
 
 ## Changing an order
 
 By pull request, reviewed by the house's usual reviewers. The fleet console
 on numinia.com only opens pull requests. No server and no automation writes
-here.
+here. Every change to an order's existence (a new order, a closed one) also
+updates `index.json`; a change of state keeps the index as it is.
 
 ## The machines
 
