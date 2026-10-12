@@ -3,10 +3,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 #
 # Turn a fresh Debian 12 or Ubuntu (24.04 or later) VPS into a machine of the
-# public worlds fleet, or bring one up to date.
+# public worlds fleet, or bring one up to date. The worlds room on numinia.com
+# hands out this line, with the commit of this repository it was built for:
 #
-#   curl -fsSL https://raw.githubusercontent.com/numengames/numinia-assets/main/open-worlds/machine/bootstrap.sh \
-#     | sudo bash -s -- open-1 0xYourWallet
+#   curl -fsSL https://raw.githubusercontent.com/numengames/numinia-assets/<commit>/open-worlds/machine/bootstrap.sh \
+#     | sudo FLEET_REF=<commit> bash -s -- open-1 0xYourWallet
+#
+# FLEET_REF pins the recipe: the programs are installed from exactly that
+# commit (its 40 hex characters), the one this script was fetched from, so a
+# later change to main reaches no machine until someone hands out its line.
+# Without FLEET_REF it installs main's newest commit, and says so: NOT pinned.
 #
 # The first argument is the machine's alias. The second is the wallet of the
 # Oracle (or several, separated by commas) who may act on this machine from
@@ -15,15 +21,16 @@
 # the list the machine already has.
 #
 # What it does, in order: Docker, a 2 GB swap file, the firewall (22, 80, 443
-# only), unattended upgrades, a clone of this repository (the recipe), the
-# door's own user, the programs, the alias, the machine's address for the
-# console (<alias>.numinia.com), the Oracles' wallets, the machine's admin
-# code, its first orders (adopted once from the public order book), systemd
-# units, and a first run. It ends by showing the admin code and by checking
+# only), unattended upgrades, a clone of this repository at the pinned commit
+# (the recipe), the door's own user, the programs, the alias, the machine's
+# address for the console (<alias>.numinia.com), the Oracles' wallets, the
+# machine's old shared admin code and the folder of each world's own, its
+# first orders (adopted once from the public order book), systemd units, and
+# a first run. It ends by saying which recipe it installed and by checking
 # that the machine obeys. Nothing here needs a GitHub credential.
 #
 # The programs are INSTALLED to /usr/local/lib/fleet from this same commit and
-# run from there, never from the clone. To update them, run this script again.
+# run from there, never from the clone. To update them, run the line again.
 #
 # Re-running it is safe; every step checks before it acts.
 #
@@ -37,6 +44,7 @@ set -euo pipefail
 main() {
   ALIAS="${1:-}"
   SIGNERS="${2:-}"
+  FLEET_REF="${FLEET_REF:-}"
   BOOK_URL="https://github.com/numengames/numinia-assets.git"
   HOME_DIR="/srv/fleet"
   BOOK_DIR="$HOME_DIR/book"
@@ -49,6 +57,10 @@ main() {
   fi
   if [[ -n "$SIGNERS" && ! "$SIGNERS" =~ ^0x[0-9a-fA-F]{40}(,0x[0-9a-fA-F]{40})*$ ]]; then
     echo "usage: bootstrap.sh <alias> [0xOracleWallet[,0x…]]   (a wallet is 0x and 40 hex characters)" >&2
+    exit 2
+  fi
+  if [[ -n "$FLEET_REF" && ! "$FLEET_REF" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "FLEET_REF IS NOT A COMMIT: give the whole commit the worlds room shows (40 characters, 0-9 and a-f), or leave it out to install main" >&2
     exit 2
   fi
   if [[ "$(id -u)" -ne 0 ]]; then
@@ -125,11 +137,24 @@ main() {
   echo "== the recipe at $BOOK_DIR"
   mkdir -p "$HOME_DIR"/{data,env,run,orders,requests}
   chmod 700 "$HOME_DIR/env"
-  if [[ -d "$BOOK_DIR/.git" ]]; then
-    git -C "$BOOK_DIR" pull --ff-only --quiet
-  else
+  if [[ ! -d "$BOOK_DIR/.git" ]]; then
     git clone --quiet --depth 1 "$BOOK_URL" "$BOOK_DIR"
   fi
+  # Exactly the commit FLEET_REF names, or main's newest when there is none.
+  # The clone is left on that commit, never on a branch that moves under it.
+  git -C "$BOOK_DIR" fetch --quiet --depth 1 origin "${FLEET_REF:-main}"
+  git -C "$BOOK_DIR" checkout --quiet --force --detach FETCH_HEAD
+  RECIPE="$(git -C "$BOOK_DIR" rev-parse HEAD)"
+  if [[ -n "$FLEET_REF" && "$RECIPE" != "$FLEET_REF" ]]; then
+    echo "!! THE RECIPE IS NOT THE COMMIT ASKED FOR (got $RECIPE): nothing was installed" >&2
+    exit 1
+  fi
+  if [[ -n "$FLEET_REF" ]]; then
+    RECIPE_SAID="$RECIPE (pinned)"
+  else
+    RECIPE_SAID="$RECIPE (main, NOT pinned: use the line the worlds room shows)"
+  fi
+  echo "== recipe: $RECIPE_SAID"
 
   echo "== the door's own user: fleetd (no shell, no home, no Docker)"
   if ! id -u fleetd >/dev/null 2>&1; then
@@ -155,6 +180,11 @@ main() {
   done
   wrapper fleet-reconcile reconcile.py
   wrapper fleetd fleetd.py
+  # Which commit the programs came from: the door shows it (/fleet/v1/machine
+  # `recipe`), and the worlds room says when a machine runs an older one.
+  mkdir -p /etc/fleet
+  echo "$RECIPE" > /etc/fleet/recipe
+  chmod 644 /etc/fleet/recipe
 
   echo "== alias: $ALIAS"
   mkdir -p /etc/fleet
@@ -175,15 +205,24 @@ main() {
   fi
   chmod 644 /etc/fleet/signers
 
-  echo "== the machine's admin code, made once"
-  # Every world this machine keys gets it: type /admin <code> in a world's chat.
-  # One code for all the machine's worlds is a debt of the trial (see README).
-  # The door shows it to a signed Oracle, so its group may read it.
+  echo "== the machine's old shared admin code, made once"
+  # The worlds keyed before each world had its own code keep this one until
+  # an Oracle changes theirs in the worlds room, and an order adopted from the
+  # public book is keyed with it. The door shows it to a signed Oracle who
+  # asks for it (ShowAdminCode), so its group may read it.
   if [[ ! -s /etc/fleet/admin-code ]]; then
     (umask 077 && python3 -c 'import secrets; print(secrets.token_hex(6))' > /etc/fleet/admin-code)
   fi
   chown root:fleetd /etc/fleet/admin-code
   chmod 640 /etc/fleet/admin-code
+
+  echo "== each world's own admin code: /etc/fleet/codes"
+  # One file per world, written by the reconciler: the code that world's key
+  # file gives the engine. The door reads them to show a world's code to a
+  # signed Oracle, so its group may read them, and nobody else.
+  mkdir -p /etc/fleet/codes
+  chown root:fleetd /etc/fleet/codes
+  chmod 750 /etc/fleet/codes
 
   echo "== this machine's first orders, adopted once from the public order book"
   /usr/local/sbin/fleet-reconcile --adopt-book "$BOOK_DIR"
@@ -256,8 +295,9 @@ EOF
   echo "== first run"
   # Before the timer starts, so the two never race on a fresh machine. A failed
   # first run does not stop the script: the timer tries again every minute, and
-  # the summary below (with the admin code) is still shown. A run that has to
-  # stop or restart a world first waits for that world's next save.
+  # the summary below is still shown. A run that has to stop or restart a
+  # world first waits for that world's next save. The first run of this
+  # recipe copies the code each world already has into /etc/fleet/codes.
   if ! /usr/local/sbin/fleet-reconcile; then
     echo "the first run did not finish; the timer tries again every minute (journalctl -u fleet-reconcile -n 20)" >&2
   fi
@@ -268,20 +308,18 @@ EOF
 
 Done. This machine is "$ALIAS".
   its door:          https://$(cat /etc/fleet/control-host)/fleet/v1/machine
+  its recipe:        $RECIPE_SAID
   Oracles here:      $ORACLES wallet(s) in /etc/fleet/signers
   its orders:        $HOME_DIR/orders/<id>.json, written by the worlds room through the door
   a world's folder:  $HOME_DIR/data/<id>/
   what is running:   docker compose -f $HOME_DIR/run/docker-compose.yml ps
   the reconciler:    journalctl -u fleet-reconcile -n 20
   the door:          journalctl -u fleetd -n 20
-  update it:         run this script again (the clone's copy is never executed)
+  update it:         run the line the worlds room shows again (the clone's copy is never executed)
 
-The admin code of every world on this machine (the worlds room shows it to an Oracle too;
-type /admin <code> in a world's chat):
-
-    $(cat /etc/fleet/admin-code)
-
-Keep it somewhere safe and never in git. To see it again: sudo cat /etc/fleet/admin-code
+Each world has its own admin code: the worlds room shows it, and changes it, on
+that world's card; type /admin <code> in that world's chat. A world made before
+each had its own keeps the machine's old code until it is changed there.
 EOF
 
   echo

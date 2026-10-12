@@ -11,8 +11,9 @@ lands in the inbox (a systemd path unit). Three jobs, in this order:
    signature, that the signer is listed in /etc/fleet/signers, the machine,
    the fields — and then changes the book (/srv/fleet/orders/): an order is
    written (create), its state changes (stop, start) or it goes (delete),
-   or a copy is queued (download). Each request ends with a result the door
-   shows to whoever asked.
+   a copy is queued (download), or a world gets a new admin code (change
+   of code). Each request ends with a result the door shows to whoever
+   asked.
 2. Containers. From the orders, render a docker-compose file and a
    Caddyfile and ask Docker to make the containers match; when the list of
    sites changed, ask Caddy to read it again (a reload; each world's site
@@ -21,17 +22,26 @@ lands in the inbox (a systemd path unit). Three jobs, in this order:
    the console on numinia.com reaches the door. Before Docker stops or
    restarts a running world, the reconciler waits for that world's next
    save, since the engine writes its objects to disk only on a timer and
-   not when it is told to stop.
-3. After. A deleted world's folder, keys and copies are removed once its
-   container is gone; queued copies are zipped, after the world's next save;
-   copies older than a day go. The run ends by writing when it ran and how
-   it ended (run/last-run.json), which the door shows.
+   not when it is told to stop. A world whose admin code changed is
+   restarted alone, after that save, so the engine reads its new code.
+3. After. A deleted world's folder, keys, code and copies are removed once
+   its container is gone; queued copies are zipped, after the world's next
+   save; copies older than a day go. The run ends by writing when it ran
+   and how it ended (run/last-run.json), which the door shows.
 
-A world's keys are made here, the first time its order runs: a JWT secret of
-its own and the machine's admin code (/etc/fleet/admin-code, made once by
-bootstrap.sh). A key file that already exists is never touched. A machine
-with no admin code makes no keys, and a world with none is skipped and
-reported — it never starts with an empty admin code.
+Each world has its own admin code. The door makes it when the world is
+created or when an Oracle changes it (16 hex characters) and carries it to
+this file in the signed request's inbox entry; this file writes it into the
+world's key file (/srv/fleet/env/<id>.env, beside a JWT secret of the
+world's own, which a change of code keeps) and into /etc/fleet/codes/<id>,
+where the door reads it to show it to a signed Oracle. The key file is the
+truth — the engine reads it — and every run makes each code file equal to
+it, which is how the worlds keyed before this version keep the code they
+have. A running order with no key file and no request that made one (an
+order adopted from the public book) is keyed with the machine's legacy
+code (/etc/fleet/admin-code, made once by bootstrap.sh); a machine with no
+such code keys nothing, and that world is skipped and reported — no world
+ever starts with an empty admin code.
 
 The machine never writes to git and holds no GitHub credential. Its book is
 its own; its first orders were adopted, once, from the public order book in
@@ -78,7 +88,13 @@ import walletsig
 
 HOME = Path("/srv/fleet")  # orders/, data/, env/, run/, inbox/, requests/, copies/ live here
 ALIAS_FILE = Path("/etc/fleet/alias")
-ADMIN_CODE_FILE = Path("/etc/fleet/admin-code")  # made once by bootstrap.sh; every world keyed here gets it
+# The machine's legacy code, made once by bootstrap.sh: the worlds keyed before
+# each world had its own got it, an order adopted from the public book still
+# does, and ShowAdminCode shows it.
+ADMIN_CODE_FILE = Path("/etc/fleet/admin-code")
+# Each world's own admin code, one file per world (`codes/<id>`, root:fleetd
+# 640): written here, read by the door to show it to a signed Oracle.
+CODES_DIR = Path("/etc/fleet/codes")
 SIGNERS_FILE = Path("/etc/fleet/signers")  # the Oracles' wallets this machine obeys, one per line
 CONTROL_HOST_FILE = Path("/etc/fleet/control-host")  # the door's address, e.g. open-1.numinia.com
 DOOR_GROUP = "fleetd"  # the door's group: it reads copies and results, never writes the book
@@ -103,6 +119,9 @@ CADDY_APPLIED = "Caddyfile.applied"
 # started from, so the next run knows which of them it is about to stop.
 COMPOSE_APPLIED = "docker-compose.applied.yml"
 LAST_RUN = "last-run.json"  # when the reconciler last ran and how it ended; the door shows it
+# The worlds whose admin code changed and that must be restarted to read it:
+# written before their key file changes, cleared once Docker restarted them.
+RESTART_QUEUE = "restart.json"
 INDEX_FILE = "index.json"  # the public book's table of contents; never an order
 RESERVED_IDS = frozenset({CADDY_SERVICE, INDEX_FILE[: -len(".json")]})
 HOUSE_ZONES = ("numinia.com", "numen.games")  # one label under either is always allowed
@@ -129,6 +148,10 @@ STATES = ("running", "stopped")
 # What may be written into a world's key file. No `=`, `$`, quote, space or
 # newline can pass: in an env file any of them could add or bend a setting.
 ADMIN_CODE = re.compile(r"[A-Za-z0-9_-]{8,64}")
+# A line of a key file that sets the admin code, in any form an env file
+# allows (`export`, spaces around `=`, no value at all): a change of code
+# replaces every such line with one plain `ADMIN_CODE=<code>`.
+ADMIN_CODE_LINE = re.compile(r"[ \t]*(?:export[ \t]+)?ADMIN_CODE[ \t]*(?:=.*)?")
 JWT = re.compile(r"[0-9a-f]{64}")
 NONCE = re.compile(r"[0-9a-f]{32}")  # a request's number: 128 random bits, chosen by the browser
 COPY_ID = re.compile(r"[0-9a-f]{32}")  # a copy's number: 128 random bits, chosen by the door
@@ -304,10 +327,12 @@ def split_by_keys(orders: list[dict], env_dir: Path) -> tuple[list[dict], list[d
 
 
 def read_admin_code(path: Path = ADMIN_CODE_FILE) -> str | None:
-    """The machine's admin code, or None when the file is missing or holds anything but a plain code.
+    """An admin code kept in a file — the machine's legacy one, or a world's own — or None.
 
-    None means this machine makes no keys: a world with no key file then stays
-    down rather than start with an empty admin code (everyone an admin).
+    None when the file is missing or holds anything but a plain code. With no
+    legacy code this machine keys no adopted order: a world with no key file
+    then stays down rather than start with an empty admin code (everyone an
+    admin).
     """
     if not path.is_file():
         return None
@@ -315,11 +340,63 @@ def read_admin_code(path: Path = ADMIN_CODE_FILE) -> str | None:
     return code if matches(ADMIN_CODE, code) else None
 
 
+def make_code() -> str:
+    """A world's own admin code: 16 hex characters, 64 random bits from the system.
+
+    What `secrets.token_hex(8)` returns, made the way this file makes every
+    other key (`os.urandom`, then hex).
+    """
+    return os.urandom(8).hex()
+
+
 def world_env(admin_code: str, jwt: str) -> str:
-    """A world's key file: its own JWT secret and the machine's admin code, both plain."""
+    """A world's key file: its own JWT secret and its admin code, both plain."""
     if not matches(ADMIN_CODE, admin_code) or not matches(JWT, jwt):
         raise ValueError("a key is not a plain code")
     return f"JWT_SECRET={jwt}\nADMIN_CODE={admin_code}\n"
+
+
+def env_lines(text: str) -> list[str]:
+    """A key file's lines, split as Docker reads an env file: on newlines only."""
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def env_code(text: str) -> str | None:
+    """The admin code a world's key file gives the engine, or None.
+
+    Only one plain `ADMIN_CODE=<code>` line counts: none, several, or one in
+    any other form is no code the machine can vouch for.
+    """
+    found = [line for line in env_lines(text) if ADMIN_CODE_LINE.fullmatch(line)]
+    if len(found) != 1 or not found[0].startswith("ADMIN_CODE="):
+        return None
+    code = found[0][len("ADMIN_CODE="):]
+    return code if matches(ADMIN_CODE, code) else None
+
+
+def with_code(text: str, admin_code: str) -> str:
+    """A world's key file with `admin_code` as its admin code, every other line kept as it is.
+
+    Its JWT secret stays — everyone who has been in the world keeps who they
+    are — and so do lines added by hand (voice). Every line that sets the
+    admin code, in any form, becomes one plain line where the first was.
+    """
+    if not matches(ADMIN_CODE, admin_code):
+        raise ValueError("an admin code is not a plain code")
+    lines, placed = [], False
+    for line in env_lines(text):
+        if ADMIN_CODE_LINE.fullmatch(line):
+            if not placed:
+                lines.append(f"ADMIN_CODE={admin_code}")
+                placed = True
+            continue
+        lines.append(line)
+    if not placed:
+        lines.append(f"ADMIN_CODE={admin_code}")
+    return "\n".join(lines) + "\n"
 
 
 def make_keys(env_dir: Path, wid: str, admin_code: str) -> bool:
@@ -416,9 +493,12 @@ def plan(
 ) -> dict:
     """Everything the shell part needs, computed without touching Docker.
 
-    `admin_code` is the machine's own (main reads it from /etc/fleet/admin-code).
-    With it, a running world that has no key file is listed in `new_keys` and
-    started; without it, that world stays down and is listed as `keyless`.
+    `admin_code` is the machine's legacy code (main reads it from
+    /etc/fleet/admin-code). A world created through the door already has its
+    key file, with its own code; a running world that has none (an order
+    adopted from the public book) is listed in `new_keys` and started when
+    there is a legacy code, and stays down, listed as `keyless`, when there
+    is not.
     """
     if allowed is None:
         allowed = read_allowed_domains()
@@ -462,14 +542,18 @@ def save_pause(interval: object) -> int:
     return seconds + SAVE_MARGIN
 
 
-def save_waits(before: object, after: dict, keep: set[str] | frozenset[str]) -> dict[str, int]:
+def save_waits(
+    before: object, after: dict, keep: set[str] | frozenset[str], restart: set[str] | frozenset[str] = frozenset()
+) -> dict[str, int]:
     """The running worlds Docker is about to stop or restart, each with the wait for its next save.
 
     The engine writes what was placed, moved or edited in a world to disk every
     SAVE_INTERVAL seconds, and not when it is told to stop: a world stopped
     right after an edit would lose it. `before` is the compose file the
     running containers came from, `after` the one about to be applied, `keep`
-    the worlds that still have an order — a deleted world needs no save.
+    the worlds that still have an order — a deleted world needs no save —
+    and `restart` the worlds restarted even though their service is the same
+    (their admin code changed).
     """
     old = before.get("services") if isinstance(before, dict) else None
     new = after.get("services", {})
@@ -477,11 +561,38 @@ def save_waits(before: object, after: dict, keep: set[str] | frozenset[str]) -> 
     for name, service in (old.items() if isinstance(old, dict) else []):
         if name == CADDY_SERVICE or name not in keep or not isinstance(service, dict):
             continue
-        if new.get(name) == service:
+        if new.get(name) == service and name not in restart:
             continue
         environment = service.get("environment")
         waits[name] = save_pause(environment.get("SAVE_INTERVAL") if isinstance(environment, dict) else None)
     return waits
+
+
+def restarting(before: object, after: dict, queued: list[str]) -> list[str]:
+    """The queued worlds to restart now: those running before this run and after it.
+
+    A queued world that is stopped, deleted or started in this run needs no
+    restart: its container goes, or is made anew from its new key file.
+    """
+    old = before.get("services") if isinstance(before, dict) else None
+    old = old if isinstance(old, dict) else {}
+    new = after.get("services", {})
+    return sorted(w for w in set(queued) if w != CADDY_SERVICE and isinstance(old.get(w), dict) and w in new)
+
+
+def read_restarts(home: Path) -> list[str]:
+    """The worlds waiting to be restarted for their new admin code (run/restart.json)."""
+    raw = read_json(home / "run" / RESTART_QUEUE, [])
+    return sorted({w for w in raw if matches(SLUG, w)}) if isinstance(raw, list) else []
+
+
+def queue_restart(home: Path, wid: str) -> None:
+    """Remember that a world must be restarted to read its new admin code.
+
+    Written before its key file changes: a run that stops halfway still
+    restarts it on the next one, so an old code never outlives its change.
+    """
+    write_json(home / "run" / RESTART_QUEUE, sorted(set(read_restarts(home)) | {wid}))
 
 
 def sh(*cmd: str) -> None:
@@ -491,12 +602,22 @@ def sh(*cmd: str) -> None:
     subprocess.run(cmd, check=True, stdin=subprocess.DEVNULL)
 
 
-def apply(p: dict, home: Path, admin_code: str | None = None, sleep=time.sleep) -> None:
+def apply(p: dict, home: Path, admin_code: str | None = None, sleep=time.sleep,
+          codes_dir: Path | None = None) -> None:
+    """Make Docker and Caddy match the plan; restart, alone, each world whose admin code changed.
+
+    `codes_dir` given, a world keyed here with the legacy code gets its code
+    file at once (else the next run's sync_codes writes it).
+    """
     if p["new_keys"]:
         if admin_code is None or not matches(ADMIN_CODE, admin_code):
             raise ValueError("worlds to key but no admin code on this machine")
         for wid in p["new_keys"]:
-            make_keys(home / "env", wid, admin_code)
+            if make_keys(home / "env", wid, admin_code) and codes_dir is not None:
+                try:
+                    write_code(codes_dir, wid, admin_code)
+                except OSError:
+                    print(f"{wid}: its code file could not be written; the next run tries again", file=sys.stderr)
     run = home / "run"
     run.mkdir(parents=True, exist_ok=True)
     for wid in p["running"]:
@@ -506,7 +627,12 @@ def apply(p: dict, home: Path, admin_code: str | None = None, sleep=time.sleep) 
     # What the running containers came from: the copy Docker last accepted, or,
     # on a machine set up before that copy existed, the file the last run wrote.
     before = read_json(compose_applied, None) if compose_applied.exists() else read_json(compose, None)
-    waits = save_waits(before, json.loads(p["compose"]), set(p["running"]) | set(p["stopped"]))
+    after = json.loads(p["compose"])
+    queued = read_restarts(home)
+    # The engine reads its key file only when its container starts: a world
+    # whose admin code changed is restarted, after its next save like a stop.
+    restart = restarting(before, after, queued)
+    waits = save_waits(before, after, set(p["running"]) | set(p["stopped"]), set(restart))
     if waits:
         pause = max(waits.values())
         print(f"waiting {pause} s for {', '.join(sorted(waits))} to save before Docker stops or restarts them",
@@ -514,6 +640,14 @@ def apply(p: dict, home: Path, admin_code: str | None = None, sleep=time.sleep) 
         sleep(pause)
     compose.write_text(p["compose"], encoding="utf-8")
     (run / "Caddyfile").write_text(p["caddyfile"], encoding="utf-8")
+    if restart:
+        # Those worlds alone, and before the general `up` below, which then
+        # finds them already current and restarts nobody a second time.
+        sh("docker", "compose", "-f", str(compose), "up", "-d", "--force-recreate", "--no-deps", *restart)
+        print(f"restarted {', '.join(restart)}: each reads its new admin code", file=sys.stderr)
+    if queued:
+        # Restarted now, or stopped, deleted or started anew in this run.
+        (run / RESTART_QUEUE).unlink(missing_ok=True)
     sh("docker", "compose", "-f", str(compose), "up", "-d", "--remove-orphans")
     compose_applied.write_text(p["compose"], encoding="utf-8")
     applied = run / CADDY_APPLIED
@@ -543,17 +677,22 @@ def door_gid() -> int | None:
         return None
 
 
-def write_json(path: Path, data: object, mode: int = 0o644, group: int | None = None) -> None:
-    """Write JSON whole and move it into place, so a reader never sees half a file."""
+def write_file(path: Path, text: str, mode: int = 0o644, group: int | None = None) -> None:
+    """Write a file whole and move it into place, so a reader never sees half a file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(json.dumps(data, indent=2) + "\n")
+        f.write(text)
     os.chmod(tmp, mode)
     if group is not None:
         os.chown(tmp, 0, group)
     os.replace(tmp, path)
+
+
+def write_json(path: Path, data: object, mode: int = 0o644, group: int | None = None) -> None:
+    """Write JSON whole and move it into place, so a reader never sees half a file."""
+    write_file(path, json.dumps(data, indent=2) + "\n", mode, group)
 
 
 def read_json(path: Path, default: object) -> object:
@@ -561,6 +700,93 @@ def read_json(path: Path, default: object) -> object:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return default
+
+
+# ---------------------------------------------------------------------------
+# Each world's own admin code: its key file, and the code file the door shows
+# ---------------------------------------------------------------------------
+
+
+def write_code(codes_dir: Path, wid: str, admin_code: str) -> None:
+    """A world's code file, as the door reads it: the plain code, root:fleetd, mode 640."""
+    if not matches(SLUG, wid) or not matches(ADMIN_CODE, admin_code):
+        raise ValueError("not a world id, or not a plain code")
+    group = door_gid()
+    if not codes_dir.is_dir():
+        # bootstrap.sh makes it; made here the same way if it is missing.
+        codes_dir.mkdir(mode=0o750, parents=True)
+        if group is not None:
+            os.chown(codes_dir, 0, group)
+    write_file(codes_dir / wid, admin_code + "\n", mode=0o640, group=group)
+
+
+def give_code(home: Path, codes_dir: Path, wid: str, admin_code: str, fresh: bool = False) -> None:
+    """Make `admin_code` a world's admin code: its key file, then its code file.
+
+    The key file first: it is the truth, the file the engine reads; if it
+    cannot be written nothing has changed. `fresh`, for a world just
+    created: a new key file with a JWT secret of its own, in place of
+    anything a world gone before it left under its name. Otherwise a world
+    with a key file keeps every line of it but the admin code (with_code) —
+    its JWT secret above all, so everyone who has been in the world keeps
+    who they are — and a world with none gets one. A code file that cannot
+    be written is written by the next run (sync_codes). The engine reads the
+    new code when its container next starts.
+    """
+    if not matches(SLUG, wid) or not matches(ADMIN_CODE, admin_code):
+        raise ValueError("not a world id, or not a plain code")
+    env_dir = home / "env"
+    path = env_dir / f"{wid}.env"
+    if fresh:
+        env_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        write_file(path, world_env(admin_code, os.urandom(32).hex()), mode=0o600)
+    elif not make_keys(env_dir, wid, admin_code):
+        write_file(path, with_code(path.read_text(encoding="utf-8"), admin_code), mode=0o600)
+    try:
+        write_code(codes_dir, wid, admin_code)
+    except OSError:
+        print(f"{wid}: its code file could not be written; the next run writes it from its key file",
+              file=sys.stderr)
+
+
+def sync_codes(home: Path, codes_dir: Path) -> list[str]:
+    """Make each world's code file say the admin code its key file gives; the worlds whose file changed.
+
+    The key file is the truth: the engine reads it. On the first run of this
+    version this copies into codes/ the code each world already has — the
+    machine's legacy one, for the worlds keyed before each had its own — so
+    nobody's code changes until an Oracle changes it. A key file that gives
+    no plain code leaves its world with no code file (the door then answers
+    `no-admin-code`, and a signed change of code puts it right), and a code
+    file with no key file goes. Never writes a key file.
+    """
+    env_dir = home / "env"
+    given: dict[str, str | None] = {}
+    unread = set()
+    for path in sorted(env_dir.glob("*.env")) if env_dir.is_dir() else []:
+        wid = path.name[: -len(".env")]
+        if not matches(SLUG, wid):
+            continue
+        try:
+            given[wid] = env_code(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            unread.add(wid)  # left as it is: a file it cannot read proves nothing
+    changed = []
+    for wid, admin_code in sorted(given.items()):
+        target = codes_dir / wid
+        if admin_code is None:
+            if target.is_file() or target.is_symlink():
+                target.unlink()
+                changed.append(wid)
+        elif read_admin_code(target) != admin_code:
+            write_code(codes_dir, wid, admin_code)
+            changed.append(wid)
+    for path in sorted(codes_dir.iterdir()) if codes_dir.is_dir() else []:
+        if matches(SLUG, path.name) and path.name not in given and path.name not in unread:
+            if path.is_file() or path.is_symlink():
+                path.unlink()
+                changed.append(path.name)
+    return sorted(changed)
 
 
 # ---------------------------------------------------------------------------
@@ -648,8 +874,8 @@ def change_book(
     address now would keep the old one's data, so its creation waits.
     """
     kind, wid = entry["type"], entry["world"]
-    if kind == "ShowAdminCode":
-        return None
+    if kind in ("ShowAdminCode", "ShowWorldCode"):
+        return None  # the door showed the code; this is the record of it, and nothing changes
     path = orders / f"{wid}.json"
     current = read_order(path)
     if kind == "CreateWorld":
@@ -687,7 +913,51 @@ def change_book(
     if kind in ("StopWorld", "StartWorld"):
         write_json(path, {**current, "state": "stopped" if kind == "StopWorld" else "running"})
         return None
-    return None  # DownloadWorld: the copy is made after the containers
+    # DownloadWorld: the copy is made after the containers. RotateWorldCode:
+    # the book stays as it is; the new code is given right after (key_world).
+    return None
+
+
+def carried_code(raw: object, kind: object) -> tuple[str | None, str | None]:
+    """The admin code the door made for a create or a change of code: (code, None), or (None, the rule).
+
+    A create from a door older than each world's own code carries none: the
+    machine makes one. A change of code must carry the code the door already
+    showed to the Oracle, and only a plain one is ever written.
+    """
+    if kind not in ("CreateWorld", "RotateWorldCode") or not isinstance(raw, dict):
+        return None, None
+    if "adminCode" not in raw:
+        if kind == "CreateWorld":
+            return make_code(), None
+        return None, "the request carries no new admin code"
+    if not matches(ADMIN_CODE, raw["adminCode"]):
+        return None, "the admin code the door made is not a plain code"
+    return raw["adminCode"], None
+
+
+def key_world(home: Path, orders: Path, codes_dir: Path, entry: dict, admin_code: str) -> str | None:
+    """Give a world just created, or whose code an Oracle changed, its admin code; the rule, or None.
+
+    A change of code first queues the world's restart, so a run that stops
+    halfway still restarts it and the old code cannot outlive the change. A
+    create whose keys cannot be written is undone: no world without its code.
+    """
+    wid = entry["world"]
+    created = entry["type"] == "CreateWorld"
+    try:
+        if not created:
+            queue_restart(home, wid)
+        give_code(home, codes_dir, wid, admin_code, fresh=created)
+    except (OSError, ValueError):  # a full disk, a key file that is not text
+        if created:
+            for leftover in (orders / f"{wid}.json", codes_dir / wid, home / "env" / f"{wid}.env"):
+                try:
+                    leftover.unlink(missing_ok=True)
+                except OSError:
+                    print("a create whose keys could not be written could not be wholly undone", file=sys.stderr)
+        return "the world's keys could not be written here"
+    return None
 
 
 def answer(home: Path, entry: dict, state: str, rule: str | None = None, now: float | None = None) -> None:
@@ -718,14 +988,19 @@ def take_requests(
     allowed: set[str] | frozenset[str] = frozenset(),
     control_host: str | None = None,
     now: float | None = None,
+    *,
+    codes_dir: Path,
 ) -> list[dict]:
     """Every request waiting in the inbox, oldest first: checked again, applied, answered.
 
     Every request leaves the inbox, so the path unit that woke this run sleeps
-    again. Create, stop, start and show are answered at once (the book is the
-    truth; the containers follow it below). A delete waits in run/purge.json
-    until its container is gone; a download waits in run/copy-queue.json.
-    Returns the entries taken, for the summary.
+    again. Create, stop, start, show and change of code are answered at once
+    (the book and the key files are the truth; the containers follow them
+    below). A create or a change of code writes the world's admin code the
+    door made (codes_dir and its key file); a change of code also queues the
+    world's restart. A delete waits in run/purge.json until its container is
+    gone; a download waits in run/copy-queue.json. Returns the entries taken,
+    for the summary.
     """
     now = time.time() if now is None else now
     inbox = home / "inbox"
@@ -744,9 +1019,14 @@ def take_requests(
         if (home / "requests" / f"{entry['nonce']}.json").exists():
             print("drop one request: its number was used before", file=sys.stderr)
             continue
+        admin_code = None
+        if rule is None:
+            admin_code, rule = carried_code(raw, entry["type"])
         if rule is None:
             deleting = {w: job.get("domain") for w, job in purge.items() if isinstance(job, dict)}
             rule = change_book(entry, message, orders, alias, allowed, control_host, now, deleting)
+        if rule is None and admin_code is not None:
+            rule = key_world(home, orders, codes_dir, entry, admin_code)
         if rule is not None:
             print(f"refuse one request: {rule}", file=sys.stderr)
             answer(home, entry, "failed", rule, now)
@@ -775,8 +1055,8 @@ def take_requests(
 # ---------------------------------------------------------------------------
 
 
-def purge_world(home: Path, wid: str) -> None:
-    """Remove a world's folder, keys and copies. Only for a world with no order and no container."""
+def purge_world(home: Path, wid: str, *, codes_dir: Path) -> None:
+    """Remove a world's folder, keys, code and copies. Only for a world with no order and no container."""
     if not matches(SLUG, wid):
         raise ValueError("not a world id")
     data_root = home / "data"
@@ -786,6 +1066,7 @@ def purge_world(home: Path, wid: str) -> None:
     elif folder.is_dir() and folder.resolve().parent == data_root.resolve():
         shutil.rmtree(folder)
     (home / "env" / f"{wid}.env").unlink(missing_ok=True)
+    (codes_dir / wid).unlink(missing_ok=True)
     for status_path in (home / "copies").glob("*.json"):
         status = read_json(status_path, {})
         if isinstance(status, dict) and status.get("world") == wid:
@@ -793,7 +1074,7 @@ def purge_world(home: Path, wid: str) -> None:
             status_path.unlink(missing_ok=True)
 
 
-def purge_deleted(home: Path, orders: Path, now: float | None = None) -> list[str]:
+def purge_deleted(home: Path, orders: Path, now: float | None = None, *, codes_dir: Path) -> list[str]:
     """Delete what the deleted worlds left, now that Docker took their containers down."""
     path = home / "run" / "purge.json"
     pending = read_json(path, {})
@@ -802,7 +1083,7 @@ def purge_deleted(home: Path, orders: Path, now: float | None = None) -> list[st
         if not matches(SLUG, wid) or not isinstance(job, dict) or not matches(NONCE, job.get("nonce")):
             continue
         if not (orders / f"{wid}.json").exists():  # ordered again since: its folder is the new world's
-            purge_world(home, wid)
+            purge_world(home, wid, codes_dir=codes_dir)
         answer(home, {"nonce": job["nonce"], "type": "DeleteWorld", "world": wid, "by": job.get("by")},
                "done", None, now)
         done.append(wid)
@@ -1077,7 +1358,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--home", type=Path, default=HOME)
     ap.add_argument("--orders", type=Path, default=None, help="defaults to <home>/orders")
     ap.add_argument("--alias", default=None, help="defaults to /etc/fleet/alias")
-    ap.add_argument("--admin-code-file", type=Path, default=ADMIN_CODE_FILE, help="the machine's admin code")
+    ap.add_argument("--admin-code-file", type=Path, default=ADMIN_CODE_FILE,
+                    help="the machine's legacy admin code, for orders adopted from the public book")
+    ap.add_argument("--codes-dir", type=Path, default=CODES_DIR,
+                    help="each world's own admin code, one file per world, for the door to show")
     ap.add_argument("--signers-file", type=Path, default=SIGNERS_FILE, help="the Oracles' wallets")
     ap.add_argument("--control-host-file", type=Path, default=CONTROL_HOST_FILE, help="the door's address")
     ap.add_argument("--adopt-book", type=Path, default=None, metavar="CLONE",
@@ -1096,7 +1380,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         p = plan(orders, args.home, alias, allowed, admin_code=admin_code, control_host=control_host)
         for wid in p["keyless"]:
-            print(f"{wid}: order says running but it has no key file and this machine has no admin code"
+            print(f"{wid}: order says running but it has no key file and this machine has no legacy admin code"
                   f" ({args.admin_code_file}) — not started", file=sys.stderr)
         print(json.dumps({k: p[k] for k in ("alias", "running", "stopped", "keyless", "new_keys")}, indent=2))
         print(p["compose"])
@@ -1113,29 +1397,40 @@ def main(argv: list[str] | None = None) -> int:
 
 def run_once(args: argparse.Namespace, alias: str, orders: Path, admin_code: str | None,
              control_host: str | None, allowed: set[str]) -> bool:
-    """One run on the machine: requests, containers, deletes, copies. True when Docker took the book."""
-    take_requests(args.home, orders, alias, read_signers(args.signers_file), allowed, control_host)
+    """One run on the machine: codes, requests, containers, deletes, copies. True when Docker took the book."""
+    # First: each world's code file says what its key file gives (on the first
+    # run of this version, the code every world already has is copied in).
+    try:
+        synced = sync_codes(args.home, args.codes_dir)
+    except OSError:
+        synced = []
+        print("the worlds' code files could not be made equal to their key files; the next run tries again",
+              file=sys.stderr)
+    take_requests(args.home, orders, alias, read_signers(args.signers_file), allowed, control_host,
+                  codes_dir=args.codes_dir)
     p = plan(orders, args.home, alias, allowed, admin_code=admin_code, control_host=control_host)
     for wid in p["keyless"]:
         print(
-            f"{wid}: order says running but it has no key file and this machine has no admin code"
+            f"{wid}: order says running but it has no key file and this machine has no legacy admin code"
             f" ({args.admin_code_file}) — not started",
             file=sys.stderr,
         )
     applied = True
     try:
-        apply(p, args.home, admin_code)
+        apply(p, args.home, admin_code, codes_dir=args.codes_dir)
     except subprocess.CalledProcessError:
         applied = False
         print("docker did not take the book; the next run tries again", file=sys.stderr)
-    deleted = purge_deleted(args.home, orders) if applied else []
+    deleted = purge_deleted(args.home, orders, codes_dir=args.codes_dir) if applied else []
     pause = copies_wait(args.home, orders)
     if pause:
         time.sleep(pause)
     copied = make_copies(args.home, orders, alias)
     prune_copies(args.home)
+    if synced:
+        print(f"{alias}: code files made equal to their key files for {synced}")
     for wid in p["new_keys"]:
-        print(f"{wid}: keys made on this machine (its own JWT secret, the machine's admin code)")
+        print(f"{wid}: keys made on this machine (its own JWT secret, the machine's legacy admin code)")
     print(f"{alias}: running {p['running']} stopped {p['stopped']} keyless {p['keyless']}"
           f" deleted {deleted} copies {len(copied)}")
     return applied

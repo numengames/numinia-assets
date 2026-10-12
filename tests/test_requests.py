@@ -41,6 +41,8 @@ EXPIRES = SIGNED["CreateWorld"]["message"]["expires"]
 NOW = EXPIRES - 60
 CONTROL = "open-1.numinia.com"
 COPY = "c0ffee" + "0" * 26
+DOOR_CODE = "c0dec0dec0de4321"  # a world's own admin code, as the door makes them
+JWT = "JWT_SECRET=" + "a" * 64
 
 
 class Machine:
@@ -51,11 +53,13 @@ class Machine:
         test.addCleanup(temp.cleanup)
         self.home = Path(temp.name)
         self.orders = self.home / "orders"
+        self.codes = self.home / "codes"  # /etc/fleet/codes; made by the reconciler when missing
         for folder in ("inbox", "orders", "env", "data", "requests", "copies", "run"):
             (self.home / folder).mkdir()
         self.dropped = 0
 
-    def drop(self, kind, message=None, signature=None, copy=None):
+    def drop(self, kind, message=None, signature=None, copy=None, **door):
+        """A request as the door leaves it in the inbox; `door` adds what the door wrote (adminCode)."""
         vector = SIGNED[kind]
         raw = {
             "type": kind,
@@ -63,6 +67,7 @@ class Machine:
             "signature": signature or vector["signature"],
             "signer": vector["signer"],
             "receivedAt": "2029-12-31T23:59:00Z",
+            **door,
         }
         if copy is not None:
             raw["copy"] = copy
@@ -73,7 +78,8 @@ class Machine:
     def take(self, signers=frozenset({ORACLE}), alias="open-1", now=NOW, control=CONTROL):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            taken = R.take_requests(self.home, self.orders, alias, signers, frozenset(), control, now)
+            taken = R.take_requests(self.home, self.orders, alias, signers, frozenset(), control, now,
+                                    codes_dir=self.codes)
         self.err = err.getvalue()
         return taken
 
@@ -103,8 +109,11 @@ class Machine:
         db.commit()
         db.close()
         (data / "assets" / "statue.glb").write_bytes(b"glTF" + bytes(range(256)) * 40)
-        (self.home / "env" / "plaza.env").write_text("JWT_SECRET=" + "a" * 64 + "\nADMIN_CODE=machinecode\n")
+        (self.home / "env" / "plaza.env").write_text(f"{JWT}\nADMIN_CODE=machinecode\n")
         return order
+
+    def env(self, wid="plaza"):
+        return (self.home / "env" / f"{wid}.env").read_text(encoding="utf-8")
 
 
 class Create(unittest.TestCase):
@@ -264,6 +273,7 @@ class Delete(unittest.TestCase):
     def test_a_delete_waits_for_the_container_then_removes_everything(self):
         m = Machine(self)
         m.put_world()
+        R.write_code(m.codes, "plaza", "machinecode")
         (m.home / "copies" / f"{COPY}.json").write_text(json.dumps({"copy": COPY, "world": "plaza", "state": "ready"}))
         (m.home / "copies" / f"{COPY}.zip").write_bytes(b"zip")
         m.drop("DeleteWorld")
@@ -274,9 +284,10 @@ class Delete(unittest.TestCase):
         p = R.plan(m.orders, m.home, "open-1", allowed=set(), admin_code="machinecode")
         self.assertEqual(p["running"], [])  # the next compose run removes its container
         with contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(R.purge_deleted(m.home, m.orders, NOW), ["plaza"])
+            self.assertEqual(R.purge_deleted(m.home, m.orders, NOW, codes_dir=m.codes), ["plaza"])
         self.assertFalse((m.home / "data" / "plaza").exists())
         self.assertFalse((m.home / "env" / "plaza.env").exists())
+        self.assertFalse((m.codes / "plaza").exists())
         self.assertEqual(list((m.home / "copies").iterdir()), [])
         self.assertEqual(m.result("DeleteWorld")["state"], "done")
         self.assertFalse((m.home / "run" / "purge.json").exists())
@@ -304,7 +315,7 @@ class Delete(unittest.TestCase):
         self.assertIn("still being deleted", m.result("CreateWorld")["rule"])
         self.assertIsNone(m.order())
         with contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(R.purge_deleted(m.home, m.orders, NOW), ["plaza"])
+            self.assertEqual(R.purge_deleted(m.home, m.orders, NOW, codes_dir=m.codes), ["plaza"])
         self.assertFalse((m.home / "env" / "plaza.env").exists())
 
     def test_an_address_being_deleted_is_not_given_to_another_world(self):
@@ -325,11 +336,11 @@ class Delete(unittest.TestCase):
         outside.mkdir()
         (outside / "keep.txt").write_text("keep")
         os.symlink(outside, m.home / "data" / "plaza")
-        R.purge_world(m.home, "plaza")
+        R.purge_world(m.home, "plaza", codes_dir=m.codes)
         self.assertTrue((outside / "keep.txt").exists())
         self.assertFalse((m.home / "data" / "plaza").exists())
         with self.assertRaises(ValueError):
-            R.purge_world(m.home, "../etc")
+            R.purge_world(m.home, "../etc", codes_dir=m.codes)
 
 
 class Copies(unittest.TestCase):
@@ -422,6 +433,221 @@ class Copies(unittest.TestCase):
         self.assertEqual(R.prune_copies(m.home, NOW + 3600), [])
         self.assertEqual(R.prune_copies(m.home, NOW + R.COPY_SECONDS + 1), [COPY])
         self.assertEqual(list((m.home / "copies").iterdir()), [])
+
+
+class Codes(unittest.TestCase):
+    """Each world has its own admin code: made by the door, written by the reconciler, changed by one signature."""
+
+    def test_a_create_keys_the_world_with_the_code_the_door_made(self):
+        m = Machine(self)
+        m.drop("CreateWorld", adminCode=DOOR_CODE)
+        m.take()
+        self.assertEqual(m.result("CreateWorld")["state"], "done")
+        self.assertRegex(m.env(), rf"\AJWT_SECRET=[0-9a-f]{{64}}\nADMIN_CODE={DOOR_CODE}\n\Z")
+        self.assertEqual((m.home / "env" / "plaza.env").stat().st_mode & 0o777, 0o600)
+        self.assertEqual((m.codes / "plaza").read_text(encoding="utf-8"), DOOR_CODE + "\n")
+        self.assertEqual((m.codes / "plaza").stat().st_mode & 0o777, 0o640)
+        self.assertEqual(m.codes.stat().st_mode & 0o777, 0o750)
+        said = (m.home / "log.jsonl").read_text() + m.err + json.dumps(m.result("CreateWorld"))
+        self.assertNotIn(DOOR_CODE, said)  # a code is never logged nor answered by the machine
+        # It runs on its own keys: a machine with no old shared code starts it.
+        p = R.plan(m.orders, m.home, "open-1", allowed=set(), admin_code=None, control_host=CONTROL)
+        self.assertEqual((p["running"], p["new_keys"], p["keyless"]), (["plaza"], [], []))
+
+    def test_a_create_from_an_older_door_gets_a_code_of_its_own_from_the_machine(self):
+        m = Machine(self)
+        m.drop("CreateWorld")  # an entry with no adminCode: a door from before each world had one
+        m.take()
+        code = (m.codes / "plaza").read_text(encoding="utf-8").strip()
+        self.assertRegex(code, r"\A[0-9a-f]{16}\Z")
+        self.assertIn(f"ADMIN_CODE={code}\n", m.env())
+
+    def test_a_create_never_keeps_the_keys_a_world_gone_before_it_left(self):
+        m = Machine(self)
+        (m.home / "env" / "plaza.env").write_text(f"{JWT}\nADMIN_CODE=oldcode1\n", encoding="utf-8")
+        m.drop("CreateWorld", adminCode=DOOR_CODE)
+        m.take()
+        self.assertNotIn(JWT, m.env())  # everyone who was in the old one would still be who they were
+        self.assertIn(f"ADMIN_CODE={DOOR_CODE}\n", m.env())
+
+    def test_a_code_that_is_not_plain_is_never_written(self):
+        for bad in ("short", "abc12345\nJWT_SECRET=x", "abc$12345", "has space1", 12345678, None):
+            with self.subTest(code=bad):
+                m = Machine(self)
+                m.drop("CreateWorld", adminCode=bad)
+                m.take()
+                self.assertIn("not a plain code", m.result("CreateWorld")["rule"])
+                self.assertIsNone(m.order())
+                self.assertFalse((m.home / "env" / "plaza.env").exists())
+                self.assertFalse(m.codes.exists())
+
+    def test_a_create_whose_keys_cannot_be_written_is_undone(self):
+        m = Machine(self)
+        (m.home / "env").chmod(0o500)  # nothing can be written there
+        self.addCleanup((m.home / "env").chmod, 0o700)
+        if os.access(m.home / "env", os.W_OK):
+            self.skipTest("root writes anywhere")
+        m.drop("CreateWorld", adminCode=DOOR_CODE)
+        m.take()
+        self.assertIn("could not be written", m.result("CreateWorld")["rule"])
+        self.assertIsNone(m.order())  # no world without its code
+        self.assertFalse((m.codes / "plaza").exists())
+
+    def test_a_change_of_code_keeps_everything_else_and_queues_a_restart(self):
+        m = Machine(self)
+        m.put_world()
+        voice = "LIVEKIT_WS_URL=wss://voice.example"
+        (m.home / "env" / "plaza.env").write_text(f"{JWT}\nADMIN_CODE=machinecode\n{voice}\n", encoding="utf-8")
+        m.drop("RotateWorldCode", adminCode=DOOR_CODE)
+        m.take()
+        self.assertEqual(m.result("RotateWorldCode")["state"], "done")
+        # Its JWT secret stays: everyone who has been in the world keeps who they are.
+        self.assertEqual(m.env(), f"{JWT}\nADMIN_CODE={DOOR_CODE}\n{voice}\n")
+        self.assertEqual((m.codes / "plaza").read_text(encoding="utf-8"), DOOR_CODE + "\n")
+        self.assertEqual(R.read_restarts(m.home), ["plaza"])
+        self.assertEqual(m.order()["state"], "running")  # the book is as it was
+        self.assertEqual(m.log()[-1]["type"], "RotateWorldCode")
+        self.assertNotIn(DOOR_CODE, (m.home / "log.jsonl").read_text() + m.err)
+
+    def test_a_change_of_code_must_carry_the_code_the_door_showed(self):
+        m = Machine(self)
+        m.put_world()
+        before = m.env()
+        m.drop("RotateWorldCode")
+        m.take()
+        self.assertIn("carries no new admin code", m.result("RotateWorldCode")["rule"])
+        self.assertEqual(m.env(), before)
+        self.assertEqual(R.read_restarts(m.home), [])
+
+    def test_a_change_of_code_for_a_world_that_is_not_here_is_refused(self):
+        m = Machine(self)
+        m.drop("RotateWorldCode", adminCode=DOOR_CODE)
+        m.take()
+        self.assertIn("no world", m.result("RotateWorldCode")["rule"])
+        self.assertFalse((m.home / "env" / "plaza.env").exists())
+        self.assertFalse(m.codes.exists())
+
+    def test_a_change_of_code_gives_keys_to_a_world_that_had_none(self):
+        """An order adopted on a machine with no old shared code stays down; a signed change of code keys it."""
+        m = Machine(self)
+        m.put_world()
+        (m.home / "env" / "plaza.env").unlink()
+        m.drop("RotateWorldCode", adminCode=DOOR_CODE)
+        m.take()
+        self.assertRegex(m.env(), rf"\AJWT_SECRET=[0-9a-f]{{64}}\nADMIN_CODE={DOOR_CODE}\n\Z")
+        p = R.plan(m.orders, m.home, "open-1", allowed=set(), admin_code=None, control_host=CONTROL)
+        self.assertEqual(p["running"], ["plaza"])
+
+    def test_a_key_file_that_is_not_text_fails_the_change_and_is_kept(self):
+        m = Machine(self)
+        m.put_world()
+        (m.home / "env" / "plaza.env").write_bytes(b"JWT_SECRET=\xff\xfe\n")
+        m.drop("RotateWorldCode", adminCode=DOOR_CODE)
+        m.take()
+        self.assertIn("could not be written", m.result("RotateWorldCode")["rule"])
+        self.assertEqual((m.home / "env" / "plaza.env").read_bytes(), b"JWT_SECRET=\xff\xfe\n")
+        self.assertFalse((m.codes / "plaza").exists())
+
+    def test_showing_a_worlds_code_changes_nothing_and_is_logged(self):
+        m = Machine(self)
+        m.put_world()
+        before = m.env()
+        m.drop("ShowWorldCode")
+        m.take()
+        self.assertEqual(m.result("ShowWorldCode")["state"], "done")
+        self.assertEqual(m.log()[-1]["type"], "ShowWorldCode")
+        self.assertEqual(m.env(), before)
+        self.assertEqual(R.read_restarts(m.home), [])
+
+    def test_a_code_is_sixteen_hex_characters_and_new_each_time(self):
+        codes = {R.make_code() for _ in range(20)}
+        self.assertEqual(len(codes), 20)
+        for code in codes:
+            self.assertRegex(code, r"\A[0-9a-f]{16}\Z")
+
+    def test_a_key_files_code_is_one_plain_line_or_none(self):
+        self.assertEqual(R.env_code(f"{JWT}\nADMIN_CODE=abc12345\n"), "abc12345")
+        self.assertEqual(R.env_code("ADMIN_CODE=abc12345"), "abc12345")  # no final newline
+        for text in ("", f"{JWT}\n", "ADMIN_CODE=abc12345\nADMIN_CODE=abc12345\n", "export ADMIN_CODE=abc12345\n",
+                     "ADMIN_CODE = abc12345\n", "ADMIN_CODE=\n", "ADMIN_CODE=has space1\n", "ADMIN_CODE\n"):
+            with self.subTest(text=text):
+                self.assertIsNone(R.env_code(text))
+
+    def test_a_change_of_code_rewrites_only_the_lines_that_set_it(self):
+        new = DOOR_CODE
+        cases = {
+            "plain": (f"{JWT}\nADMIN_CODE=old12345\n", f"{JWT}\nADMIN_CODE={new}\n"),
+            "export and spaces": (f"{JWT}\n export ADMIN_CODE = old12345\n", f"{JWT}\nADMIN_CODE={new}\n"),
+            "twice": (f"ADMIN_CODE=a1234567\n{JWT}\nADMIN_CODE=b1234567\n", f"ADMIN_CODE={new}\n{JWT}\n"),
+            "none": (f"{JWT}\n", f"{JWT}\nADMIN_CODE={new}\n"),
+            "no final newline": (f"{JWT}\nADMIN_CODE=old12345", f"{JWT}\nADMIN_CODE={new}\n"),
+            "a look-alike is another setting": ("ADMIN_CODEX=1\nADMIN_CODE=old12345\n",
+                                                f"ADMIN_CODEX=1\nADMIN_CODE={new}\n"),
+        }
+        for name, (before, after) in cases.items():
+            with self.subTest(case=name):
+                self.assertEqual(R.with_code(before, new), after)
+        for bad in ("short", f"{new}\nX=1", "a b c d e f"):
+            with self.subTest(code=bad), self.assertRaises(ValueError):
+                R.with_code(f"{JWT}\n", bad)
+
+    def test_a_code_file_is_written_only_for_a_world_and_a_plain_code(self):
+        m = Machine(self)
+        for wid, code in (("../etc", DOOR_CODE), ("plaza", "bad code"), ("Plaza", DOOR_CODE)):
+            with self.subTest(world=wid, code=code), self.assertRaises(ValueError):
+                R.write_code(m.codes, wid, code)
+        with self.assertRaises(ValueError):
+            R.give_code(m.home, m.codes, "plaza", "bad\ncode")
+        self.assertFalse(m.codes.exists())
+
+
+class Migration(unittest.TestCase):
+    """The first run of this version: each world keeps the code it has until an Oracle changes it."""
+
+    def setUp(self):
+        self.m = Machine(self)
+        self.env = self.m.home / "env"
+
+    def write_env(self, wid, text):
+        (self.env / f"{wid}.env").write_text(text, encoding="utf-8")
+
+    def test_each_world_keeps_the_code_it_has_and_no_key_file_changes(self):
+        self.write_env("prueba", f"{JWT}\nADMIN_CODE=machinecode\n")
+        self.write_env("pablofm", "JWT_SECRET=" + "b" * 64 + "\nADMIN_CODE=machinecode\n")
+        before = {p.name: p.read_text() for p in self.env.iterdir()}
+        self.assertEqual(R.sync_codes(self.m.home, self.m.codes), ["pablofm", "prueba"])
+        self.assertEqual((self.m.codes / "prueba").read_text(), "machinecode\n")
+        self.assertEqual((self.m.codes / "pablofm").read_text(), "machinecode\n")
+        self.assertEqual(R.sync_codes(self.m.home, self.m.codes), [])  # once: then nothing to do
+        self.assertEqual({p.name: p.read_text() for p in self.env.iterdir()}, before)
+
+    def test_the_key_file_is_the_truth(self):
+        self.write_env("plaza", f"{JWT}\nADMIN_CODE=fromkeys1\n")
+        R.write_code(self.m.codes, "plaza", "byhand123")
+        R.write_code(self.m.codes, "gone", "gonecode1")  # its world and key file are gone
+        (self.m.codes / "notes.txt").write_text("not a world's file")
+        self.assertEqual(R.sync_codes(self.m.home, self.m.codes), ["gone", "plaza"])
+        self.assertEqual((self.m.codes / "plaza").read_text(), "fromkeys1\n")
+        self.assertFalse((self.m.codes / "gone").exists())
+        self.assertTrue((self.m.codes / "notes.txt").exists())
+
+    def test_a_key_file_with_no_plain_code_leaves_its_world_without_a_code_file(self):
+        """The door then answers no-admin-code, and a signed change of code puts it right."""
+        self.write_env("plaza", f"{JWT}\nexport ADMIN_CODE=abc12345\n")
+        R.write_code(self.m.codes, "plaza", "abc12345")
+        self.assertEqual(R.sync_codes(self.m.home, self.m.codes), ["plaza"])
+        self.assertFalse((self.m.codes / "plaza").exists())
+
+    def test_a_key_file_that_cannot_be_read_proves_nothing(self):
+        (self.env / "plaza.env").write_bytes(b"\xff\xfe")
+        R.write_code(self.m.codes, "plaza", "abc12345")
+        self.assertEqual(R.sync_codes(self.m.home, self.m.codes), [])
+        self.assertEqual((self.m.codes / "plaza").read_text(), "abc12345\n")
+
+    def test_a_machine_with_no_key_files_and_no_folder_does_nothing(self):
+        self.env.rmdir()
+        self.assertEqual(R.sync_codes(self.m.home, self.m.codes), [])
+        self.assertFalse(self.m.codes.exists())
 
 
 class Adopt(unittest.TestCase):

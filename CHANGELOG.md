@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- `open-worlds/machine/`: each world has its own admin code, and a machine
+  installs one exact commit of its recipe.
+  - Every world on a machine shared one admin code, so whoever held it
+    administered them all, a client's world and the house's alike. Now the
+    door makes a code of the world's own when it is created (16 hex
+    characters) and shows it once to the Oracle who signed; the reconciler
+    writes it into the world's key file and into `/etc/fleet/codes/<id>`,
+    from where the door shows it to a signed Oracle (`ShowWorldCode`). A
+    signed `RotateWorldCode` makes a new one: the world keeps its JWT
+    secret (everyone who has been in it keeps who they are) and is
+    restarted alone, after its next save, so whoever is inside reconnects
+    in a few seconds; a leaked code is closed with one signature. While a
+    change of code or a creation waits, the door answers `busy` to another
+    show or change of that world. The first run of this version copies the
+    code each world already has, so `prueba` and `pablofm` keep the
+    machine's old code until it is changed. `ShowAdminCode` (that old code)
+    still works for the room that asks for it. A world created under a
+    name a world had before gets new keys, never the old ones.
+  - A re-run of the bootstrap installed whatever `main` held at that
+    moment. The line now carries the commit (`FLEET_REF`, 40 hex
+    characters): the clone is left on exactly that commit, a commit that is
+    not the one asked for installs nothing, and without `FLEET_REF` it says
+    NOT pinned. The commit is written to `/etc/fleet/recipe` and the door
+    says it (`recipe` in `/fleet/v1/machine`), so the room can tell a
+    machine that runs an older one. Proved against GitHub: a shallow clone
+    fetches an older commit, `main` and the tip by their sha, and refuses
+    one that does not exist. The bootstrap no longer prints an admin code.
+
 - `open-worlds/machine/`: nothing is lost when a world stops, and nobody is
   thrown out when another world changes.
   - The engine writes what was placed, moved or edited in a world every
