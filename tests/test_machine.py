@@ -20,6 +20,8 @@ MACHINE = ROOT / "open-worlds" / "machine"
 
 
 def load_reconcile():
+    if str(MACHINE) not in sys.path:
+        sys.path.insert(0, str(MACHINE))
     spec = importlib.util.spec_from_file_location("reconcile", MACHINE / "reconcile.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -53,17 +55,17 @@ class Book:
     def __init__(self, orders, keys=()):
         self.temp = tempfile.TemporaryDirectory(prefix="fleet-test-")
         root = Path(self.temp.name)
-        self.book = root / "book"
+        self.orders = root / "orders"
         self.home = root / "home"
-        (self.book / "open-worlds").mkdir(parents=True)
+        self.orders.mkdir(parents=True)
         (self.home / "env").mkdir(parents=True)
         for o in orders:
-            (self.book / "open-worlds" / f"{o['id']}.json").write_text(json.dumps(o), encoding="utf-8")
+            (self.orders / f"{o['id']}.json").write_text(json.dumps(o), encoding="utf-8")
         for wid in keys:
             (self.home / "env" / f"{wid}.env").write_text("JWT_SECRET=x\nADMIN_CODE=y\n", encoding="utf-8")
 
     def plan(self, alias="open-1", admin_code=None):
-        return R.plan(self.book, self.home, alias, allowed=set(), admin_code=admin_code)
+        return R.plan(self.orders, self.home, alias, allowed=set(), admin_code=admin_code)
 
 
 class ReconcileTests(unittest.TestCase):
@@ -101,11 +103,18 @@ class ReconcileTests(unittest.TestCase):
             self.assertEqual(R.read_allowed_domains(f), {"*.cliente.example", "solo.otro.example"})
         self.assertEqual(R.read_allowed_domains(Path("/nonexistent/domains")), set())
 
-    def test_the_reconciler_is_installed_not_run_from_the_clone(self):
+    def test_the_programs_are_installed_not_run_from_the_clone(self):
         text = (MACHINE / "bootstrap.sh").read_text()
-        self.assertIn("install -m 0755", text)
+        self.assertIn('install -m 0644 "$BOOK_DIR/open-worlds/machine/$program" "$LIB_DIR/$program"', text)
+        self.assertIn('install -m 0755 "$tmp" "/usr/local/sbin/$1"', text)
         self.assertIn("ExecStart=/usr/local/sbin/fleet-reconcile", text)
+        self.assertIn("ExecStart=/usr/local/sbin/fleetd", text)
         self.assertNotIn("ExecStart=/usr/bin/python3", text)
+        for line in text.splitlines():
+            if "ExecStart=" in line or "exec /usr/bin/python3" in line:
+                with self.subTest(line=line):
+                    self.assertNotIn("BOOK_DIR", line)
+                    self.assertNotIn("/srv/fleet/book", line)
 
     def test_a_running_world_without_keys_on_a_machine_without_admin_code_is_reported_and_not_started(self):
         p = Book([order()], keys=()).plan()
@@ -226,15 +235,15 @@ class ReconcileTests(unittest.TestCase):
 
     def test_malformed_orders_are_skipped_not_fatal(self):
         b = Book([order()], keys=["plaza"])
-        (b.book / "open-worlds" / "roto.json").write_text("{not json", encoding="utf-8")
-        (b.book / "open-worlds" / "ajeno.json").write_text(json.dumps(order(id="otro")), encoding="utf-8")
+        (b.orders / "roto.json").write_text("{not json", encoding="utf-8")
+        (b.orders / "ajeno.json").write_text(json.dumps(order(id="otro")), encoding="utf-8")
         self.assertEqual(b.plan()["running"], ["plaza"])
 
     def test_the_index_is_the_books_contents_never_an_order(self):
         b = Book([order()], keys=["plaza", "index"])
-        (b.book / "open-worlds" / "index.json").write_text('{"orders": ["plaza"]}', encoding="utf-8")
+        (b.orders / "index.json").write_text('{"orders": ["plaza"]}', encoding="utf-8")
         # Even an index shaped like a running order of this machine is not obeyed.
-        (b.book / "open-worlds" / "index.json").write_text(json.dumps(order(id="index", card="index")), encoding="utf-8")
+        (b.orders / "index.json").write_text(json.dumps(order(id="index", card="index")), encoding="utf-8")
         plan = b.plan()
         self.assertEqual(plan["running"], ["plaza"])
         self.assertNotIn("index", json.dumps(plan))
@@ -242,7 +251,7 @@ class ReconcileTests(unittest.TestCase):
     def test_dry_run_prints_the_plan_and_touches_nothing(self):
         b = Book([order()], keys=["plaza"])
         out = subprocess.run(
-            [sys.executable, str(MACHINE / "reconcile.py"), "--book", str(b.book), "--home", str(b.home),
+            [sys.executable, str(MACHINE / "reconcile.py"), "--orders", str(b.orders), "--home", str(b.home),
              "--alias", "open-1", "--dry-run"],
             capture_output=True, text=True, check=True,
         ).stdout
@@ -415,7 +424,7 @@ class ReconcileTests(unittest.TestCase):
         """What happened on open-1: Caddy started with no site, then a world came."""
         b = Book([], keys=["plaza"])
         self.caddy_calls(b, b.plan(admin_code=CODE))
-        (b.book / "open-worlds" / "plaza.json").write_text(json.dumps(order()), encoding="utf-8")
+        (b.orders / "plaza.json").write_text(json.dumps(order()), encoding="utf-8")
         calls = self.caddy_calls(b, b.plan(admin_code=CODE))
         self.assertIn("reload", calls[-1])
         self.assertIn("plaza.numen.games", (b.home / "run" / "Caddyfile.applied").read_text(encoding="utf-8"))
@@ -461,7 +470,7 @@ class ReconcileTests(unittest.TestCase):
         code = b.home / "admin-code"
         code.write_text(CODE + "\n", encoding="utf-8")
         out = subprocess.run(
-            [sys.executable, str(MACHINE / "reconcile.py"), "--book", str(b.book), "--home", str(b.home),
+            [sys.executable, str(MACHINE / "reconcile.py"), "--orders", str(b.orders), "--home", str(b.home),
              "--alias", "open-1", "--admin-code-file", str(code), "--dry-run"],
             capture_output=True, text=True, check=True,
         )
@@ -482,12 +491,74 @@ class ReconcileTests(unittest.TestCase):
         text = (MACHINE / "bootstrap.sh").read_text()
         self.assertIn("if [[ ! -s /etc/fleet/admin-code ]]", text)
         self.assertIn("umask 077", text)
-        self.assertIn("chmod 600 /etc/fleet/admin-code", text)
+        # Root writes it; the door's group may read it, to show it to a signed Oracle.
+        self.assertIn("chown root:fleetd /etc/fleet/admin-code", text)
+        self.assertIn("chmod 640 /etc/fleet/admin-code", text)
         self.assertLess(text.index("/etc/fleet/admin-code"), text.index("== first run"))
 
     def test_bootstrap_runs_the_reconciler_once_before_the_timer_and_survives_a_failed_run(self):
         text = (MACHINE / "bootstrap.sh").read_text()
         self.assertLess(text.index("if ! /usr/local/sbin/fleet-reconcile"), text.index("enable --now fleet-reconcile.timer"))
+
+    def test_bootstrap_pauses_the_old_reconciler_and_adopts_the_book_before_any_new_run(self):
+        """Else the new reconciler, with an empty book, would take the running worlds down."""
+        text = (MACHINE / "bootstrap.sh").read_text()
+        pause = text.index("systemctl stop fleet-reconcile.timer")
+        self.assertLess(pause, text.index('wrapper fleet-reconcile reconcile.py'))
+        self.assertLess(text.index("--adopt-book"), text.index("== first run"))
+        self.assertLess(text.index("--adopt-book"), text.index("enable --now fleet-reconcile.timer"))
+
+    def test_bootstrap_takes_the_oracles_wallets_and_refuses_anything_else(self):
+        text = (MACHINE / "bootstrap.sh").read_text()
+        self.assertIn('SIGNERS="${2:-}"', text)
+        self.assertIn("> /etc/fleet/signers", text)
+        bad = subprocess.run(["bash", str(MACHINE / "bootstrap.sh"), "open-1", "0x123"], capture_output=True, text=True)
+        self.assertEqual(bad.returncode, 2)
+        self.assertIn("usage", bad.stderr)
+        smuggled = "0x" + "a" * 40 + ";reboot"
+        bad = subprocess.run(["bash", str(MACHINE / "bootstrap.sh"), "open-1", smuggled], capture_output=True, text=True)
+        self.assertEqual(bad.returncode, 2)
+
+    def test_the_door_runs_as_its_own_user_with_no_network_and_one_writable_folder(self):
+        text = (MACHINE / "bootstrap.sh").read_text()
+        unit = text[text.index("fleetd.service <<EOF"):]
+        unit = unit[: unit.index("\nEOF")]
+        for line in ("User=fleetd", "NoNewPrivileges=yes", "ProtectSystem=strict", "RestrictAddressFamilies=AF_UNIX",
+                     "ReadWritePaths=$HOME_DIR/inbox $HOME_DIR/sock"):
+            with self.subTest(line=line):
+                self.assertIn(line, unit)
+        self.assertIn("python3-ecdsa", text)
+        self.assertIn("DirectoryNotEmpty=$HOME_DIR/inbox", text)
+
+    # --- the door's address --------------------------------------------------
+
+    def test_the_door_is_a_site_of_its_own_and_reaches_only_the_socket(self):
+        b = Book([order()], keys=["plaza"])
+        p = R.plan(b.orders, b.home, "open-1", allowed=set(), admin_code=CODE, control_host="open-1.numinia.com")
+        self.assertIn("open-1.numinia.com {\n\trequest_body {\n\t\tmax_size 64KB\n\t}\n"
+                      "\treverse_proxy unix//run/fleetd/fleetd.sock\n}", p["caddyfile"])
+        caddy = json.loads(p["compose"])["services"]["caddy"]
+        self.assertIn(f"{b.home}/sock:/run/fleetd", caddy["volumes"])
+        self.assertNotIn("open-1.numinia.com", p["compose"])
+
+    def test_a_world_may_not_take_the_doors_address(self):
+        b = Book([order(domain="open-1.numinia.com")], keys=["plaza"])
+        p = R.plan(b.orders, b.home, "open-1", allowed=set(), admin_code=CODE, control_host="open-1.numinia.com")
+        self.assertEqual(p["running"], [])
+        self.assertEqual(p["caddyfile"].count("open-1.numinia.com {"), 1)
+
+    def test_the_control_host_and_the_signers_are_read_plain(self):
+        with tempfile.TemporaryDirectory() as temp:
+            host = Path(temp) / "control-host"
+            self.assertIsNone(R.read_control_host(host))
+            host.write_text("Open-1.Numinia.com\n", encoding="utf-8")
+            self.assertEqual(R.read_control_host(host), "open-1.numinia.com")
+            host.write_text("x.numinia.com\n    privileged: true\n", encoding="utf-8")
+            self.assertIsNone(R.read_control_host(host))
+            signers = Path(temp) / "signers"
+            self.assertEqual(R.read_signers(signers), frozenset())
+            signers.write_text("# Oracles\n0x" + "A" * 40 + "  # Pablo\nnot a wallet\n0x123\n", encoding="utf-8")
+            self.assertEqual(R.read_signers(signers), frozenset({"0x" + "a" * 40}))
 
 
 if __name__ == "__main__":

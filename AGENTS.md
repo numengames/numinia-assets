@@ -11,17 +11,22 @@ not another constitution or canonical catalogue.
 - Keep canonical resource records in the archive. Preserve IDs, original
   bytes, attribution and provenance when the ingestion cut is approved.
 - Do not copy the legacy data tree, personal information or operational state.
-- `open-worlds/` holds the public fleet's orders (numinia-archive ADR-069):
-  no IP address, key or client name ever goes there; the servers read it.
-  `open-worlds/index.json` lists the orders' ids and must match the folder
-  (a test enforces it): a PR that adds or removes an order touches it too.
-  `open-worlds/machine/` is the recipe those servers are made from (AGPL);
-  the machine pulls this public book and holds no GitHub credential. It
-  makes each world's keys itself; the only secret an Oracle sees is the
-  machine's admin code, shown by the bootstrap and never written here.
+- `open-worlds/` holds the public fleet's machine recipe and the trial's
+  first orders (numinia-archive ADR-069). Each machine now keeps its own
+  book (`/srv/fleet/orders/`), changed by requests an Oracle's wallet signs
+  and the machine verifies (EIP-712); it adopts the orders here that name
+  it once, then never reads this folder again. No IP address, key or
+  client name ever goes here. `open-worlds/index.json` lists the orders
+  still here and must match the folder (a test enforces it).
+  `open-worlds/machine/` is the recipe (AGPL): the bootstrap installs the
+  programs, so a merge here changes no machine until its bootstrap is run
+  again. The machine holds no GitHub credential and makes each world's
+  keys itself; the only secret an Oracle sees is the machine's admin code,
+  shown to a signed Oracle and never written here.
 - Local verification: `python -m reuse lint` and
   `python -m unittest discover -s tests -v`, after installing
-  `requirements-check.txt` into a virtual environment (Python 3.11+).
+  `requirements-check.txt` into a virtual environment (Python 3.11+;
+  `ecdsa` is there for the machine's signature tests).
 - Do not create a blanket licence for unknown files or describe REUSE success
   as proof of rights, media metadata accuracy or verified CC0 eligibility.
 - No merge, deletion, visibility change or legacy retirement without the

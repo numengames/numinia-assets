@@ -3,23 +3,38 @@ SPDX-FileCopyrightText: 2026 Numen Games S.L.
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
-# open-worlds/ — the public worlds fleet's orders
+# open-worlds/ — the public worlds fleet
 
-This folder holds one **order** for each public 3D world the house runs.
-The servers of the public fleet read this folder and nothing else. It sits
-in the resource depot only while the fleet is being trialled (numinia-archive
-`ADR-069`). It moves to a repository of its own when the depot gets heavy,
-when the trial passes eight worlds, or when the trial ends.
+This folder holds the recipe the public fleet's machines are made from
+([`machine/`](machine/README.md)) and, for one more step, the trial's first
+orders. It sits in the resource depot only while the fleet is being
+trialled (numinia-archive `ADR-069`). It moves to a repository of its own
+when the depot gets heavy, when the trial passes eight worlds, or when the
+trial ends.
 
 A world is kept in three places, and each part lives in only one of them:
 
 | Part | Where | Says |
 |---|---|---|
 | The card | numinia-archive, `objects/<card>.md` (`entity: world`) | what the world is, who it was made for, where its copies are |
-| The order | here, `open-worlds/<id>.json` | where and how it runs |
-| The keys | on its server only, made there by the machine | never in git, encrypted or not |
+| The order | on its machine, `/srv/fleet/orders/<id>.json` | where and how it runs |
+| The keys | on its machine only, made there by the machine | never in git, encrypted or not |
 
 An order never copies the card. It names the card and nothing more.
+
+## Where the orders live now
+
+Each machine keeps its own book. Oracles change it from the worlds room on
+numinia.com — create, stop, start, download, delete — with a request their
+wallet signs and the machine checks itself (see [The signed
+requests](machine/README.md#the-signed-requests)). No pull request, no
+merge, nobody at the machine. What each machine did is public at
+`https://<alias>.numinia.com/fleet/v1/log`.
+
+The orders still in this folder (`prueba.json`, `pablofm.json`) are the
+ones the trial wrote here by pull request. A machine adopts the orders that
+name it once, the first time the new bootstrap runs on it, and never reads
+this folder again; they leave this folder once open-1 has adopted them.
 
 ## An order
 
@@ -39,58 +54,34 @@ An order never copies the card. It names the card and nothing more.
 |---|---|
 | `id` | the file name without `.json`; lowercase letters, digits and hyphens |
 | `card` | the world's card in numinia-archive's `objects/`, by file name |
-| `state` | `running` or `stopped`. A world that is closed for good loses its order; its card and copies remain. |
-| `server` | the server's alias, never its address |
-| `domain` | the address players open; it must resolve to the server before the world starts |
+| `state` | `running` or `stopped`. A deleted world loses its order; its card and any copy downloaded remain. |
+| `server` | the machine's alias, never its address |
+| `domain` | the address players open; it must resolve to the machine before the world starts |
 | `image` | the engine image, pinned to one build: a `sha-` tag or a digest, never `latest` |
 | `limits` | memory and CPU for the container, and the largest upload in MB |
 
-What is never written here: an IP address, a key, a password, a token, or
-a client's name. The tests in `tests/test_open_worlds.py` refuse an order
-that breaks these rules. Two ids are reserved: `index` (the folder's table
-of contents, below) and `caddy` (the machine's own front service).
+On the machine an order also keeps who signed its creation (`createdBy`,
+a wallet) or when it was adopted (`adoptedAt`); the door never shows the
+wallet. What is never written in an order: an IP address, a key, a
+password, a token, or a client's name. The tests in
+`tests/test_open_worlds.py` refuse an order here that breaks these rules,
+and the machine refuses one there. Two ids are reserved: `index` and
+`caddy` (the machine's own front service).
 
 ## The index
 
-`index.json` is the book's table of contents: the ids of every order in the
-folder, sorted, and nothing else.
-
-```json
-{
-  "orders": ["example-world", "other-world"]
-}
-```
-
-It exists for the fleet console on numinia.com. The console holds no GitHub
-key, and GitHub's API allows an address only 60 keyless reads an hour; the
-one read the console cannot do without is "which files are in the folder".
-With the index, the console reads that list and each order as plain files
-(`raw.githubusercontent.com`, no such quota), and the API is left for what
-can be missing for an hour: open proposals and history.
-
-The index must always match the folder. `tests/test_open_worlds.py` fails
-when it does not, so a pull request that adds or closes an order must change
-`index.json` in the same commit (the console does it by itself). To
-regenerate it by hand, from the repository root:
+`index.json` lists the ids of the orders still in this folder, sorted. The
+worlds room read it while the book lived here; it leaves with them. Until
+then it must match the folder (`tests/test_open_worlds.py` fails when it
+does not). To regenerate it by hand, from the repository root:
 
 ```sh
 python3 -c 'import json,pathlib; f=pathlib.Path("open-worlds"); ids=sorted(p.stem for p in f.glob("*.json") if p.name!="index.json"); (f/"index.json").write_text(json.dumps({"orders": ids}, indent=2)+"\n")'
 ```
 
-The machines never read the index: a server lists the folder itself and
-ignores `index.json`. `index` and `caddy` are reserved and cannot be a
-world's id.
-
-## Changing an order
-
-By pull request, reviewed by the house's usual reviewers. The fleet console
-on numinia.com only opens pull requests. No server and no automation writes
-here. Every change to an order's existence (a new order, a closed one) also
-updates `index.json`; a change of state keeps the index as it is.
-
 ## The machines
 
-The servers that read this folder are made from the recipe in
-[`machine/`](machine/README.md): one script brings a fresh server up with its
-alias, another runs every minute and keeps its containers equal to the orders
-that name that alias.
+The machines are made from the recipe in [`machine/`](machine/README.md):
+one line brings a fresh server up with its alias and its Oracles' wallets;
+then a door takes their signed requests and a reconciler keeps the
+containers equal to the book.
