@@ -9,7 +9,9 @@ before they expire.
 """
 
 from pathlib import Path
+import collections
 import contextlib
+import hashlib
 import http.client
 import importlib.util
 import io
@@ -19,18 +21,21 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 MACHINE = ROOT / "open-worlds" / "machine"
+HERE = Path(__file__).resolve().parent
 VECTORS = json.loads((Path(__file__).parent / "fleet_vectors.json").read_text(encoding="utf-8"))
 
 
-def load(name):
-    if str(MACHINE) not in sys.path:
-        sys.path.insert(0, str(MACHINE))
-    spec = importlib.util.spec_from_file_location(name, MACHINE / f"{name}.py")
+def load(name, folder=MACHINE):
+    if str(folder) not in sys.path:
+        sys.path.insert(0, str(folder))
+    spec = importlib.util.spec_from_file_location(name, folder / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -38,6 +43,7 @@ def load(name):
 
 R = load("reconcile")
 D = load("fleetd")
+Z = load("fleet_zips", HERE)
 SIGNED = {v["type"]: v for v in VECTORS["vectors"]}
 ORACLE = SIGNED["CreateWorld"]["signer"]
 EXPIRES = SIGNED["CreateWorld"]["message"]["expires"]
@@ -45,6 +51,7 @@ NOW = EXPIRES - 60
 CODE = "a1b2c3d4e5f6"  # the machine's old shared code
 PLAZA_CODE = "f1a2f1a2f1a2f1a2"  # plaza's own
 OWN_CODE = r"\A[0-9a-f]{16}\Z"  # a world's own code, as the door makes them
+Usage = collections.namedtuple("Usage", "total used free")
 
 
 def body(kind, message=None, signature=None, **extra):
@@ -54,29 +61,36 @@ def body(kind, message=None, signature=None, **extra):
 
 
 class Rig:
-    """A door over a temporary fleet home, its clock just before the vectors expire."""
+    """A door over a temporary fleet home, its clock just before the vectors expire.
 
-    def __init__(self, test, alias="open-1", admin_code=True, now=NOW):
+    Besides the vectors' Oracle it knows a throwaway one (`oracle`), which
+    signs imports of zips the tests build; `free` is the disk the door sees.
+    """
+
+    def __init__(self, test, alias="open-1", admin_code=True, now=NOW, free=10**15):
         temp = tempfile.TemporaryDirectory(prefix="fleet-door-")
         test.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
         self.home = self.root / "home"
-        for folder in ("inbox", "orders", "requests", "copies", "run", "sock"):
+        for folder in ("inbox", "orders", "requests", "copies", "run", "sock", "uploads"):
             (self.home / folder).mkdir(parents=True)
         etc = self.etc = self.root / "etc"
         etc.mkdir()
         (etc / "codes").mkdir()
-        (etc / "signers").write_text(f"{ORACLE}\n", encoding="utf-8")
+        self.oracle = Z.Oracle(D.W)
+        (etc / "signers").write_text(f"{ORACLE}\n{self.oracle.address}\n", encoding="utf-8")
         (etc / "control-host").write_text("open-1.numinia.com\n", encoding="utf-8")
         if admin_code:
             (etc / "admin-code").write_text(CODE + "\n", encoding="utf-8")
         self.now = now
+        self.free = free
         self.err = ""
         self.door = D.Door(
             home=self.home, alias=alias, signers_file=etc / "signers", admin_code_file=etc / "admin-code",
             codes_dir=etc / "codes", recipe_file=etc / "recipe",
             control_host_file=etc / "control-host", domains_file=etc / "domains",
             origins_file=etc / "origins", state=self.root / "state", clock=lambda: self.now,
+            disk_usage=lambda path: Usage(10**16, 0, self.free),
         )
 
     def accept(self, payload, client="203.0.113.7"):
@@ -85,6 +99,26 @@ class Rig:
             answer = self.door.accept(payload, client)
         self.err += err.getvalue()
         return answer
+
+    def bring(self, data, world="plaza-copia", **over):
+        """An ImportWorld for this zip, signed by the throwaway Oracle and sent to the door: (status, reply, message)."""
+        message = Z.import_message(data, world=world, **{"expires": self.now + 600, **over})
+        signed = json.dumps({"type": "ImportWorld", "message": message,
+                             "signature": self.oracle.sign("ImportWorld", message)}).encode()
+        status, reply = self.accept(signed)
+        return status, reply, message
+
+    def put(self, nonce, data, length="auto", client="203.0.113.7"):
+        """The zip's bytes for a slot, as a PUT streams them: (status, reply)."""
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            answer = self.door.upload(nonce, str(len(data)) if length == "auto" else length, io.BytesIO(data), client)
+        self.err += err.getvalue()
+        return answer
+
+    def slot(self, nonce):
+        path = self.home / "uploads" / f"{nonce}.json"
+        return json.loads(path.read_text()) if path.exists() else None
 
     def dropped(self):
         """What the door left in the inbox, oldest first."""
@@ -275,8 +309,9 @@ class Facts(unittest.TestCase):
     def test_the_machine_says_its_name_and_how_many_oracles_it_knows_never_who(self):
         rig = Rig(self)
         facts = rig.door.machine()
-        self.assertEqual((facts["machine"], facts["oracles"]), ("open-1", 1))
+        self.assertEqual((facts["machine"], facts["oracles"]), ("open-1", 2))  # the vectors' and the rig's own
         self.assertNotIn(ORACLE, json.dumps(facts))
+        self.assertNotIn(rig.oracle.address, json.dumps(facts))
 
     def test_the_machine_says_which_commit_of_its_recipe_it_runs(self):
         rig = Rig(self)
@@ -355,6 +390,254 @@ class Facts(unittest.TestCase):
         self.assertIsNone(rig.door.request("not-a-number"))
 
 
+class Piecemeal:
+    """A request body that hands the zip over piece by piece, the door's clock moving `step` seconds per piece.
+
+    Before each piece it notes how far the slot says the upload got, and it
+    may run something in between (another PUT into the same slot).
+    """
+
+    def __init__(self, rig, nonce, data, step=0.4, meanwhile=None):
+        self.rig, self.nonce, self.data, self.step, self.meanwhile = rig, nonce, data, step, meanwhile
+        self.at, self.seen, self.pieces = 0, [], 0
+
+    def read(self, n):
+        self.seen.append((self.rig.slot(self.nonce) or {}).get("bytes"))
+        if self.meanwhile is not None:
+            self.meanwhile()
+            self.meanwhile = None
+        self.rig.now += self.step
+        piece = self.data[self.at:self.at + n]
+        self.at += len(piece)
+        self.pieces += 1
+        return piece
+
+
+class Unread:
+    """A body that must never be read: the door answers before taking any of it."""
+
+    def read(self, n):
+        raise AssertionError("the door read a body it should have refused unread")
+
+
+class Imports(unittest.TestCase):
+    """A world brought back from its zip, at the door: a slot for one signed zip, then the zip itself."""
+
+    def open_slot(self, rig, data=None, **over):
+        data = Z.make_zip([("world/db.sqlite", Z.db_bytes())]) if data is None else data
+        status, reply, message = rig.bring(data, **over)
+        self.assertEqual(status, 202, reply)
+        return data, reply, message
+
+    def test_a_signed_import_opens_a_slot_for_its_zip_and_nothing_reaches_the_inbox(self):
+        rig = Rig(self)
+        status, reply = rig.accept(body("ImportWorld"))  # the shared vector, signed by its Oracle
+        self.assertEqual(status, 202)
+        nonce = SIGNED["ImportWorld"]["message"]["nonce"]
+        self.assertEqual(set(reply), {"request", "upload", "adminCode"})
+        self.assertEqual((reply["request"], reply["upload"]), (nonce, f"uploads/{nonce}"))
+        self.assertRegex(reply["adminCode"], OWN_CODE)
+        self.assertEqual(list((rig.home / "inbox").iterdir()), [])
+        path = rig.home / "uploads" / f"{nonce}.json"
+        self.assertEqual(path.stat().st_mode & 0o777, 0o640)
+        slot = rig.slot(nonce)
+        self.assertEqual(slot, {"type": "ImportWorld", "message": SIGNED["ImportWorld"]["message"],
+                                "signature": SIGNED["ImportWorld"]["signature"], "signer": ORACLE,
+                                "receivedAt": R.utc(NOW), "adminCode": reply["adminCode"],
+                                "expiresAt": R.utc(NOW + R.SLOT_SECONDS), "bytes": 0})
+        self.assertEqual(rig.door.request(nonce), {"request": nonce, "state": "uploading", "bytes": 0,
+                                                   "of": 50331648})
+        self.assertEqual(rig.accept(body("ImportWorld")), (409, {"error": "replayed"}))
+        self.assertNotIn(reply["adminCode"], rig.err)
+        self.assertIn("accepted ImportWorld plaza-copia", rig.err)
+
+    def test_a_zip_over_the_cap_or_the_disk_is_refused_by_name(self):
+        rig = Rig(self)
+        status, reply, _ = rig.bring(b"x", zipBytes=R.ZIP_MAX + 1)
+        self.assertEqual((status, reply), (413, {"error": "zip-too-big"}))
+        # The disk must keep its reserve after this zip, what it unpacks to, and every slot already open.
+        first = R.reservation(10_000)
+        rig = Rig(self, free=first + R.RESERVE)
+        _, reply, _ = self.open_slot(rig, b"x" * 10_000)
+        status, reply, _ = rig.bring(b"y" * 10_000, world="otra")
+        self.assertEqual((status, reply), (507, {"error": "no-room"}))
+        rig.free = 2 * first + R.RESERVE
+        self.assertEqual(rig.bring(b"y" * 10_000, world="otra")[0], 202)
+        self.assertEqual(list((rig.home / "inbox").iterdir()), [])
+        rig = Rig(self)
+        rig.door.disk_usage = mock.Mock(side_effect=OSError("no such disk"))
+        self.assertEqual(rig.bring(b"x")[:2], (507, {"error": "no-room"}))
+
+    def test_a_world_on_its_way_holds_its_name_and_its_address(self):
+        rig = Rig(self)
+        data, _, _ = self.open_slot(rig, world="plaza")
+        self.assertEqual(rig.bring(data, world="plaza")[:2], (409, {"error": "exists"}))
+        self.assertEqual(rig.accept(body("CreateWorld")), (409, {"error": "exists"}))  # the vector's plaza
+        self.assertEqual(rig.bring(data, world="otra", domain="plaza.numinia.com")[:2],
+                         (409, {"error": "address-taken"}))
+        # Its code cannot be shown or changed until it has landed.
+        self.assertEqual(rig.accept(body("ShowWorldCode")), (409, {"error": "busy"}))
+        self.assertEqual(rig.accept(body("RotateWorldCode")), (409, {"error": "busy"}))
+        # Being unpacked by the reconciler.
+        rig = Rig(self)
+        message = Z.import_message(b"x", world="plaza", expires=EXPIRES)
+        (rig.home / "run" / R.IMPORTING).write_text(json.dumps({"plaza": {"nonce": message["nonce"],
+                                                                          "message": message}}))
+        self.assertEqual(rig.accept(body("CreateWorld")), (409, {"error": "exists"}))
+        self.assertEqual(rig.bring(b"x", world="otra", domain="plaza.numinia.com")[:2],
+                         (409, {"error": "address-taken"}))
+
+    def test_an_import_keeps_the_rules_of_a_birth(self):
+        rig = Rig(self)
+        rig.put_world(wid="plaza-copia", domain="plaza-copia.numinia.com")
+        self.assertEqual(rig.accept(body("ImportWorld")), (409, {"error": "exists"}))
+        rig = Rig(self)
+        rig.put_world(wid="otra", domain="plaza-copia.numinia.com")
+        self.assertEqual(rig.accept(body("ImportWorld")), (409, {"error": "address-taken"}))
+        rig = Rig(self)
+        (rig.home / "run" / "purge.json").write_text(json.dumps({"plaza-copia": {"nonce": "a" * 32}}))
+        self.assertEqual(rig.accept(body("ImportWorld")), (409, {"error": "still-deleting"}))
+        rig = Rig(self)
+        self.assertEqual(rig.bring(b"x", domain="plaza-copia.evil.example")[:2], (409, {"error": "refused"}))
+        rig = Rig(self)
+        rig.wait("CreateWorld", wid="plaza-copia")  # a create of the same name waiting in the inbox
+        self.assertEqual(rig.accept(body("ImportWorld")), (409, {"error": "exists"}))
+        for field, bad in (("zipSha256", "A" * 64), ("zipBytes", 0)):
+            with self.subTest(field=field):
+                rig = Rig(self)
+                status, reply, _ = rig.bring(b"x", **{field: bad})
+                self.assertEqual((status, reply["error"]), (400, "invalid"))
+
+    def test_the_signed_zip_moves_the_slot_into_the_inbox(self):
+        rig = Rig(self)
+        data, reply, message = self.open_slot(rig)
+        nonce = message["nonce"]
+        self.assertEqual(rig.put(nonce, data), (202, {"request": nonce}))
+        self.assertIsNone(rig.slot(nonce))
+        self.assertEqual(sorted(p.name for p in (rig.home / "uploads").iterdir()), [f"{nonce}.zip"])
+        zipped = rig.home / "uploads" / f"{nonce}.zip"
+        self.assertEqual(zipped.read_bytes(), data)
+        self.assertEqual(zipped.stat().st_mode & 0o777, 0o640)
+        [entry] = rig.dropped()
+        self.assertEqual(entry, {"type": "ImportWorld", "message": message, "signature": entry["signature"],
+                                 "signer": rig.oracle.address, "receivedAt": R.utc(NOW),
+                                 "adminCode": reply["adminCode"], "expiresAt": R.utc(NOW + R.SLOT_SECONDS),
+                                 "bytes": len(data), "zip": f"{nonce}.zip"})
+        self.assertEqual(rig.door.request(nonce), {"request": nonce, "state": "pending"})
+        self.assertEqual(rig.put(nonce, data), (404, {"error": "missing"}))  # the slot is gone: once only
+        for leaked in (reply["adminCode"], message["zipSha256"]):
+            self.assertNotIn(leaked, rig.err)
+
+    def test_an_upload_is_refused_by_rule(self):
+        rig = Rig(self)
+        data, _, message = self.open_slot(rig)
+        nonce = message["nonce"]
+        self.assertEqual(rig.put("f" * 32, data), (404, {"error": "missing"}))
+        self.assertEqual(rig.put("../../etc/x", data), (404, {"error": "missing"}))
+        for length in (None, "", "12x", "-1", "1" * 21):
+            with self.subTest(length=length):
+                self.assertEqual(rig.door.upload(nonce, length, Unread()), (411, {"error": "length"}))
+        for length in (str(len(data) - 1), str(len(data) + 1), "0"):
+            with self.subTest(length=length):
+                self.assertEqual(rig.door.upload(nonce, length, Unread()), (400, {"error": "wrong-size"}))
+        # Cut short: the part goes, the slot stays and says nothing arrived.
+        self.assertEqual(rig.put(nonce, data[:-10], length=str(len(data))), (400, {"error": "cut"}))
+        self.assertEqual(rig.slot(nonce)["bytes"], 0)
+        self.assertEqual(sorted(p.name for p in (rig.home / "uploads").iterdir()), [f"{nonce}.json"])
+        # The right size but not the bytes signed: the slot stays for the right zip.
+        other = bytes(reversed(data))
+        self.assertEqual(rig.put(nonce, other), (400, {"error": "fingerprint"}))
+        self.assertEqual(sorted(p.name for p in (rig.home / "uploads").iterdir()), [f"{nonce}.json"])
+        self.assertEqual(list((rig.home / "inbox").iterdir()), [])
+        self.assertEqual(rig.put(nonce, data), (202, {"request": nonce}))  # no new signature needed
+        self.assertEqual(len(rig.dropped()), 1)
+
+    def test_one_upload_at_a_time_into_a_slot(self):
+        rig = Rig(self)
+        data, _, message = self.open_slot(rig, Z.make_zip([("world/db.sqlite", os.urandom(5000))],
+                                                          compression=0))
+        nonce, answers = message["nonce"], []
+        piecemeal = Piecemeal(rig, nonce, data, meanwhile=lambda: answers.append(rig.put(nonce, data)))
+        with mock.patch.object(D.R, "CHUNK", 1000):
+            self.assertEqual(rig.door.upload(nonce, str(len(data)), piecemeal), (202, {"request": nonce}))
+        self.assertEqual(answers, [(409, {"error": "busy"})])
+        self.assertEqual(rig.door.streaming, set())
+
+    def test_the_slot_says_how_far_the_upload_got_at_most_once_a_second(self):
+        rig = Rig(self)
+        data, _, message = self.open_slot(rig, Z.make_zip([("world/db.sqlite", os.urandom(4800))], compression=0))
+        nonce = message["nonce"]
+        piecemeal = Piecemeal(rig, nonce, data, step=0.4)
+        limiter = rig.door.limiter.calls["203.0.113.7"]
+        before = len(limiter)
+        with mock.patch.object(D.R, "CHUNK", 1000):
+            self.assertEqual(rig.door.upload(nonce, str(len(data)), piecemeal, "203.0.113.7")[0], 202)
+        self.assertEqual(piecemeal.pieces, 5)
+        self.assertEqual(piecemeal.seen, [0, 0, 0, 3000, 3000])  # written once, after 1.2 s, not per piece
+        self.assertEqual(len(limiter), before + 1)  # the upload counts once, never per piece
+
+    def test_a_slot_lives_an_hour(self):
+        rig = Rig(self)
+        data, _, message = self.open_slot(rig)
+        nonce = message["nonce"]
+        (rig.home / "uploads" / f".{nonce}.zip.part").write_bytes(b"half")
+        rig.now = NOW + R.SLOT_SECONDS + 1
+        self.assertIsNone(rig.door.request(nonce))
+        self.assertEqual(rig.door.worlds()["worlds"], [])
+        self.assertEqual(rig.put(nonce, data), (410, {"error": "slot-expired"}))
+        self.assertEqual(list((rig.home / "uploads").iterdir()), [])
+        self.assertEqual(rig.put(nonce, data), (404, {"error": "missing"}))
+        # A slot that runs out while its zip is arriving goes, with its part.
+        rig = Rig(self)
+        data, _, message = self.open_slot(rig, Z.make_zip([("world/db.sqlite", os.urandom(4800))], compression=0))
+        nonce = message["nonce"]
+        rig.now = NOW + R.SLOT_SECONDS - 1
+        with mock.patch.object(D.R, "CHUNK", 1000):
+            answer = rig.door.upload(nonce, str(len(data)), Piecemeal(rig, nonce, data, step=1.0))
+        self.assertEqual(answer, (410, {"error": "slot-expired"}))
+        self.assertEqual(list((rig.home / "uploads").iterdir()), [])
+        self.assertEqual(list((rig.home / "inbox").iterdir()), [])
+
+    def test_worlds_on_their_way_show_how_far_they_got_and_no_wallet(self):
+        rig = Rig(self)
+        data, reply, message = self.open_slot(rig)
+        nonce = message["nonce"]
+        slot = rig.slot(nonce)
+        (rig.home / "uploads" / f"{nonce}.json").write_text(json.dumps({**slot, "bytes": 500}))
+        listed = rig.door.worlds()["worlds"]
+        self.assertEqual(listed, [{"id": "plaza-copia", "state": "stopped", "domain": "plaza-copia.numinia.com",
+                                   "image": Z.IMAGE, "limits": {"memory": "2g", "cpus": "1.5", "maxUploadMb": 50},
+                                   "phase": "uploading", "bytes": 500, "of": len(data)}])
+        self.assertEqual(rig.door.request(nonce)["bytes"], 500)
+        for claimed, shown in ((10**12, len(data)), (-5, 0), ("500", 0), (True, 0)):  # never past 0 … the zip
+            with self.subTest(claimed=claimed):
+                (rig.home / "uploads" / f"{nonce}.json").write_text(json.dumps({**slot, "bytes": claimed}))
+                self.assertEqual(rig.door.worlds()["worlds"][0]["bytes"], shown)
+        rig.put(nonce, data)
+        [world] = rig.door.worlds()["worlds"]
+        self.assertEqual((world["phase"], world["state"]), ("importing", "stopped"))
+        self.assertNotIn("bytes", world)
+        # Taken by the reconciler, and being unpacked: still importing.
+        for path in (rig.home / "inbox").iterdir():
+            path.unlink()
+        (rig.home / "run" / R.IMPORTING).write_text(json.dumps({"plaza-copia": {"nonce": nonce, "message": message}}))
+        [world] = rig.door.worlds()["worlds"]
+        self.assertEqual(world["phase"], "importing")
+        for leaked in (rig.oracle.address, reply["adminCode"], message["zipSha256"]):
+            self.assertNotIn(leaked, json.dumps(rig.door.worlds()))
+        # A slot that is not a slot (another type, another nonce, a broken file) shows nothing.
+        rig = Rig(self)
+        uploads = rig.home / "uploads"
+        (uploads / f"{'a' * 32}.json").write_text(json.dumps({**slot, "type": "CreateWorld"}))
+        (uploads / f"{'b' * 32}.json").write_text(json.dumps(slot))
+        (uploads / f"{'c' * 32}.json").write_text("{broken")
+        self.assertEqual(rig.door.worlds()["worlds"], [])
+        self.assertIsNone(rig.door.request("b" * 32))
+
+    def test_the_machine_says_how_big_a_zip_it_takes(self):
+        self.assertEqual(Rig(self).door.machine()["imports"], {"zipMaxBytes": 2147483648})
+
+
 class EndToEnd(unittest.TestCase):
     """The door and the reconciler agree on what a request carries: the code an Oracle is shown is the world's."""
 
@@ -391,6 +674,29 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(R.read_admin_code(rig.etc / "codes" / "plaza"), new)  # what the door shows from now on
         self.assertEqual(R.read_restarts(rig.home), ["plaza"])  # and the engine reads it once restarted
         self.assertNotIn(new, (rig.home / "log.jsonl").read_text())
+
+    def test_the_code_an_import_shows_is_the_code_the_world_comes_back_with_stopped(self):
+        rig = Rig(self)
+        data = Z.make_zip([("world/db.sqlite", Z.db_bytes()), ("world/assets/statue.glb", b"glTF" * 300)])
+        status, reply, message = rig.bring(data)
+        self.assertEqual(status, 202)
+        self.assertEqual(rig.put(message["nonce"], data)[0], 202)
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            R.take_requests(rig.home, rig.home / "orders", "open-1", frozenset({ORACLE, rig.oracle.address}),
+                            frozenset(), "open-1.numinia.com", NOW, codes_dir=rig.etc / "codes")
+        result = json.loads((rig.home / "requests" / f"{message['nonce']}.json").read_text())
+        self.assertEqual(result["state"], "done", result)
+        self.assertEqual(R.read_order(rig.home / "orders" / "plaza-copia.json")["state"], "stopped")
+        self.assertEqual(R.read_admin_code(rig.etc / "codes" / "plaza-copia"), reply["adminCode"])
+        self.assertRegex((rig.home / "env" / "plaza-copia.env").read_text(),
+                         rf"\AJWT_SECRET=[0-9a-f]{{64}}\nADMIN_CODE={reply['adminCode']}\n\Z")
+        self.assertEqual((rig.home / "data" / "plaza-copia" / "assets" / "statue.glb").read_bytes(), b"glTF" * 300)
+        self.assertEqual(list((rig.home / "uploads").iterdir()), [])
+        # What the door shows now: the world in the book, stopped, and the request done.
+        [world] = rig.door.worlds()["worlds"]
+        self.assertEqual((world["id"], world["phase"]), ("plaza-copia", "stopped"))
+        self.assertEqual(rig.door.request(message["nonce"])["state"], "done")
+        self.assertNotIn(reply["adminCode"], (rig.home / "log.jsonl").read_text() + err.getvalue())
 
 
 class UnixHTTPConnection(http.client.HTTPConnection):
@@ -489,6 +795,64 @@ class OverHTTP(unittest.TestCase):
 
     def test_the_socket_lets_caddy_in(self):
         self.assertEqual(os.stat("fleetd.sock").st_mode & 0o777, 0o666)
+
+    def test_the_console_may_send_a_zip_with_a_put(self):
+        path = f"/fleet/v1/uploads/{'a' * 32}"
+        response, _ = self.call("OPTIONS", path, headers={"Origin": "https://numinia.com"})
+        self.assertEqual(response.status, 204)
+        self.assertEqual(response.getheader("Access-Control-Allow-Origin"), "https://numinia.com")
+        self.assertEqual(response.getheader("Access-Control-Allow-Methods"), "GET, POST, PUT, OPTIONS")
+        response, _ = self.call("OPTIONS", path, headers={"Origin": "https://evil.example"})
+        self.assertIsNone(response.getheader("Access-Control-Allow-Origin"))
+        response, data = self.call("PUT", path, b"PK", {"Origin": "https://evil.example"})
+        self.assertEqual((response.status, json.loads(data)), (403, {"error": "origin"}))
+        for wrong in ("/fleet/v1/uploads", f"/fleet/v1/uploads/{'a' * 32}/x", "/fleet/v1/actions"):
+            with self.subTest(path=wrong):
+                self.assertEqual(self.call("PUT", wrong, b"PK")[0].status, 404)
+
+    def test_a_zip_streams_into_its_slot_over_the_socket(self):
+        data = Z.make_zip([("world/db.sqlite", os.urandom(3 * 1024**2))], compression=0)  # a few pieces
+        status, reply, message = self.rig.bring(data)
+        self.assertEqual(status, 202)
+        nonce = message["nonce"]
+        response, answer = self.call("GET", f"/fleet/v1/requests/{nonce}")
+        self.assertEqual(json.loads(answer), {"request": nonce, "state": "uploading", "bytes": 0, "of": len(data)})
+        # No length: refused before a byte is read.
+        connection = UnixHTTPConnection("fleetd.sock")
+        connection.putrequest("PUT", f"/fleet/v1/{reply['upload']}")
+        connection.endheaders()
+        self.assertEqual(connection.getresponse().status, 411)
+        connection.close()
+        response, answer = self.call("PUT", f"/fleet/v1/{reply['upload']}", data,
+                                     {"Origin": "https://numinia.com", "Content-Type": "application/zip"})
+        self.assertEqual((response.status, json.loads(answer)), (202, {"request": nonce}))
+        self.assertEqual(response.getheader("Access-Control-Allow-Origin"), "https://numinia.com")
+        self.assertEqual(hashlib.sha256((self.rig.home / "uploads" / f"{nonce}.zip").read_bytes()).hexdigest(),
+                         message["zipSha256"])
+        response, answer = self.call("GET", f"/fleet/v1/requests/{nonce}")
+        self.assertEqual(json.loads(answer)["state"], "pending")
+
+    def test_an_upload_cut_on_the_way_leaves_the_slot_waiting(self):
+        data = Z.make_zip([("world/db.sqlite", os.urandom(2 * 1024**2))], compression=0)
+        status, reply, message = self.rig.bring(data)
+        nonce = message["nonce"]
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        sock.connect("fleetd.sock")
+        sock.sendall(f"PUT /fleet/v1/uploads/{nonce} HTTP/1.1\r\nHost: x\r\nContent-Length: {len(data)}\r\n\r\n"
+                     .encode() + data[:1024**2])
+        sock.shutdown(socket.SHUT_WR)  # the browser went away halfway
+        self.assertIn(b" 400 ", sock.recv(4096))  # 'cut', to whoever is left listening
+        sock.close()
+        names = []
+        for _ in range(100):  # the door finishes after it answers; wait until the part is gone
+            names = sorted(p.name for p in (self.rig.home / "uploads").iterdir())
+            if names == [f"{nonce}.json"] and not self.rig.door.streaming:
+                break
+            time.sleep(0.05)
+        self.assertEqual(names, [f"{nonce}.json"])
+        self.assertEqual(self.rig.slot(nonce)["bytes"], 0)
+        self.assertEqual(list((self.rig.home / "inbox").iterdir()), [])
 
 
 if __name__ == "__main__":

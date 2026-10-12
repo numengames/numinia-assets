@@ -4,9 +4,9 @@
 """Who signed a fleet request: EIP-712 typed data, recovered to a wallet address.
 
 An Oracle asks a fleet machine for something (create, stop, start, delete or
-download a world, show a world's admin code or change it, or show the
-machine's legacy admin code) by signing a small typed message with the
-wallet they already sign in with. The wallet shows exactly
+download a world, bring one back from its zip, show a world's admin code or
+change it, or show the machine's legacy admin code) by signing a small typed
+message with the wallet they already sign in with. The wallet shows exactly
 what is being signed; the machine recovers the address that signed it and
 obeys only the addresses an Oracle installed on it (/etc/fleet/signers).
 
@@ -57,6 +57,21 @@ ACTIONS: dict[str, tuple[tuple[str, str], ...]] = {
     # One world's own admin code: shown, or changed for a new one the machine makes.
     "ShowWorldCode": (("machine", "string"), ("world", "string"), ("nonce", "string"), ("expires", "uint256")),
     "RotateWorldCode": (("machine", "string"), ("world", "string"), ("nonce", "string"), ("expires", "uint256")),
+    # A world brought back from its zip: CreateWorld's fields, plus the zip's
+    # exact size and SHA-256, so the machine takes that zip and no other.
+    "ImportWorld": (
+        ("machine", "string"),
+        ("world", "string"),
+        ("domain", "string"),
+        ("image", "string"),
+        ("memory", "string"),
+        ("cpus", "string"),
+        ("maxUploadMb", "uint256"),
+        ("zipBytes", "uint256"),
+        ("zipSha256", "string"),
+        ("nonce", "string"),
+        ("expires", "uint256"),
+    ),
 }
 
 SIGNATURE = re.compile(r"0x[0-9a-fA-F]{130}")

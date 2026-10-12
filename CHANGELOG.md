@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- `open-worlds/machine/`: a world comes back from its zip, born stopped.
+  - A world's zip — the copy Download makes, or an Alchemists' Tower
+    backup — could only be run by hand on someone's computer. Now one
+    signed `ImportWorld` (CreateWorld's fields plus the zip's exact size
+    and SHA-256) opens an upload slot at the door for an hour, if the name,
+    the address and the disk allow it, and shows the world's own code once;
+    the browser sends the zip with `PUT /fleet/v1/uploads/<n>`, streamed to
+    disk and kept only if it is the zip signed (`fingerprint` otherwise, and
+    the slot waits for the right one). Then the reconciler checks the
+    request and the zip again, reads the zip's index against the caps
+    before it writes anything outside the upload folder, unpacks only the
+    world's database and files into a folder of root's, asks SQLite whether
+    the database is sound and is a world's, and moves it into place with
+    keys the machine makes — never the zip's — and an order that says
+    `stopped`. An Oracle starts it when it is wanted.
+  - The caps are the machine's law, each refused by name: the zip 2 GiB
+    (`zip-too-big`), one file 1 GiB (`file-too-big`), all of them 4 GiB
+    (`unpacked-too-big`), 20 000 files (`too-many-files`), a ratio of 100
+    (`ratio`), an hour for the upload (`slot-expired`), 1 GiB of disk always
+    left (`no-room`). A zip that leaves its folder (`zip-slip`), holds a
+    link or a device (`link`), is encrypted, is not a world's
+    (`not-a-world`, `unexpected`, `db-open`, `db-broken`, `db-foreign`) or
+    does not match its manifest (`manifest`) is refused with nothing left
+    behind; the log names the rule, never the zip's contents.
+  - Caddy gives the uploads their own route on the door's site, up to
+    2 GiB; everything else at the door stays at 64 KB. `/fleet/v1/worlds`
+    shows a world `uploading` (how far) and then `importing`, and
+    `/fleet/v1/machine` says the biggest zip it takes
+    (`imports.zipMaxBytes`), so the room offers it only to machines that
+    do. The bootstrap makes `/srv/fleet/uploads/` (the door's) and
+    `/srv/fleet/staging/` (root's).
+
 - `open-worlds/machine/`: each world has its own admin code, and a machine
   installs one exact commit of its recipe.
   - Every world on a machine shared one admin code, so whoever held it
