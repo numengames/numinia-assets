@@ -823,24 +823,34 @@ class ReconcileTests(unittest.TestCase):
         bad = subprocess.run(["bash", str(MACHINE / "bootstrap.sh"), "open-1", smuggled], capture_output=True, text=True)
         self.assertEqual(bad.returncode, 2)
 
-    def test_the_door_runs_as_its_own_user_with_no_network_and_one_writable_folder(self):
+    def test_the_door_runs_as_its_own_user_with_no_network_and_its_own_folders(self):
         text = (MACHINE / "bootstrap.sh").read_text()
         unit = text[text.index("fleetd.service <<EOF"):]
         unit = unit[: unit.index("\nEOF")]
         for line in ("User=fleetd", "NoNewPrivileges=yes", "ProtectSystem=strict", "RestrictAddressFamilies=AF_UNIX",
-                     "ReadWritePaths=$HOME_DIR/inbox $HOME_DIR/sock"):
+                     "ReadWritePaths=$HOME_DIR/inbox $HOME_DIR/sock $HOME_DIR/uploads"):
             with self.subTest(line=line):
                 self.assertIn(line, unit)
         self.assertIn("python3-ecdsa", text)
         self.assertIn("DirectoryNotEmpty=$HOME_DIR/inbox", text)
+        # A world's zip arrives in the door's folder; it is unpacked in root's alone.
+        self.assertIn('chown fleetd:fleetd "$HOME_DIR/inbox" "$HOME_DIR/sock" "$HOME_DIR/uploads"', text)
+        self.assertIn('chmod 750 "$HOME_DIR/inbox" "$HOME_DIR/uploads"', text)
+        self.assertIn('chmod 700 "$HOME_DIR/staging"', text)
 
     # --- the door's address --------------------------------------------------
 
     def test_the_door_is_a_site_of_its_own_and_reaches_only_the_socket(self):
         b = Book([order()], keys=["plaza"])
         p = R.plan(b.orders, b.home, "open-1", allowed=set(), admin_code=CODE, control_host="open-1.numinia.com")
-        self.assertIn("open-1.numinia.com {\n\trequest_body {\n\t\tmax_size 64KB\n\t}\n"
-                      "\treverse_proxy unix//run/fleetd/fleetd.sock\n}", p["caddyfile"])
+        door = "\t\treverse_proxy unix//run/fleetd/fleetd.sock\n"
+        # A world's zip on its own route, up to the import cap; everything else 64 KB at most.
+        self.assertIn("open-1.numinia.com {\n"
+                      "\thandle /fleet/v1/uploads/* {\n\t\trequest_body {\n\t\t\tmax_size 2147483648\n\t\t}\n"
+                      + door + "\t}\n"
+                      "\thandle {\n\t\trequest_body {\n\t\t\tmax_size 64KB\n\t\t}\n" + door + "\t}\n}",
+                      p["caddyfile"])
+        self.assertEqual(p["caddyfile"].count("max_size"), 2)
         caddy = json.loads(p["compose"])["services"]["caddy"]
         self.assertIn(f"{b.home}/sock:/run/fleetd", caddy["volumes"])
         self.assertNotIn("open-1.numinia.com", p["compose"])

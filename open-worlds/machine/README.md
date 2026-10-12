@@ -17,10 +17,10 @@ moves with them.
 | File | Does |
 |---|---|
 | `bootstrap.sh` | turns a fresh Debian 12 or Ubuntu (24.04 or later) VPS into a fleet machine, or updates one, in one line |
-| `fleetd.py` | the door: takes an Oracle's signed request, shows the machine's public facts, hands out copies |
-| `reconcile.py` | every minute and on each request: checks the requests again, changes the book, makes the containers match, deletes, zips copies |
+| `fleetd.py` | the door: takes an Oracle's signed request and a world's zip, shows the machine's public facts, hands out copies |
+| `reconcile.py` | every minute and on each request: checks the requests again, changes the book, makes the containers match, deletes, zips copies, brings worlds back from zips |
 | `walletsig.py` | who signed a request: EIP-712 typed data, recovered to a wallet address |
-| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py` | the tests, run by the depot's `python -m unittest` |
+| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py` | the tests, run by the depot's `python -m unittest` |
 
 ## Bring up a machine
 
@@ -154,6 +154,66 @@ The same way: one signed message each, from the world's card in the room.
   signature. While a change of code, or the world's creation, waits in the
   inbox, the door answers `busy` to another show or change of that world.
 
+## Bring a world back from its zip
+
+A world's zip — the copy **Download** made, or an Alchemists' Tower
+backup — comes back as a new world, always **stopped**: an Oracle starts
+it when it is wanted, never the import. One signature and one upload:
+
+1. The room asks the Oracle to sign an `ImportWorld`: CreateWorld's
+   fields plus the zip's exact size and SHA-256 (`zipBytes`, `zipSha256`),
+   so the machine takes that zip and no other. The door checks it like a
+   creation (name, address, domain) and that the disk has room for the zip,
+   what it may unpack to and its reserve (`no-room`); it opens an **upload
+   slot** for an hour and answers with the world's own code, made like a
+   creation's and shown once, and where to send the zip
+   (`{request, upload, adminCode}`).
+2. The browser sends the zip there: `PUT /fleet/v1/uploads/<n>`, the
+   whole file, `Content-Length` its exact size. The door streams it into
+   `/srv/fleet/uploads/`, hashing as it goes, and keeps it only if it is the
+   one signed (`fingerprint` otherwise: the slot stays for the right zip,
+   no new signature needed). Then, and only then, the request is in the
+   inbox. `/fleet/v1/worlds` shows the world `uploading` (`bytes` of
+   `of`), then `importing`; `/fleet/v1/requests/<n>` says the same.
+3. The reconciler checks the signature, the name and the address again,
+   and that the zip is the signed one; it reads the zip's index against the
+   caps **before it writes anything** outside the upload folder; it finds
+   the world's folder in the zip (`world/` as Download and the Tower make
+   it, one top folder, or the zip's root), unpacks only the database and
+   the world's files (`db.sqlite`, `assets/`, `collections/`,
+   `storage.json`) into a folder of root's alone, counting every byte it
+   writes, and asks SQLite whether the database is sound
+   (`integrity_check`) and is a world's (the engine's tables). Only then
+   is it moved to `/srv/fleet/data/<id>/`, with keys the machine makes —
+   a JWT secret of its own and the code the door showed, **never the
+   zip's** — and an order that says `stopped`. The zip is deleted either
+   way.
+
+Nothing else in the zip is used: its `.env`, its compose file, its guide,
+its engine image stay in the zip. If the zip has the manifest Download
+writes (`world.json`), every file must be the one it lists. A refused zip
+names its rule — `zip-too-big`, `file-too-big`, `unpacked-too-big`,
+`too-many-files`, `ratio`, `zip-slip`, `link`, `encrypted`, `not-a-zip`,
+`not-a-world`, `unexpected`, `db-open` (zipped while the world ran),
+`db-broken`, `db-foreign`, `manifest`, `fingerprint`, `slot-expired`,
+`no-room` — and the entry that broke it, to the Oracle who asked; the log
+says the rule alone.
+
+| Cap | Value | Rule |
+|---|---|---|
+| the zip | 2 GiB | `zip-too-big` (the door, and Caddy, which cuts a bigger body at the edge) |
+| one file, unpacked | 1 GiB | `file-too-big` |
+| every file, unpacked | 4 GiB | `unpacked-too-big` |
+| files in the zip | 20 000 | `too-many-files` |
+| unpacked / packed, for a file of 1 MiB or more | 100 | `ratio` |
+| the upload slot | one hour | `slot-expired` |
+| free disk left after an import | 1 GiB | `no-room` |
+
+The caps live in `reconcile.py` and are the law; the room repeats them only
+to refuse early. `/fleet/v1/machine` says the biggest zip the machine takes
+(`imports.zipMaxBytes`): the room offers *Traer de un zip* only to a door
+that says it.
+
 ## The signed requests
 
 Each request is EIP-712 typed data (domain `Numinia Fleet`, version `1`) —
@@ -163,6 +223,7 @@ as Snapshot does with votes. The wallet shows every field before signing.
 | Request | Fields |
 |---|---|
 | `CreateWorld` | machine, world, domain, image, memory, cpus, maxUploadMb, nonce, expires |
+| `ImportWorld` | CreateWorld's fields, and zipBytes, zipSha256 before the nonce — then the zip itself, `PUT /fleet/v1/uploads/<nonce>` (not signed again: it must be the zip whose size and SHA-256 were signed) |
 | `DeleteWorld` | machine, world, domain, nonce, expires |
 | `StopWorld`, `StartWorld`, `DownloadWorld` | machine, world, nonce, expires |
 | `ShowWorldCode`, `RotateWorldCode` | machine, world, nonce, expires |
@@ -194,6 +255,8 @@ minute or two, is a machine that has stopped obeying.
 | `/srv/fleet/inbox/` | signed requests the door took and the reconciler has not yet |
 | `/srv/fleet/requests/<n>.json` | how each request went, as the door shows it |
 | `/srv/fleet/copies/` | the copies, for a day (`<c>.zip` and `<c>.json`) |
+| `/srv/fleet/uploads/` | a world's zip on its way in: the upload slot (`<n>.json`, an hour), the zip arriving (`.<n>.zip.part`), the zip waiting for the reconciler (`<n>.zip`). The door's (`fleetd`, mode 750); root reads it and deletes each zip once taken |
+| `/srv/fleet/staging/` | where the reconciler unpacks a zip and checks it before it becomes `data/<id>/` (root's alone, mode 700; empty between runs) |
 | `/srv/fleet/data/<id>/` | the world: `db.sqlite` and `assets/` |
 | `/srv/fleet/env/<id>.env` | the world's keys: its JWT secret and its admin code (mode 600, made by the machine, never in git) |
 | `/srv/fleet/run/` | the generated `docker-compose.yml`, `Caddyfile` and Caddy's state; `Caddyfile.applied` is the list of sites Caddy last accepted and `docker-compose.applied.yml` the compose file Docker last accepted; `purge.json` and `copy-queue.json` hold deletes and copies in progress, `restart.json` the worlds whose code changed and that wait to be restarted; `last-run.json` says when the reconciler last ran and how it ended |
@@ -243,6 +306,10 @@ curl https://open-1.numinia.com/fleet/v1/worlds         # what the console sees
   names the broken rule, never the value.
 - A `running` order adopted from the public book, with no `env/<id>.env`,
   on a machine with no old shared code: not started, logged.
+- A zip that breaks a cap, leaves its folder (`../`, `/`, `C:`, `\`), holds
+  a link or a device, is encrypted, is not a world's or is not the one
+  signed: refused by rule before anything is written outside
+  `/srv/fleet/uploads/`; the zip goes and nothing stays.
 
 ## Security, in one table
 
@@ -250,8 +317,9 @@ curl https://open-1.numinia.com/fleet/v1/worlds         # what the console sees
 |---|---|---|
 | the machine | its worlds' data and keys, and the admin code of every world on it | GitHub (no credential), the other machines, the console, any Oracle's wallet |
 | the console (numinia.com) | nothing on the machines: it holds no key and signs nothing. It could show an Oracle a false page and ask for a signature — the wallet shows exactly what is signed (the request, the world, its address, the machine) | any machine, any world's keys |
-| an Oracle's wallet | create, stop, start, download and delete worlds on the machines that list it; show and change any of their worlds' admin codes | code execution on machines (the programs are installed, not pulled, and an order's fields are checked values, never configuration); images outside the house's registry or unpinned; domains outside the house zones or the machine's list |
-| the door (`fleetd`) broken into | the book, the copies and every world's admin code, read; requests put in the inbox, and the code a world gets when an Oracle signs its creation or a change of its code (the door makes it) | anything signed: the reconciler checks every signature again, and the door has no root, no Docker, no network of its own, and writes only its inbox, its socket and its list of used numbers — never a key file |
+| an Oracle's wallet | create, stop, start, download and delete worlds on the machines that list it; bring worlds back from zips, stopped; show and change any of their worlds' admin codes | code execution on machines (the programs are installed, not pulled, and an order's fields are checked values, never configuration); images outside the house's registry or unpinned; domains outside the house zones or the machine's list |
+| the door (`fleetd`) broken into | the book, the copies and every world's admin code, read; requests put in the inbox and zips in the upload folder, and the code a world gets when an Oracle signs its creation, its import or a change of its code (the door makes it) | anything signed: the reconciler checks every signature again, and the zip's size and SHA-256 against the signed ones; the door has no root, no Docker, no network of its own, and writes only its inbox, its upload folder, its socket and its list of used numbers — never a key file |
+| a hostile zip, signed by an Oracle | nothing: refused by rule before anything is written outside `uploads/` — no path out of the world's folder, no link, no bomb past the caps, no key or compose file of its own | the machine, its other worlds. An imported world's scripts run like any world's, inside its container |
 | a signed request, intercepted | nothing more: it is good once, for one machine and one world, for fifteen minutes | anything else |
 | a download link | that copy, for a day | the world's keys (the copy's are fresh), anything else |
 | a world's admin code | admin of that world, from any browser, until an Oracle changes it with one signature | the other worlds (each has its own), the machine, its files, the other machines |

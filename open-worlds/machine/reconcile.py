@@ -11,9 +11,9 @@ lands in the inbox (a systemd path unit). Three jobs, in this order:
    signature, that the signer is listed in /etc/fleet/signers, the machine,
    the fields — and then changes the book (/srv/fleet/orders/): an order is
    written (create), its state changes (stop, start) or it goes (delete),
-   a copy is queued (download), or a world gets a new admin code (change
-   of code). Each request ends with a result the door shows to whoever
-   asked.
+   a copy is queued (download), a world gets a new admin code (change of
+   code), or a world comes back from its zip (import; see below). Each
+   request ends with a result the door shows to whoever asked.
 2. Containers. From the orders, render a docker-compose file and a
    Caddyfile and ask Docker to make the containers match; when the list of
    sites changed, ask Caddy to read it again (a reload; each world's site
@@ -43,6 +43,20 @@ code (/etc/fleet/admin-code, made once by bootstrap.sh); a machine with no
 such code keys nothing, and that world is skipped and reported — no world
 ever starts with an empty admin code.
 
+A world comes back from its zip with one signed ImportWorld, which names the
+zip's exact size and SHA-256. The door keeps an upload slot for it, takes
+the zip into /srv/fleet/uploads/ and only then drops the request in the
+inbox. This file copies that zip into a file of its own while it checks its
+fingerprint, reads its index against the caps below (size, entries, ratio,
+paths, links, encryption) before anything is written outside the upload
+folder, finds the world's folder in it, unpacks only the database and the
+world's files into a root-only staging folder, counting what it writes,
+checks the database with SQLite's own integrity check and the engine's
+tables, and only then moves it to /srv/fleet/data/<id>/, makes the world's
+keys (never the zip's) and writes its order — stopped: an imported world is
+started by an Oracle, never by its import. A refusal names its rule and
+leaves nothing behind.
+
 The machine never writes to git and holds no GitHub credential. Its book is
 its own; its first orders were adopted, once, from the public order book in
 numinia-assets (`--adopt-book`).
@@ -71,6 +85,8 @@ tests in tests/test_machine.py cover them.
 from __future__ import annotations
 
 import argparse
+import calendar
+import errno
 import grp
 import hashlib
 import json
@@ -78,15 +94,19 @@ import os
 import re
 import shutil
 import sqlite3
+import stat
+import struct
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
+import zlib
 from pathlib import Path
 
 import walletsig
 
-HOME = Path("/srv/fleet")  # orders/, data/, env/, run/, inbox/, requests/, copies/ live here
+HOME = Path("/srv/fleet")  # orders/, data/, env/, run/, inbox/, requests/, copies/, uploads/, staging/ live here
 ALIAS_FILE = Path("/etc/fleet/alias")
 # The machine's legacy code, made once by bootstrap.sh: the worlds keyed before
 # each world had its own got it, an order adopted from the public book still
@@ -133,6 +153,30 @@ GRACE = 3600  # a signed request this long past its expiry is refused even if th
 MAX_UPLOAD_MB = 10_000
 ENGINE_DB = "db.sqlite"
 
+# A world brought back from its zip (ImportWorld): the caps its zip must
+# keep, each with the rule a refusal names. The worlds room repeats them to
+# refuse early, in the browser; these are the law.
+ZIP_MAX = 2 * 1024**3  # the zip itself, 2 GiB: zip-too-big
+FILE_MAX = 1024**3  # one entry unpacked, 1 GiB: file-too-big
+UNPACKED_MAX = 4 * 1024**3  # every entry unpacked, together, 4 GiB: unpacked-too-big
+ENTRIES_MAX = 20_000  # entries in the zip: too-many-files
+RATIO_MAX = 100  # unpacked / packed, for an entry of RATIO_FROM bytes or more: ratio
+RATIO_FROM = 1024**2
+SLOT_SECONDS = 3600  # an upload slot lives an hour; its zip must have arrived by then: slot-expired
+RESERVE = 1024**3  # free disk always left after an import, 1 GiB: no-room
+# The zip's index (its central directory), which zipfile holds whole in
+# memory: 20 000 entries take a few MB; more is a bomb aimed at the memory.
+INDEX_MAX = 64 * 1024**2
+MANIFEST_MAX = 32 * 1024**2  # the fleet copy's world.json, read whole only below this
+CHUNK = 1024**2  # every zip is read and written in pieces of this size
+# What a world's folder holds, as the engine keeps it (numinia-hyperfy2
+# src/server: the database, AssetsLocal's assets/, CollectionsLocal's
+# collections/, Storage's storage.json). Only these are unpacked.
+WORLD_FILES = frozenset({ENGINE_DB, "storage.json"})
+WORLD_FOLDERS = ("assets/", "collections/")
+ENGINE_TABLES = ("config", "users", "blueprints", "entities")
+IMPORTING = "import.json"  # run/: the world being unpacked right now, for the door to show
+
 # Every pattern is used with re.fullmatch: `$` alone would let a trailing
 # newline through, and a newline is how text turns into a new setting.
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
@@ -156,6 +200,9 @@ JWT = re.compile(r"[0-9a-f]{64}")
 NONCE = re.compile(r"[0-9a-f]{32}")  # a request's number: 128 random bits, chosen by the browser
 COPY_ID = re.compile(r"[0-9a-f]{32}")  # a copy's number: 128 random bits, chosen by the door
 ADDRESS = re.compile(r"0x[0-9a-f]{40}")
+SHA256 = re.compile(r"[0-9a-f]{64}")  # a zip's fingerprint, as the browser computed and the Oracle signed it
+# A name inside a zip that starts with a drive (C:, c:\…): a Windows path, never a world's.
+DRIVE = re.compile(r"[A-Za-z]:.*", re.DOTALL)
 # The shape every string field of a signed request must have.
 FIELD_RULES = {
     "machine": SLUG,
@@ -165,6 +212,7 @@ FIELD_RULES = {
     "memory": MEMORY,
     "cpus": CPUS,
     "nonce": NONCE,
+    "zipSha256": SHA256,
 }
 
 
@@ -469,15 +517,28 @@ def world_site(o: dict) -> str:
             f"\t\tstream_close_delay {STREAM_CLOSE_DELAY}\n\t}}\n}}")
 
 
+def door_site(control_host: str) -> str:
+    """The door's site: a world's zip in on its own route, up to the import cap; everything else 64 KB at most.
+
+    Caddy enforces both: a body over its route's cap is cut at the edge,
+    before the door reads it. Only `/fleet/v1/uploads/*` (PUT of a slot's
+    zip) takes the big one; signed requests stay small.
+    """
+    door = f"\t\treverse_proxy unix/{DOOR_SOCKET_INSIDE}\n"
+    return (
+        f"{control_host} {{\n"
+        f"\thandle /fleet/v1/uploads/* {{\n\t\trequest_body {{\n\t\t\tmax_size {ZIP_MAX}\n\t\t}}\n{door}\t}}\n"
+        f"\thandle {{\n\t\trequest_body {{\n\t\t\tmax_size 64KB\n\t\t}}\n{door}\t}}\n"
+        f"}}"
+    )
+
+
 def render_caddyfile(running: list[dict], control_host: str | None = None) -> str:
     """One site per running world, plus the door's; Caddy issues each certificate."""
     blocks = ["# Generated by open-worlds/machine/reconcile.py — do not edit, change the order."]
     if control_host is not None:
-        # The door: small signed requests in, facts and copies out.
-        blocks.append(
-            f"{control_host} {{\n\trequest_body {{\n\t\tmax_size 64KB\n\t}}\n"
-            f"\treverse_proxy unix/{DOOR_SOCKET_INSIDE}\n}}"
-        )
+        # The door: small signed requests in, facts and copies out, and a world's zip in.
+        blocks.append(door_site(control_host))
     for o in running:
         blocks.append(world_site(o))
     return "\n\n".join(blocks) + "\n"
@@ -813,6 +874,10 @@ def request_problem(kind: object, message: object) -> str | None:
             return f"{name} is not a whole number"
     if "maxUploadMb" in message and not 1 <= message["maxUploadMb"] <= MAX_UPLOAD_MB:
         return "maxUploadMb is out of range"
+    # A zip has at least one byte; one over the cap is refused by name
+    # (zip-too-big), after the signature, by the door and again here.
+    if "zipBytes" in message and message["zipBytes"] < 1:
+        return "zipBytes is out of range"
     if message["expires"] >= 2**63:
         return "expires is out of range"
     return None
@@ -842,7 +907,10 @@ def check_request(
         return entry, None, problem
     if message["machine"] != alias:
         return entry, None, "the request names another machine"
-    if message["expires"] < now - GRACE:
+    # An import reaches the inbox only once its zip has arrived, which may
+    # be up to a slot's hour after the door took it: it has that hour more.
+    late = GRACE + (SLOT_SECONDS if kind == "ImportWorld" else 0)
+    if message["expires"] < now - late:
         return entry, None, "the request expired"
     signer = walletsig.signer_of(kind, message, raw.get("signature"))
     if signer is None:
@@ -919,16 +987,17 @@ def change_book(
 
 
 def carried_code(raw: object, kind: object) -> tuple[str | None, str | None]:
-    """The admin code the door made for a create or a change of code: (code, None), or (None, the rule).
+    """The admin code the door made for a create, an import or a change of code: (code, None), or (None, the rule).
 
     A create from a door older than each world's own code carries none: the
-    machine makes one. A change of code must carry the code the door already
-    showed to the Oracle, and only a plain one is ever written.
+    machine makes one (an import, which no such door takes, likewise). A
+    change of code must carry the code the door already showed to the
+    Oracle, and only a plain one is ever written.
     """
-    if kind not in ("CreateWorld", "RotateWorldCode") or not isinstance(raw, dict):
+    if kind not in ("CreateWorld", "ImportWorld", "RotateWorldCode") or not isinstance(raw, dict):
         return None, None
     if "adminCode" not in raw:
-        if kind == "CreateWorld":
+        if kind != "RotateWorldCode":
             return make_code(), None
         return None, "the request carries no new admin code"
     if not matches(ADMIN_CODE, raw["adminCode"]):
@@ -960,13 +1029,19 @@ def key_world(home: Path, orders: Path, codes_dir: Path, entry: dict, admin_code
     return None
 
 
-def answer(home: Path, entry: dict, state: str, rule: str | None = None, now: float | None = None) -> None:
-    """The result the door shows for one request; a final one also goes to the machine's log."""
-    write_json(
-        home / "requests" / f"{entry['nonce']}.json",
-        {"request": entry["nonce"], "type": entry["type"], "world": entry["world"], "state": state,
-         "rule": rule, "at": utc(now)},
-    )
+def answer(home: Path, entry: dict, state: str, rule: str | None = None, now: float | None = None,
+           detail: str | None = None) -> None:
+    """The result the door shows for one request; a final one also goes to the machine's log.
+
+    A failed one's log line names the rule it broke — a rule, never a value.
+    `detail` is the entry of a zip a refused import names (its result says
+    which file broke the rule, for whoever asked); it never reaches the log.
+    """
+    result = {"request": entry["nonce"], "type": entry["type"], "world": entry["world"], "state": state,
+              "rule": rule, "at": utc(now)}
+    if detail is not None:
+        result["entry"] = detail
+    write_json(home / "requests" / f"{entry['nonce']}.json", result)
     if state == "working":
         return
     line = {
@@ -976,6 +1051,8 @@ def answer(home: Path, entry: dict, state: str, rule: str | None = None, now: fl
         "by": walletsig.short(entry["by"]) if entry.get("by") else None,
         "state": state,
     }
+    if state == "failed":
+        line["rule"] = rule
     with open(home / "log.jsonl", "a", encoding="utf-8") as log:
         log.write(json.dumps(line) + "\n")
 
@@ -998,13 +1075,16 @@ def take_requests(
     (the book and the key files are the truth; the containers follow them
     below). A create or a change of code writes the world's admin code the
     door made (codes_dir and its key file); a change of code also queues the
-    world's restart. A delete waits in run/purge.json until its container is
+    world's restart. An import is unpacked here, whole, before the next
+    request (import_world): its world is born stopped, so the containers have
+    nothing to do for it. A delete waits in run/purge.json until its container is
     gone; a download waits in run/copy-queue.json. Returns the entries taken,
     for the summary.
     """
     now = time.time() if now is None else now
     inbox = home / "inbox"
     taken = []
+    clear_imports(home, orders, now)
     purge = read_json(home / "run" / "purge.json", {})
     queue = read_json(home / "run" / "copy-queue.json", [])
     purge = purge if isinstance(purge, dict) else {}
@@ -1019,17 +1099,26 @@ def take_requests(
         if (home / "requests" / f"{entry['nonce']}.json").exists():
             print("drop one request: its number was used before", file=sys.stderr)
             continue
-        admin_code = None
+        admin_code = detail = None
         if rule is None:
             admin_code, rule = carried_code(raw, entry["type"])
         if rule is None:
             deleting = {w: job.get("domain") for w, job in purge.items() if isinstance(job, dict)}
-            rule = change_book(entry, message, orders, alias, allowed, control_host, now, deleting)
-        if rule is None and admin_code is not None:
-            rule = key_world(home, orders, codes_dir, entry, admin_code)
+            if entry["type"] == "ImportWorld":
+                rule, detail = import_world(home, orders, codes_dir, entry, message, raw, admin_code, alias,
+                                            allowed, control_host, now, deleting)
+            else:
+                rule = change_book(entry, message, orders, alias, allowed, control_host, now, deleting)
+                if rule is None and admin_code is not None:
+                    rule = key_world(home, orders, codes_dir, entry, admin_code)
+        if entry["type"] == "ImportWorld":
+            # Its zip goes, whatever happened: taken, refused or never checked.
+            forget_upload(home, entry["nonce"])
         if rule is not None:
             print(f"refuse one request: {rule}", file=sys.stderr)
-            answer(home, entry, "failed", rule, now)
+            answer(home, entry, "failed", rule, now, detail)
+            if entry["type"] == "ImportWorld":
+                (home / "run" / IMPORTING).unlink(missing_ok=True)
             continue
         taken.append(entry)
         if entry["type"] == "DeleteWorld":
@@ -1043,11 +1132,549 @@ def take_requests(
             answer(home, entry, "working", None, now)
         else:
             answer(home, entry, "done", None, now)
+            if entry["type"] == "ImportWorld":
+                # Shown as being unpacked until its answer is written.
+                (home / "run" / IMPORTING).unlink(missing_ok=True)
     if purge:
         write_json(home / "run" / "purge.json", purge)
     if queue:
         write_json(home / "run" / "copy-queue.json", queue)
     return taken
+
+
+# ---------------------------------------------------------------------------
+# A world brought back from its zip (ImportWorld)
+# ---------------------------------------------------------------------------
+
+# What zipfile raises on a zip it cannot read: a broken index or entry, a
+# method it does not know, data that ends early or fails its CRC.
+UNREADABLE = (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError, NotImplementedError, OSError, RuntimeError,
+              ValueError, struct.error, zlib.error)
+
+
+class Refused(Exception):
+    """A zip the machine does not take: the rule it breaks and, when one entry broke it, that entry."""
+
+    def __init__(self, rule: str, entry: str | None = None) -> None:
+        super().__init__(rule)
+        self.rule = rule
+        self.entry = entry
+
+
+def unpacking(zip_bytes: int) -> int:
+    """The most a zip of this size is allowed to unpack to: RATIO_MAX times it, and never over UNPACKED_MAX."""
+    return min(zip_bytes * RATIO_MAX, UNPACKED_MAX)
+
+
+def reservation(zip_bytes: int) -> int:
+    """The disk an import may take until it is done: its zip, and what that zip unpacks to.
+
+    The reconciler's own copy of the zip (take_zip) fits inside it: a zip of
+    ZIP_MAX or less is allowed to unpack to at least its own size.
+    """
+    return zip_bytes + unpacking(zip_bytes)
+
+
+def epoch(text: object) -> int | None:
+    """Seconds since 1970 for a time written by utc(); None for anything else."""
+    if not isinstance(text, str):
+        return None
+    try:
+        return calendar.timegm(time.strptime(text, "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return None
+
+
+def shown(name: str) -> str:
+    """An entry's name as a refusal shows it: printable characters only, 200 at most."""
+    return "".join(c if c.isprintable() else "?" for c in name)[:200]
+
+
+def forget_upload(home: Path, nonce: str) -> None:
+    """The door's zip for this request, and any slot or part file left for it, go."""
+    for name in (f"{nonce}.zip", f"{nonce}.json", f".{nonce}.zip.part"):
+        try:
+            (home / "uploads" / name).unlink(missing_ok=True)
+        except OSError:
+            print("an upload's leftover could not be removed; the next run tries again", file=sys.stderr)
+
+
+def take_zip(path: Path, size: int, sha256: str, spool: Path):
+    """The door's zip, copied into a file of the machine's own while its SHA-256 is computed.
+
+    Refused (fingerprint) unless it is exactly the size and the SHA-256 the
+    Oracle signed. The copy has no name: nobody but this process can open
+    it, so the zip that was checked is the zip that is unpacked — the door's
+    user, who owns the upload folder, cannot change it after the check.
+    """
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
+        raise Refused("fingerprint") from None  # no zip, or a link where it should be
+    with os.fdopen(fd, "rb") as source:
+        found = os.fstat(source.fileno())
+        if not stat.S_ISREG(found.st_mode) or found.st_size != size:
+            raise Refused("fingerprint")
+        copy = tempfile.TemporaryFile(dir=spool)
+        try:
+            digest, copied = hashlib.sha256(), 0
+            for chunk in iter(lambda: source.read(CHUNK), b""):
+                copied += len(chunk)
+                if copied > size:
+                    raise Refused("fingerprint")
+                digest.update(chunk)
+                copy.write(chunk)
+            if copied != size or digest.hexdigest() != sha256:
+                raise Refused("fingerprint")
+            copy.seek(0)
+        except BaseException:
+            copy.close()
+            raise
+    return copy
+
+
+def zip_index(f) -> tuple[int, int] | None:
+    """How many entries a zip's index lists, and the index's size, read at the zip's end; None for no zip.
+
+    Read before zipfile parses the index, which it keeps whole in memory: a
+    zip that lists millions of entries is refused without being parsed.
+    """
+    f.seek(0, os.SEEK_END)
+    size = f.tell()
+    start = max(0, size - (22 + 0xFFFF))
+    f.seek(start)
+    tail = f.read(size - start)
+    at = tail.rfind(b"PK\x05\x06")
+    if at < 0 or len(tail) - at < 22:
+        return None
+    fields = struct.unpack("<4s4H2LH", tail[at:at + 22])
+    entries, index = fields[4], fields[5]
+    locator = start + at - 20
+    if locator >= 0:
+        # ZIP64: the real counts live in a record a locator points to.
+        f.seek(locator)
+        found = f.read(20)
+        if found[:4] == b"PK\x06\x07":
+            f.seek(struct.unpack("<Q", found[8:16])[0])
+            record = f.read(56)
+            if len(record) == 56 and record[:4] == b"PK\x06\x06":
+                entries, index = struct.unpack("<QQ", record[32:48])
+    return entries, index
+
+
+def open_zip(f) -> zipfile.ZipFile:
+    """The zip in this file, opened once its index is known to be a world's size."""
+    found = zip_index(f)
+    if found is None:
+        raise Refused("not-a-zip")
+    if found[0] > ENTRIES_MAX or found[1] > INDEX_MAX:
+        raise Refused("too-many-files")
+    f.seek(0)
+    try:
+        zipped = zipfile.ZipFile(f)
+    except UNREADABLE:
+        raise Refused("not-a-zip") from None
+    if len(zipped.infolist()) > ENTRIES_MAX:  # its end said fewer than it holds
+        zipped.close()
+        raise Refused("too-many-files")
+    return zipped
+
+
+def safe_name(info: zipfile.ZipInfo) -> bool:
+    """A name that stays inside the folder it is unpacked into: relative, `/` between parts, no `..`.
+
+    No absolute path, no drive (C:), no backslash, no empty, `.` or `..`
+    part: an honest zip tool never writes one, and each is a way out.
+    """
+    name = info.filename
+    if not name or name.startswith("/") or "\\" in name or matches(DRIVE, name) or "\x00" in info.orig_filename:
+        return False
+    parts = (name[:-1] if name.endswith("/") else name).split("/")
+    return all(part not in ("", ".", "..") for part in parts)
+
+
+def plain_entry(info: zipfile.ZipInfo) -> bool:
+    """A file or a folder: never a link, a device, a pipe or a socket (the Unix type in its attributes)."""
+    kind = stat.S_IFMT(info.external_attr >> 16)
+    return kind in ((0, stat.S_IFDIR) if info.filename.endswith("/") else (0, stat.S_IFREG))
+
+
+def too_packed(info: zipfile.ZipInfo) -> bool:
+    """An entry of RATIO_FROM bytes or more that grows over RATIO_MAX times when unpacked: a zip bomb."""
+    return info.file_size >= RATIO_FROM and info.file_size > RATIO_MAX * info.compress_size
+
+
+def world_root(names: list[str]) -> str | None:
+    """Where the world's folder starts in the zip: 'world/', a single top folder, or '' (the zip's root).
+
+    The first that holds db.sqlite: `world/` (the fleet's own copy and the
+    Alchemists' Tower's backup), the one top folder that holds it (a zipped
+    world folder), the zip's root. None: no world in it.
+    """
+    present = set(names)
+    if f"world/{ENGINE_DB}" in present:
+        return "world/"
+    tops = {name.split("/", 1)[0] + "/" for name in names if "/" in name}
+    holding = [top for top in tops if f"{top}{ENGINE_DB}" in present]
+    if len(holding) == 1:
+        return holding[0]
+    return "" if ENGINE_DB in present else None
+
+
+def place(relative: str) -> str:
+    """What becomes of an entry inside the world's folder: a kept 'file' or 'folder', 'skip', or the rule it breaks."""
+    if relative.endswith("/"):
+        return "folder" if relative.startswith(WORLD_FOLDERS) else "unexpected"
+    if relative in WORLD_FILES or relative.startswith(WORLD_FOLDERS):
+        return "file"
+    if relative == f"{ENGINE_DB}-shm":
+        return "skip"  # SQLite's shared-memory index: rebuilt when the database opens
+    if relative in (f"{ENGINE_DB}-wal", f"{ENGINE_DB}-journal"):
+        return "db-open"  # zipped while the world ran: its database is half written
+    return "unexpected"
+
+
+def inspect_zip(zipped: zipfile.ZipFile) -> dict:
+    """What of this zip becomes the world, once every rule holds; Refused, naming the first rule broken.
+
+    Reads the zip's index (and its world.json) and nothing else: no entry is
+    unpacked and nothing is written while a zip is inspected. The rules, in
+    order, over every entry, inside the world's folder or not: encrypted,
+    zip-slip, link, file-too-big, ratio, then unpacked-too-big for the
+    declared total; then not-a-world, db-open and unexpected inside the
+    world's folder; then the manifest.
+    """
+    infos = zipped.infolist()
+    checks = (
+        ("encrypted", lambda info: bool(info.flag_bits & 0x1)),
+        ("zip-slip", lambda info: not safe_name(info)),
+        ("link", lambda info: not plain_entry(info)),
+        ("file-too-big", lambda info: info.file_size > FILE_MAX),
+        ("ratio", too_packed),
+    )
+    for rule, broken in checks:
+        for info in infos:
+            if broken(info):
+                raise Refused(rule, shown(info.filename))
+    if sum(info.file_size for info in infos) > UNPACKED_MAX:
+        raise Refused("unpacked-too-big")
+    root = world_root([info.filename for info in infos])
+    if root is None:
+        raise Refused("not-a-world")
+    places = [(info, place(info.filename[len(root):])) for info in infos
+              if info.filename.startswith(root) and info.filename != root]
+    for rule in ("db-open", "unexpected"):
+        for info, where in places:
+            if where == rule:
+                raise Refused(rule, shown(info.filename))
+    kept = [info for info, where in places if where in ("file", "folder")]
+    return {"root": root, "kept": kept, "manifest": read_manifest(zipped, root, kept),
+            "bytes": sum(info.file_size for info in kept)}
+
+
+def read_manifest(zipped: zipfile.ZipFile, root: str, kept: list[zipfile.ZipInfo]) -> dict | None:
+    """The size and SHA-256 of each file, as the fleet's own copy lists them in the world.json at its root.
+
+    None when the zip has no such list (a Tower backup, a zipped folder):
+    nothing is compared. A list that cannot be read is refused, and so is a
+    kept file it does not list with the size the index declares, or a file it
+    lists inside the world's folder that the zip does not hold (manifest).
+    """
+    try:
+        info = zipped.getinfo("world.json")
+    except KeyError:
+        return None
+    if info.file_size > MANIFEST_MAX:
+        raise Refused("manifest", "world.json")
+    try:
+        text = zipped.read(info)
+    except UNREADABLE:
+        raise Refused("not-a-zip", "world.json") from None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None
+    files = data.get("files") if isinstance(data, dict) else None
+    if not isinstance(files, list):
+        return None
+    listed = {}
+    for item in files:
+        size = item.get("bytes") if isinstance(item, dict) else None
+        if (not isinstance(item, dict) or not isinstance(item.get("path"), str) or isinstance(size, bool)
+                or not isinstance(size, int) or size < 0 or not matches(SHA256, item.get("sha256"))):
+            raise Refused("manifest", "world.json")
+        listed[item["path"]] = (size, item["sha256"])
+    names = {info.filename for info in kept}
+    for info in kept:
+        if not info.filename.endswith("/") and listed.get(info.filename, (None,))[0] != info.file_size:
+            raise Refused("manifest", shown(info.filename))
+    for path in listed:
+        if path.startswith(root) and place(path[len(root):]) == "file" and path not in names:
+            raise Refused("manifest", shown(path))
+    return listed
+
+
+def unpack(zipped: zipfile.ZipFile, plan: dict, target: Path) -> None:
+    """Write the kept entries under `target`, counting what is written and never trusting the index.
+
+    Never through a link: every folder on the way is made here and every
+    file is new (a name seen twice is refused). Over a cap while it writes:
+    refused, whatever the index said; a file that is not what the manifest
+    says: refused (manifest).
+    """
+    root, manifest = plan["root"], plan["manifest"]
+    total = 0
+    for info in plan["kept"]:
+        parts = info.filename[len(root):].rstrip("/").split("/")
+        folder = target
+        for part in parts if info.filename.endswith("/") else parts[:-1]:
+            folder = folder / part
+            try:
+                os.mkdir(folder, 0o755)
+            except FileExistsError:
+                if not stat.S_ISDIR(os.lstat(folder).st_mode):
+                    raise Refused("unexpected", shown(info.filename)) from None
+        if info.filename.endswith("/"):
+            continue
+        try:
+            fd = os.open(folder / parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+        except FileExistsError:
+            raise Refused("unexpected", shown(info.filename)) from None
+        digest, written = hashlib.sha256(), 0
+        with os.fdopen(fd, "wb") as out:
+            try:
+                source = zipped.open(info)
+            except UNREADABLE:
+                raise Refused("not-a-zip", shown(info.filename)) from None
+            with source:
+                while True:
+                    try:
+                        chunk = source.read(CHUNK)
+                    except UNREADABLE:
+                        raise Refused("not-a-zip", shown(info.filename)) from None
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    total += len(chunk)
+                    if written > FILE_MAX:
+                        raise Refused("file-too-big", shown(info.filename))
+                    if total > UNPACKED_MAX:
+                        raise Refused("unpacked-too-big")
+                    if manifest is not None:
+                        digest.update(chunk)
+                    out.write(chunk)
+        if manifest is not None and manifest.get(info.filename) != (written, digest.hexdigest()):
+            raise Refused("manifest", shown(info.filename))
+
+
+def check_database(path: Path) -> None:
+    """The world's database opens, passes SQLite's own integrity check, and has the engine's tables.
+
+    Opened read-only and immutable (nothing beside it is created or read)
+    with the schema untrusted: a hostile file is only ever read.
+    """
+    try:
+        db = sqlite3.connect(f"{path.as_uri()}?mode=ro&immutable=1", uri=True)
+        try:
+            db.execute("PRAGMA trusted_schema = OFF")
+            db.execute("PRAGMA cell_size_check = ON")
+            if db.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
+                raise Refused("db-broken")
+            tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        finally:
+            db.close()
+    except sqlite3.Error:
+        raise Refused("db-broken") from None
+    if not set(ENGINE_TABLES) <= tables:
+        raise Refused("db-foreign")
+
+
+def import_clash(home: Path, orders: Path, wid: str, domain: str, deleting: dict[str, str | None]) -> str | None:
+    """Why a world cannot be born here under this name and address now (CreateWorld's rules); None when it can.
+
+    A folder left under the name, with no order, counts as a world: an
+    import never unpacks into what another world left.
+    """
+    path = orders / f"{wid}.json"
+    if read_order(path) is not None or path.exists():
+        return "exists"
+    if wid in deleting or domain in deleting.values():
+        return "still-deleting"
+    if os.path.lexists(home / "data" / wid):
+        return "exists"
+    if any(o.get("domain") == domain for o in read_orders(orders)):
+        return "address-taken"
+    return None
+
+
+def settle_import(home: Path, orders: Path, codes_dir: Path, staged: Path, order: dict, admin_code: str) -> None:
+    """Move an unpacked, checked world into place: its folder, its keys, then its order — stopped.
+
+    The order goes last: the world is in the book only once its data and its
+    keys are. Fresh keys, as for a world just created: a JWT secret of its
+    own and the code the door showed. What cannot be written is taken back.
+    """
+    wid = order["id"]
+    data = home / "data" / wid
+    data.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(staged, 0o755)  # as a created world's folder; staging/ itself stays root's alone
+    os.rename(staged, data)
+    try:
+        give_code(home, codes_dir, wid, admin_code, fresh=True)
+        write_json(orders / f"{wid}.json", order)
+    except (OSError, ValueError):
+        shutil.rmtree(data, ignore_errors=True)
+        for leftover in (orders / f"{wid}.json", codes_dir / wid, home / "env" / f"{wid}.env"):
+            try:
+                leftover.unlink(missing_ok=True)
+            except OSError:
+                print("an import whose keys could not be written could not be wholly undone", file=sys.stderr)
+        raise
+
+
+def import_world(
+    home: Path,
+    orders: Path,
+    codes_dir: Path,
+    entry: dict,
+    message: dict,
+    raw: dict,
+    admin_code: str,
+    alias: str,
+    allowed: set[str] | frozenset[str],
+    control_host: str | None,
+    now: float,
+    deleting: dict[str, str | None],
+) -> tuple[str | None, str | None]:
+    """Bring a world back from its uploaded zip, born stopped: (None, None), or (the rule, the entry or None).
+
+    First what the door checked, again: the name and the address (exists,
+    still-deleting, address-taken, refused) and the cap on the zip. Then the
+    zip becomes the machine's own copy, which must be the signed one
+    (take_zip: fingerprint); its index must keep every rule (inspect_zip) —
+    nothing is written outside the upload folder until then; the disk must
+    keep its reserve after the declared total (no-room); the world is
+    unpacked into a root-only staging folder (unpack) and its database
+    checked (check_database); only then is it moved to data/<id>/ with keys
+    of its own and an order that says stopped (settle_import). Whatever
+    fails, the staging folder goes and nothing stays.
+    """
+    wid, nonce = entry["world"], entry["nonce"]
+    staging = home / "staging"
+    target = staging / nonce
+    order = {
+        "id": wid,
+        "card": wid,
+        "state": "stopped",
+        "server": alias,
+        "domain": message["domain"],
+        "image": message["image"],
+        "limits": {"memory": message["memory"], "cpus": message["cpus"], "maxUploadMb": message["maxUploadMb"]},
+        "createdAt": utc(now),
+        "createdBy": entry["by"],
+    }
+    try:
+        rule = import_clash(home, orders, wid, message["domain"], deleting)
+        if rule is None and refusal(order, allowed, control_host) is not None:
+            rule = "refused"
+        if rule is None and message["zipBytes"] > ZIP_MAX:
+            rule = "zip-too-big"
+        if rule is None and raw.get("zip") != f"{nonce}.zip":
+            rule = "fingerprint"
+        if rule is not None:
+            return rule, None
+        if not staging.is_dir():
+            staging.mkdir(mode=0o700, parents=True)  # bootstrap.sh makes it; made here the same way if missing
+        write_json(home / "run" / IMPORTING, {wid: {"nonce": nonce, "by": entry["by"], "message": message}})
+        answer(home, entry, "working", None, now)
+        with take_zip(home / "uploads" / f"{nonce}.zip", message["zipBytes"], message["zipSha256"], staging) as copy:
+            forget_upload(home, nonce)  # from here on only the machine's own copy is read
+            with open_zip(copy) as zipped:
+                plan = inspect_zip(zipped)
+                if shutil.disk_usage(staging).free < plan["bytes"] + RESERVE:
+                    raise Refused("no-room")
+                os.mkdir(target, 0o700)
+                unpack(zipped, plan, target)
+        check_database(target / ENGINE_DB)
+        settle_import(home, orders, codes_dir, target, order, admin_code)
+    except Refused as refused:
+        return refused.rule, refused.entry
+    except (OSError, ValueError) as error:
+        full = isinstance(error, OSError) and error.errno == errno.ENOSPC
+        return ("no-room" if full else "the world could not be written here"), None
+    finally:
+        if target.is_dir() and not target.is_symlink():
+            shutil.rmtree(target, ignore_errors=True)
+    return None, None
+
+
+def clear_imports(home: Path, orders: Path, now: float) -> None:
+    """What an import that stopped halfway left — its run died — goes before the inbox is read.
+
+    Runs never overlap (systemd starts one at a time), so a world still
+    marked as being unpacked, or a staging folder, at the start of a run is
+    a leftover. Its request gets its answer: done if its order was written
+    (the last step), failed otherwise.
+    """
+    marker = home / "run" / IMPORTING
+    raw = read_json(marker, {})
+    for wid, job in (raw.items() if isinstance(raw, dict) else []):
+        if not matches(SLUG, wid) or not isinstance(job, dict) or not matches(NONCE, job.get("nonce")):
+            continue
+        result = read_json(home / "requests" / f"{job['nonce']}.json", {})
+        if isinstance(result, dict) and result.get("state") in ("done", "failed"):
+            continue
+        entry = {"nonce": job["nonce"], "type": "ImportWorld", "world": wid, "by": job.get("by")}
+        if read_order(orders / f"{wid}.json") is not None:
+            answer(home, entry, "done", None, now)
+        else:
+            answer(home, entry, "failed", "the run stopped in the middle of the import", now)
+        forget_upload(home, job["nonce"])
+    marker.unlink(missing_ok=True)
+    staging = home / "staging"
+    for path in sorted(staging.iterdir()) if staging.is_dir() else []:
+        if matches(NONCE, path.name) and path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path, ignore_errors=True)
+
+
+def prune_uploads(home: Path, now: float | None = None) -> list[str]:
+    """Remove the upload slots past their hour, with their part files, and what no slot or request holds.
+
+    The door removes an expired slot too, when an upload reaches it. A zip
+    or a part file that nothing names any more (a door stopped halfway)
+    goes once it has been still for a slot's hour. Returns the slots removed.
+    """
+    now = time.time() if now is None else now
+    uploads = home / "uploads"
+    if not uploads.is_dir():
+        return []
+    waiting = {p.name[: -len(".json")].rpartition("-")[2] for p in (home / "inbox").glob("*.json")}
+    gone = []
+    for path in sorted(uploads.iterdir()):
+        name = path.name
+        try:
+            still = now - os.lstat(path).st_mtime > SLOT_SECONDS
+        except OSError:
+            continue
+        doomed = False
+        if name.endswith(".json") and matches(NONCE, name[: -len(".json")]):
+            slot = read_json(path, None)
+            ends = epoch(slot.get("expiresAt")) if isinstance(slot, dict) else None
+            if ends is None or now > ends:
+                forget_upload(home, name[: -len(".json")])
+                gone.append(name[: -len(".json")])
+        elif name.startswith(".") and name.endswith(".zip.part") and matches(NONCE, name[1: -len(".zip.part")]):
+            doomed = still and not (uploads / f"{name[1: -len('.zip.part')]}.json").exists()
+        elif name.endswith(".zip") and matches(NONCE, name[: -len(".zip")]):
+            doomed = still and name[: -len(".zip")] not in waiting
+        elif name.startswith(".") and name.endswith(".tmp"):
+            doomed = still
+        if doomed:
+            try:
+                path.unlink()
+            except OSError:
+                print("an upload's leftover could not be removed; the next run tries again", file=sys.stderr)
+    return gone
 
 
 # ---------------------------------------------------------------------------
@@ -1408,6 +2035,8 @@ def run_once(args: argparse.Namespace, alias: str, orders: Path, admin_code: str
               file=sys.stderr)
     take_requests(args.home, orders, alias, read_signers(args.signers_file), allowed, control_host,
                   codes_dir=args.codes_dir)
+    # Upload slots past their hour, and what an upload stopped halfway left.
+    expired = prune_uploads(args.home)
     p = plan(orders, args.home, alias, allowed, admin_code=admin_code, control_host=control_host)
     for wid in p["keyless"]:
         print(
@@ -1429,6 +2058,8 @@ def run_once(args: argparse.Namespace, alias: str, orders: Path, admin_code: str
     prune_copies(args.home)
     if synced:
         print(f"{alias}: code files made equal to their key files for {synced}")
+    if expired:
+        print(f"{alias}: {len(expired)} upload slot(s) past their hour removed")
     for wid in p["new_keys"]:
         print(f"{wid}: keys made on this machine (its own JWT secret, the machine's legacy admin code)")
     print(f"{alias}: running {p['running']} stopped {p['stopped']} keyless {p['keyless']}"

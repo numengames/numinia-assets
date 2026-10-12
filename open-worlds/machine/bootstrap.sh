@@ -22,7 +22,8 @@
 #
 # What it does, in order: Docker, a 2 GB swap file, the firewall (22, 80, 443
 # only), unattended upgrades, a clone of this repository at the pinned commit
-# (the recipe), the door's own user, the programs, the alias, the machine's
+# (the recipe), the door's own user and its folders (the inbox, the upload
+# folder for a world's zip), the programs, the alias, the machine's
 # address for the console (<alias>.numinia.com), the Oracles' wallets, the
 # machine's old shared admin code and the folder of each world's own, its
 # first orders (adopted once from the public order book), systemd units, and
@@ -135,8 +136,11 @@ main() {
   dpkg-reconfigure -f noninteractive unattended-upgrades
 
   echo "== the recipe at $BOOK_DIR"
-  mkdir -p "$HOME_DIR"/{data,env,run,orders,requests}
+  mkdir -p "$HOME_DIR"/{data,env,run,orders,requests,staging}
   chmod 700 "$HOME_DIR/env"
+  # Where the reconciler unpacks a world brought back from its zip, checked
+  # before it becomes data/<id>/: root's alone.
+  chmod 700 "$HOME_DIR/staging"
   if [[ ! -d "$BOOK_DIR/.git" ]]; then
     git clone --quiet --depth 1 "$BOOK_URL" "$BOOK_DIR"
   fi
@@ -160,11 +164,12 @@ main() {
   if ! id -u fleetd >/dev/null 2>&1; then
     useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin fleetd
   fi
-  mkdir -p "$HOME_DIR"/{inbox,sock,copies}
-  # The door writes requests into the inbox and its socket into sock/; it reads
-  # copies; it writes nothing else.
-  chown fleetd:fleetd "$HOME_DIR/inbox" "$HOME_DIR/sock"
-  chmod 750 "$HOME_DIR/inbox"
+  mkdir -p "$HOME_DIR"/{inbox,sock,copies,uploads}
+  # The door writes requests into the inbox, a world's zip and its upload
+  # slot into uploads/, and its socket into sock/; it reads copies; it
+  # writes nothing else. Root reads uploads/ (the reconciler takes each zip).
+  chown fleetd:fleetd "$HOME_DIR/inbox" "$HOME_DIR/sock" "$HOME_DIR/uploads"
+  chmod 750 "$HOME_DIR/inbox" "$HOME_DIR/uploads"
   chmod 755 "$HOME_DIR/sock"
   chown root:fleetd "$HOME_DIR/copies"
   chmod 750 "$HOME_DIR/copies"
@@ -283,7 +288,7 @@ ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictAddressFamilies=AF_UNIX
-ReadWritePaths=$HOME_DIR/inbox $HOME_DIR/sock
+ReadWritePaths=$HOME_DIR/inbox $HOME_DIR/sock $HOME_DIR/uploads
 
 [Install]
 WantedBy=multi-user.target
@@ -312,6 +317,7 @@ Done. This machine is "$ALIAS".
   Oracles here:      $ORACLES wallet(s) in /etc/fleet/signers
   its orders:        $HOME_DIR/orders/<id>.json, written by the worlds room through the door
   a world's folder:  $HOME_DIR/data/<id>/
+  a zip coming in:   $HOME_DIR/uploads/ (its slot lives an hour), unpacked in $HOME_DIR/staging/ and checked first
   what is running:   docker compose -f $HOME_DIR/run/docker-compose.yml ps
   the reconciler:    journalctl -u fleet-reconcile -n 20
   the door:          journalctl -u fleetd -n 20

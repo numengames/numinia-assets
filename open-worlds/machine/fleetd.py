@@ -11,21 +11,30 @@ What it does, and nothing more:
 
 - POST /fleet/v1/actions — a request an Oracle signed with their wallet
   (EIP-712, see walletsig.py): create, stop, start, delete or download a
-  world, show a world's admin code or change it, or show the machine's
-  legacy code. It checks the shape, the machine, the time window, the
-  signature, that the signer is one of the Oracles listed on this machine,
-  and that the request number is new; then it drops the request into
-  /srv/fleet/inbox/ and answers 202. The reconciler (root) checks it again
-  and does the work. A world's admin code is the one secret the door
-  carries: it reads it from /etc/fleet/codes/<id> to show it, and makes a
-  new one for a world just created or whose code an Oracle changes —
-  written into the inbox entry for the reconciler, which puts it in the
-  world's key file. The door never writes a key file and never logs a code.
+  world, bring one back from its zip, show a world's admin code or change
+  it, or show the machine's legacy code. It checks the shape, the machine,
+  the time window, the signature, that the signer is one of the Oracles
+  listed on this machine, and that the request number is new; then it
+  drops the request into /srv/fleet/inbox/ and answers 202. The reconciler
+  (root) checks it again and does the work. A world's admin code is the one
+  secret the door carries: it reads it from /etc/fleet/codes/<id> to show
+  it, and makes a new one for a world just created, brought back or whose
+  code an Oracle changes — written into the inbox entry for the
+  reconciler, which puts it in the world's key file. The door never writes
+  a key file and never logs a code.
+- An import (ImportWorld) names its zip's exact size and SHA-256. The door
+  first keeps an upload slot for it (/srv/fleet/uploads/<n>.json, an hour),
+  if the disk has room for the zip and what it unpacks to; then
+  PUT /fleet/v1/uploads/<n> streams the zip in, and only the zip that is
+  exactly that size and that SHA-256 turns the slot into a request in the
+  inbox. Another zip is refused and the slot kept, so the browser can send
+  it again without a new signature.
 - GET /fleet/v1/machine, /worlds, /log — public facts: the machine, the
   commit of the recipe it installed, and whether its reconciler keeps up
   (when it last ran, how it ended, how many requests wait and since when),
-  its worlds and their phase, the last things done here. No wallet in
-  full, no key, no code.
+  whether it takes zips and up to what size, its worlds and their phase
+  (an import shows its upload's progress), the last things done here. No
+  wallet in full, no key, no code.
 - GET /fleet/v1/requests/<n> — how a request went.
 - GET /fleet/v1/copies/<c> and /copies/<c>/file — a copy's state and the
   zip. The copy's number (128 random bits, given only to the Oracle who
@@ -33,16 +42,18 @@ What it does, and nothing more:
   a day.
 
 It runs as its own user (fleetd), with no Docker, no root, no network of its
-own (a Unix socket only) and write access to the inbox alone. Broken into,
-it still cannot sign for an Oracle: the reconciler checks every signature
-again. Python's standard library only, besides python3-ecdsa for the
-signature.
+own (a Unix socket only) and write access to the inbox and the upload folder
+alone. Broken into, it still cannot sign for an Oracle: the reconciler
+checks every signature again, and a zip's fingerprint, and reads the zip
+from a copy of its own. Python's standard library only, besides
+python3-ecdsa for the signature.
 """
 
 from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import os
 import re
@@ -69,6 +80,9 @@ WINDOW = 15 * 60  # a signed request is good for at most fifteen minutes
 MAX_BODY = 16 * 1024
 LOG_LINES = 50
 PHASES = {"DeleteWorld": "deleting", "StopWorld": "stopping", "StartWorld": "starting"}
+BIRTHS = ("CreateWorld", "ImportWorld")  # the requests that make a world that is not here yet
+LENGTH = re.compile(r"[0-9]{1,20}")  # a Content-Length, digits only
+PROGRESS_SECONDS = 1.0  # an upload's slot says how far it got at most this often
 
 
 class Nonces:
@@ -110,6 +124,14 @@ class Limiter:
         return True
 
 
+def uploaded(slot: dict) -> int:
+    """How many bytes of its zip a slot says have arrived: a whole number from 0 to the zip's size."""
+    got = slot.get("bytes")
+    if isinstance(got, bool) or not isinstance(got, int):
+        return 0
+    return max(0, min(got, slot["message"]["zipBytes"]))
+
+
 class Door:
     """Everything the door knows and does, without HTTP — what the tests drive."""
 
@@ -126,6 +148,7 @@ class Door:
         origins_file: Path = ORIGINS_FILE,
         state: Path = STATE,
         clock=time.time,
+        disk_usage=shutil.disk_usage,
     ) -> None:
         self.home = home
         self.alias = alias or R.ALIAS_FILE.read_text(encoding="utf-8").strip()
@@ -137,15 +160,21 @@ class Door:
         self.domains_file = domains_file
         self.origins_file = origins_file
         self.clock = clock
+        self.disk_usage = disk_usage
         self.lock = threading.Lock()
         self.nonces = Nonces(state / "nonces.json")
         self.limiter = Limiter()
+        self.streaming: set[str] = set()  # the slots a PUT is writing into right now
 
     # --- what the door reads -------------------------------------------------
 
     @property
     def orders(self) -> Path:
         return self.home / "orders"
+
+    @property
+    def uploads(self) -> Path:
+        return self.home / "uploads"
 
     def inbox(self) -> list[dict]:
         """The requests the reconciler has not taken yet."""
@@ -156,6 +185,42 @@ class Door:
                 waiting.append(raw)
         return waiting
 
+    def read_slot(self, nonce: str) -> dict | None:
+        """An upload slot as the door wrote it — an ImportWorld waiting for its zip — whether or not it expired."""
+        if not R.matches(R.NONCE, nonce):
+            return None
+        raw = R.read_json(self.uploads / f"{nonce}.json", None)
+        if not isinstance(raw, dict) or raw.get("type") != "ImportWorld" or R.epoch(raw.get("expiresAt")) is None:
+            return None
+        message = raw.get("message")
+        if not isinstance(message, dict) or message.get("nonce") != nonce:
+            return None
+        return raw if R.request_problem("ImportWorld", message) is None else None
+
+    def expired(self, slot: dict, now: float) -> bool:
+        ends = R.epoch(slot.get("expiresAt"))
+        return ends is None or now > ends
+
+    def slots(self) -> dict[str, dict]:
+        """The open upload slots, by request number."""
+        now = self.clock()
+        found = {}
+        for path in sorted(self.uploads.glob("*.json")) if self.uploads.is_dir() else []:
+            slot = self.read_slot(path.name[: -len(".json")])
+            if slot is not None and not self.expired(slot, now):
+                found[path.name[: -len(".json")]] = slot
+        return found
+
+    def importing(self) -> dict[str, dict]:
+        """The world the reconciler is unpacking right now (run/import.json): id → the message it signed."""
+        raw = R.read_json(self.home / "run" / R.IMPORTING, {})
+        found = {}
+        for wid, job in (raw.items() if isinstance(raw, dict) else []):
+            message = job.get("message") if isinstance(job, dict) else None
+            if R.matches(R.SLUG, wid) and R.request_problem("ImportWorld", message) is None:
+                found[wid] = message
+        return found
+
     def origin_allowed(self, origin: str) -> bool:
         extra = set()
         if self.origins_file.is_file():
@@ -163,7 +228,7 @@ class Door:
         return origin in CONSOLE_ORIGINS or origin in extra
 
     def machine(self) -> dict:
-        """The machine's public facts: who it is, its recipe, and whether its reconciler is keeping up."""
+        """The machine's public facts: who it is, its recipe, whether its reconciler is keeping up, what zips it takes."""
         return {
             "machine": self.alias,
             "door": "fleetd/1",
@@ -172,6 +237,8 @@ class Door:
             "recipe": self.recipe(),
             "lastRun": self.last_run(),
             "waiting": self.waiting(),
+            # The room offers to bring a world back from a zip only to a door that says this.
+            "imports": {"zipMaxBytes": R.ZIP_MAX},
             "at": R.utc(self.clock()),
         }
 
@@ -211,7 +278,12 @@ class Door:
         return found
 
     def worlds(self) -> dict:
-        """This machine's worlds and what is happening to each: no wallet, no key."""
+        """This machine's worlds and what is happening to each: no wallet, no key.
+
+        A world not in the book yet shows how it is coming: `creating`, or for
+        an import `uploading` (its zip arriving: `bytes` of `of`) and then
+        `importing` (waiting in the inbox, or being unpacked).
+        """
         allowed = R.read_allowed_domains(self.domains_file)
         pending = {r["message"].get("world"): r for r in self.inbox()}
         listed = []
@@ -219,18 +291,33 @@ class Door:
             kind = pending.get(order["id"], {}).get("type")
             listed.append({**order, "phase": PHASES.get(kind, order["state"])})
         known = {world["id"] for world in listed}
-        for wid, raw in pending.items():
-            message = raw["message"]
-            if raw.get("type") == "CreateWorld" and wid not in known:
-                listed.append({
-                    "id": wid,
-                    "state": "running",
-                    "domain": message["domain"],
-                    "image": message["image"],
-                    "limits": {"memory": message["memory"], "cpus": message["cpus"],
-                               "maxUploadMb": message["maxUploadMb"]},
-                    "phase": "creating",
-                })
+
+        def coming(message: dict, phase: str, **more: object) -> None:
+            if message["world"] in known:
+                return
+            known.add(message["world"])
+            listed.append({
+                "id": message["world"],
+                "state": "running" if phase == "creating" else "stopped",  # an import is born stopped
+                "domain": message["domain"],
+                "image": message["image"],
+                "limits": {"memory": message["memory"], "cpus": message["cpus"],
+                           "maxUploadMb": message["maxUploadMb"]},
+                "phase": phase,
+                **more,
+            })
+
+        for raw in pending.values():
+            if R.request_problem(raw.get("type"), raw["message"]) is not None:
+                continue
+            if raw["type"] == "CreateWorld":
+                coming(raw["message"], "creating")
+            elif raw["type"] == "ImportWorld":
+                coming(raw["message"], "importing")
+        for message in self.importing().values():
+            coming(message, "importing")
+        for slot in self.slots().values():
+            coming(slot["message"], "uploading", bytes=uploaded(slot), of=slot["message"]["zipBytes"])
         for wid, domain in self.purging().items():
             if wid not in known:
                 listed.append({"id": wid, "domain": domain, "phase": "deleting"})
@@ -252,6 +339,10 @@ class Door:
             return None
         if any(r["message"].get("nonce") == nonce for r in self.inbox()):
             return {"request": nonce, "state": "pending"}
+        slot = self.read_slot(nonce)
+        if slot is not None and not self.expired(slot, self.clock()):
+            # An import whose zip is still on its way.
+            return {"request": nonce, "state": "uploading", "bytes": uploaded(slot), "of": slot["message"]["zipBytes"]}
         result = R.read_json(self.home / "requests" / f"{nonce}.json", None)
         return result if isinstance(result, dict) else None
 
@@ -276,23 +367,31 @@ class Door:
     # --- the one thing the door does: take a signed request -------------------
 
     def clash(self, kind: str, message: dict) -> str | None:
-        """Why the machine's book cannot take this request now; None when it can."""
+        """Why the machine's book cannot take this request now; None when it can.
+
+        A world on its way counts as here: a create or an import waiting in
+        the inbox, an import's open upload slot, an import being unpacked.
+        Each holds its name and its address until it lands or goes.
+        """
         if kind == "ShowAdminCode":
             return None
         wid = message["world"]
         current = R.read_order(self.orders / f"{wid}.json")
         waiting = [r for r in self.inbox() if r["message"].get("world") == wid]
+        slots = list(self.slots().values())
+        importing = self.importing()
+        coming = wid in importing or any(s["message"]["world"] == wid for s in slots)
         if kind in ("ShowWorldCode", "RotateWorldCode"):
             # A world's own code: shown or changed only for a world that is
             # here, settled, and not already changing its code — else the
             # Oracle would be shown a code about to stop working.
             if wid in self.purging() or any(r.get("type") == "DeleteWorld" for r in waiting):
                 return "still-deleting"
-            if any(r.get("type") in ("CreateWorld", "RotateWorldCode") for r in waiting):
+            if coming or any(r.get("type") in (*BIRTHS, "RotateWorldCode") for r in waiting):
                 return "busy"
             return "missing" if current is None else None
-        if kind == "CreateWorld":
-            if current is not None or any(r.get("type") == "CreateWorld" for r in waiting):
+        if kind in BIRTHS:
+            if current is not None or coming or any(r.get("type") in BIRTHS for r in waiting):
                 return "exists"
             domain = message["domain"]
             # A world deleted a moment ago keeps its folder and keys until its
@@ -302,11 +401,13 @@ class Door:
             if wid in deleting or domain in deleting.values():
                 return "still-deleting"
             taken = {o.get("domain") for o in R.read_orders(self.orders)}
-            taken |= {r["message"].get("domain") for r in self.inbox() if r.get("type") == "CreateWorld"}
+            taken |= {r["message"].get("domain") for r in self.inbox() if r.get("type") in BIRTHS}
+            taken |= {s["message"]["domain"] for s in slots} | {m["domain"] for m in importing.values()}
             if domain in taken:
                 return "address-taken"
             draft = {
-                "id": wid, "state": "running", "domain": domain, "image": message["image"],
+                "id": wid, "state": "running" if kind == "CreateWorld" else "stopped", "domain": domain,
+                "image": message["image"],
                 "limits": {"memory": message["memory"], "cpus": message["cpus"],
                            "maxUploadMb": message["maxUploadMb"]},
             }
@@ -319,6 +420,23 @@ class Door:
         if kind == "DeleteWorld" and current.get("domain") != message["domain"]:
             return "address-mismatch"
         return None
+
+    def room_for(self, zip_bytes: int) -> bool:
+        """Whether the disk keeps its reserve after this zip, what it unpacks to, and every import already let in.
+
+        An open slot holds room for its whole zip and its unpacking; an
+        import whose zip has arrived (in the inbox, or being unpacked) for
+        its unpacking still to come.
+        """
+        try:
+            free = self.disk_usage(self.home).free
+        except OSError:
+            return False
+        promised = sum(R.reservation(s["message"]["zipBytes"]) for s in self.slots().values())
+        promised += sum(R.unpacking(r["message"]["zipBytes"]) for r in self.inbox()
+                        if r.get("type") == "ImportWorld" and R.request_problem("ImportWorld", r["message"]) is None)
+        promised += sum(R.unpacking(m["zipBytes"]) for m in self.importing().values())
+        return free >= R.reservation(zip_bytes) + R.RESERVE + promised
 
     def accept(self, body: bytes, client: str = "-") -> tuple[int, dict]:
         now = self.clock()
@@ -347,7 +465,8 @@ class Door:
             return 403, {"error": "not-an-oracle-here"}
         with self.lock:
             nonce = message["nonce"]
-            used = (self.home / "requests" / f"{nonce}.json").exists() or any(
+            used = (self.home / "requests" / f"{nonce}.json").exists() or (
+                self.uploads / f"{nonce}.json").exists() or any(
                 r["message"].get("nonce") == nonce for r in self.inbox()
             )
             if used or not self.nonces.claim(nonce, message["expires"], now):
@@ -355,6 +474,11 @@ class Door:
             clash = self.clash(kind, message)
             if clash:
                 return 409, {"error": clash}
+            if kind == "ImportWorld":
+                if message["zipBytes"] > R.ZIP_MAX:
+                    return 413, {"error": "zip-too-big"}
+                if not self.room_for(message["zipBytes"]):
+                    return 507, {"error": "no-room"}
             reply: dict = {"request": nonce}
             dropped = {"type": kind, "message": message, "signature": request["signature"],
                        "signer": signer, "receivedAt": R.utc(now)}
@@ -367,16 +491,127 @@ class Door:
                 if code is None:
                     return 503, {"error": "no-admin-code"}
                 reply["adminCode"] = code
-            elif kind in ("CreateWorld", "RotateWorldCode"):
+            elif kind in (*BIRTHS, "RotateWorldCode"):
                 # A new code of the world's own, made here and shown once to the
                 # Oracle who signed; the inbox entry carries it to the
                 # reconciler, which writes it into the world's key file.
                 reply["adminCode"] = dropped["adminCode"] = R.make_code()
-            name = f"{int(now * 1000):013d}-{nonce}.json"
-            R.write_json(self.home / "inbox" / name, dropped, mode=0o640)
+            if kind == "ImportWorld":
+                # Not in the inbox yet: a slot that waits an hour for the zip
+                # it names, which only then becomes the request.
+                slot = {**dropped, "expiresAt": R.utc(now + R.SLOT_SECONDS), "bytes": 0}
+                R.write_json(self.uploads / f"{nonce}.json", slot, mode=0o640)
+                reply["upload"] = f"uploads/{nonce}"
+            else:
+                name = f"{int(now * 1000):013d}-{nonce}.json"
+                R.write_json(self.home / "inbox" / name, dropped, mode=0o640)
         target = f" {message['world']}" if "world" in message else ""
         print(f"accepted {kind}{target} from {W.short(signer)}", file=sys.stderr)
         return 202, reply
+
+    # --- an import's zip, streamed into its slot -------------------------------
+
+    def upload(self, nonce: str, length: str | None, body, client: str = "-") -> tuple[int, dict]:
+        """Take a slot's zip from `body`: kept only when it is exactly the size and the SHA-256 signed for it.
+
+        Counted once by the rate limiter, never per piece. No slot: missing;
+        a slot past its hour: slot-expired (and it goes); a length that is
+        not the signed size: wrong-size, before a byte is read; another
+        upload into the same slot: busy.
+        """
+        now = self.clock()
+        if not self.limiter.allow(client, now):
+            return 429, {"error": "slow-down"}
+        slot = self.read_slot(nonce)
+        if slot is None:
+            return 404, {"error": "missing"}
+        if self.expired(slot, now):
+            self.drop_slot(nonce)
+            return 410, {"error": "slot-expired"}
+        if not R.matches(LENGTH, length):
+            return 411, {"error": "length"}
+        size = slot["message"]["zipBytes"]
+        if int(length) != size:
+            return 400, {"error": "wrong-size"}
+        with self.lock:
+            if nonce in self.streaming:
+                return 409, {"error": "busy"}
+            self.streaming.add(nonce)
+        try:
+            return self.stream(nonce, slot, body)
+        finally:
+            with self.lock:
+                self.streaming.discard(nonce)
+
+    def drop_slot(self, nonce: str) -> None:
+        """A slot past its hour goes, with whatever part of its zip had arrived."""
+        for name in (f"{nonce}.json", f".{nonce}.zip.part"):
+            (self.uploads / name).unlink(missing_ok=True)
+
+    def progress(self, nonce: str, received: int) -> bool:
+        """Write how far a slot's upload got; False when the slot went or its hour is over."""
+        slot = self.read_slot(nonce)
+        if slot is None or self.expired(slot, self.clock()):
+            return False
+        R.write_json(self.uploads / f"{nonce}.json", {**slot, "bytes": received}, mode=0o640)
+        return True
+
+    def stream(self, nonce: str, slot: dict, body) -> tuple[int, dict]:
+        """Write the zip into the slot's part file in pieces, hashing as it goes, and judge it at the end."""
+        size, signed = slot["message"]["zipBytes"], slot["message"]["zipSha256"]
+        part = self.uploads / f".{nonce}.zip.part"
+        digest, received, said = hashlib.sha256(), 0, self.clock()
+        fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o640)
+        with os.fdopen(fd, "wb") as out:
+            while received < size:
+                try:
+                    chunk = body.read(min(R.CHUNK, size - received))
+                except (OSError, ValueError):  # a timeout, or a connection that went
+                    break
+                if not chunk:
+                    break
+                try:
+                    out.write(chunk)
+                except OSError:  # the disk is full after all
+                    self.give_up(nonce)
+                    return 507, {"error": "no-room"}
+                digest.update(chunk)
+                received += len(chunk)
+                if self.clock() - said >= PROGRESS_SECONDS:
+                    said = self.clock()
+                    if not self.progress(nonce, received):
+                        self.drop_slot(nonce)
+                        return 410, {"error": "slot-expired"}
+        world = slot["message"]["world"]
+        if received < size:
+            self.give_up(nonce)
+            print(f"the zip for {world} stopped halfway: cut", file=sys.stderr)
+            return 400, {"error": "cut"}
+        if digest.hexdigest() != signed:
+            # Not the zip the Oracle signed. The slot stays: the browser may
+            # send the right one again, without a new signature, while it lives.
+            self.give_up(nonce)
+            print(f"the zip for {world} is not the one signed: fingerprint", file=sys.stderr)
+            return 400, {"error": "fingerprint"}
+        with self.lock:
+            current = self.read_slot(nonce)
+            if current is None or self.expired(current, self.clock()):
+                self.drop_slot(nonce)
+                return 410, {"error": "slot-expired"}
+            # The zip is the one signed: the slot becomes the request the
+            # reconciler takes. The inbox entry first, then the slot goes,
+            # so the world is never shown as neither.
+            os.replace(part, self.uploads / f"{nonce}.zip")
+            entry = {**current, "bytes": size, "zip": f"{nonce}.zip"}
+            R.write_json(self.home / "inbox" / f"{int(self.clock() * 1000):013d}-{nonce}.json", entry, mode=0o640)
+            (self.uploads / f"{nonce}.json").unlink(missing_ok=True)
+        print(f"took the zip for {world}: it waits for the reconciler", file=sys.stderr)
+        return 202, {"request": nonce}
+
+    def give_up(self, nonce: str) -> None:
+        """An upload that did not end in the signed zip: its part goes, the slot stays and says nothing arrived."""
+        (self.uploads / f".{nonce}.zip.part").unlink(missing_ok=True)
+        self.progress(nonce, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -413,24 +648,32 @@ class Handler(BaseHTTPRequestHandler):
 
     def reply(self, status: int, payload: dict, write: bool = False) -> None:
         body = (json.dumps(payload) + "\n").encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.cors(write)
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.cors(write)
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            return  # whoever asked has gone (an upload cut on their side): nobody to answer
 
     def route(self) -> list[str]:
         path = self.path.split("?", 1)[0]
         return path[len(PREFIX):].split("/") if path.startswith(PREFIX) else []
 
+    def writes(self) -> bool:
+        """Whether this path takes something from a browser: a signed request, or an import's zip."""
+        parts = self.route()
+        return parts == ["actions"] or (len(parts) == 2 and parts[0] == "uploads")
+
     def do_OPTIONS(self) -> None:  # noqa: N802 — the base class's naming
-        # The preflight before a POST: only the consoles may send requests.
+        # The preflight before a POST or a PUT: only the consoles may send requests and zips.
         self.send_response(204)
-        self.cors(write=self.route() == ["actions"])
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.cors(write=self.writes())
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "content-type")
         self.send_header("Access-Control-Max-Age", "600")
         self.send_header("Content-Length", "0")
@@ -483,6 +726,17 @@ class Handler(BaseHTTPRequestHandler):
         if int(length) > MAX_BODY:
             return self.reply(413, {"error": "too-large"}, write=True)
         status, payload = self.door.accept(self.rfile.read(int(length)), self.client())
+        return self.reply(status, payload, write=True)
+
+    def do_PUT(self) -> None:  # noqa: N802
+        # An import's zip, into the slot its signed request opened.
+        parts = self.route()
+        if len(parts) != 2 or parts[0] != "uploads":
+            return self.reply(404, {"error": "not-found"}, write=True)
+        origin = self.headers.get("Origin")
+        if origin is not None and not self.door.origin_allowed(origin):
+            return self.reply(403, {"error": "origin"}, write=True)
+        status, payload = self.door.upload(parts[1], self.headers.get("Content-Length"), self.rfile, self.client())
         return self.reply(status, payload, write=True)
 
 
