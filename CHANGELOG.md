@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- `open-worlds/machine/`: nothing is lost when a world stops, and nobody is
+  thrown out when another world changes.
+  - The engine writes what was placed, moved or edited in a world every
+    `SAVE_INTERVAL` seconds and not when it is told to stop, so a Stop
+    right after an edit lost up to a minute of it. The machine now passes
+    10 seconds (it passed 60) and the reconciler waits for each world's
+    next save before Docker stops or restarts it, and before it zips a
+    copy of a running world. A stop takes up to 12 seconds longer. The
+    first run of this version restarts `prueba` and `pablofm` once (their
+    interval changes), after their save.
+  - Every create, stop, start or delete reloads Caddy, and a reload closes
+    every WebSocket Caddy carries: every visitor of every world on the
+    machine saw "You have been disconnected". Each world's site now keeps
+    its connections across a reload (`stream_close_delay 12h`). Proved with
+    the real Caddy (2.11.7): without it, a reload that changes another site
+    closes the connection (1001); with it, the connection stays and answers.
+  - The bootstrap line (`curl … | sudo bash`) ended halfway without a word
+    on 12 October: bash reads a piped script as it runs, and the Caddy
+    reload the reconciler starts read the rest of the script as its input,
+    so the timer and the watch on the inbox were never turned on again and
+    the machine took requests it never did. Now the script runs from a
+    function called on its last line (read whole first), no command the
+    reconciler runs reads its input, and the script ends by checking that
+    the door and the reconciler run — and says so, and fails, if not.
+  - `/fleet/v1/machine` says whether the machine keeps up: when the
+    reconciler last ran and how that run ended (`lastRun`, a rule, never a
+    value) and how many requests wait and since when (`waiting`).
+  - A world deleted a moment ago keeps its folder and keys until Docker
+    takes its container down; a world created under its name or address in
+    that time kept them. The door and the reconciler now refuse it
+    (`still-deleting`) until the old one is gone.
+
 - `open-worlds/machine/`: a world is created, stopped, started, downloaded
   and deleted from the worlds room on numinia.com with one signature, and
   nothing else — no pull request, no merge, no SSH. The Oracle's wallet

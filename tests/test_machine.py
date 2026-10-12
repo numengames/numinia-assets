@@ -40,6 +40,8 @@ ORDER = {
     "limits": {"memory": "2g", "cpus": "1.5", "maxUploadMb": 50},
 }
 CODE = "a1b2c3d4e5f6"  # a machine's admin code, as bootstrap.sh makes them
+# A world's site in the Caddyfile: its connections stay open across a reload.
+PLAZA_SITE = "plaza.numen.games {\n\treverse_proxy plaza:3000 {\n\t\tstream_close_delay 12h\n\t}\n}"
 
 
 def order(**over):
@@ -131,7 +133,7 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(plaza["environment"]["PUBLIC_WS_URL"], "wss://plaza.numen.games/ws")
         self.assertEqual(plaza["environment"]["PUBLIC_MAX_UPLOAD_SIZE"], "50")
         self.assertEqual(plaza["deploy"]["resources"]["limits"], {"memory": "2g", "cpus": "1.5"})
-        self.assertIn("plaza.numen.games {\n\treverse_proxy plaza:3000\n}", p["caddyfile"])
+        self.assertIn(PLAZA_SITE, p["caddyfile"])
 
     def test_a_valid_order_renders_exactly_the_expected_service(self):
         p = Book([order()], keys=["plaza"]).plan()
@@ -287,7 +289,7 @@ class ReconcileTests(unittest.TestCase):
             with self.subTest(setting=name):
                 self.assertTrue(env.get(name))
         self.assertEqual(env["ASSETS_BASE_URL"], "https://plaza.numen.games/assets")
-        self.assertEqual(env["SAVE_INTERVAL"], "60")
+        self.assertEqual(env["SAVE_INTERVAL"], "10")
         self.assertTrue(env["PUBLIC_WS_URL"].startswith("wss://"))
         self.assertNotIn("PUBLIC_ASSETS_URL", env)  # a name this engine never reads
         for key in ("JWT_SECRET", "ADMIN_CODE"):
@@ -300,7 +302,7 @@ class ReconcileTests(unittest.TestCase):
         self.assertEqual(p["new_keys"], ["plaza"])
         self.assertEqual(p["keyless"], [])
         self.assertEqual(p["running"], ["plaza"])
-        self.assertIn("plaza.numen.games {\n\treverse_proxy plaza:3000\n}", p["caddyfile"])
+        self.assertIn(PLAZA_SITE, p["caddyfile"])
         self.assertNotIn(CODE, p["compose"])
 
     def test_a_world_with_keys_or_a_stopped_one_is_never_keyed(self):
@@ -456,6 +458,126 @@ class ReconcileTests(unittest.TestCase):
             self.assertFalse(R.caddy_needs_reload("a\n", applied))
             self.assertTrue(R.caddy_needs_reload("b\n", applied))
 
+    # --- nothing is lost when a world stops; nobody is thrown out -------------
+
+    def test_every_world_site_keeps_its_visitors_connected_across_a_reload(self):
+        """A reload replaces Caddy's whole configuration and, by default, closes every WebSocket on it."""
+        two = [order(), order(id="foro", card="foro", domain="foro.numen.games")]
+        p = Book(two, keys=["plaza", "foro"]).plan()
+        self.assertIn(PLAZA_SITE, p["caddyfile"])
+        self.assertEqual(p["caddyfile"].count("stream_close_delay 12h"), 2)
+
+    def test_no_command_the_reconciler_runs_reads_its_input(self):
+        """Piped into bash, the bootstrap's own text is that input: a child reading it ends the script."""
+        with mock.patch.object(R.subprocess, "run") as run:
+            R.sh("docker", "compose", "version")
+        self.assertEqual(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
+        self.assertTrue(run.call_args.kwargs["check"])
+
+    def apply_events(self, b, p, before=None):
+        """apply() with a fake shell and a fake clock; what happened, in order."""
+        events = []
+        if before is not None:
+            (b.home / "run").mkdir(parents=True, exist_ok=True)
+            (b.home / "run" / "docker-compose.applied.yml").write_text(json.dumps(before), encoding="utf-8")
+        with mock.patch.object(R, "sh", lambda *cmd: events.append(("sh", cmd[4] if len(cmd) > 4 else cmd))):
+            with contextlib.redirect_stderr(io.StringIO()):
+                R.apply(p, b.home, CODE, sleep=lambda s: events.append(("sleep", s)))
+        return events
+
+    def test_stopping_a_running_world_waits_for_its_next_save_first(self):
+        """The engine writes objects only on its save timer, and not when it is told to stop."""
+        b = Book([order()], keys=["plaza"])
+        self.assertNotIn("sleep", [e[0] for e in self.apply_events(b, b.plan(admin_code=CODE))])
+        (b.orders / "plaza.json").write_text(json.dumps(order(state="stopped")), encoding="utf-8")
+        events = self.apply_events(b, b.plan(admin_code=CODE))
+        self.assertEqual(events[0], ("sleep", 12))  # SAVE_INTERVAL 10 + 2 for the save itself
+        self.assertEqual(events[1], ("sh", "up"))
+
+    def test_a_world_started_with_the_old_interval_waits_as_long_as_that(self):
+        """open-1's worlds run with 60 s: the first run of this version recreates them, after their save."""
+        b = Book([order()], keys=["plaza"])
+        p = b.plan(admin_code=CODE)
+        old = json.loads(p["compose"])
+        old["services"]["plaza"]["environment"]["SAVE_INTERVAL"] = "60"
+        events = self.apply_events(b, p, before=old)
+        self.assertEqual(events[0], ("sleep", 62))
+
+    def test_creating_starting_deleting_or_changing_nothing_waits_for_nothing(self):
+        b = Book([order()], keys=["plaza"])
+        self.assertNotIn("sleep", [e[0] for e in self.apply_events(b, b.plan(admin_code=CODE))])
+        self.assertNotIn("sleep", [e[0] for e in self.apply_events(b, b.plan(admin_code=CODE))])
+        (b.orders / "plaza.json").unlink()  # deleted: its data goes, there is nothing to keep
+        self.assertNotIn("sleep", [e[0] for e in self.apply_events(b, b.plan(admin_code=CODE))])
+
+    def test_a_machine_set_up_before_the_applied_copy_reads_the_last_compose_file(self):
+        b = Book([order()], keys=["plaza"])
+        p = b.plan(admin_code=CODE)
+        old = json.loads(p["compose"])
+        old["services"]["plaza"]["environment"]["SAVE_INTERVAL"] = "60"
+        (b.home / "run").mkdir(parents=True)
+        (b.home / "run" / "docker-compose.yml").write_text(json.dumps(old), encoding="utf-8")
+        self.assertEqual(self.apply_events(b, p)[0], ("sleep", 62))
+        self.assertEqual((b.home / "run" / "docker-compose.applied.yml").read_text(encoding="utf-8"), p["compose"])
+
+    def test_save_waits_ignore_caddy_garbage_and_unknown_intervals(self):
+        after = {"services": {"caddy": {"image": "caddy:2"}, "plaza": {"image": "b"}}}
+        before = {"services": {"caddy": {"image": "caddy:1"}, "plaza": {"image": "a"}, "foro": "garbage"}}
+        self.assertEqual(R.save_waits(before, after, {"plaza", "foro"}), {"plaza": 62})
+        self.assertEqual(R.save_waits("not a compose file", after, {"plaza"}), {})
+        self.assertEqual(R.save_waits(None, after, {"plaza"}), {})
+        self.assertEqual(R.save_pause("10"), 12)
+        self.assertEqual(R.save_pause("ten"), 62)
+
+    def test_a_copy_of_a_running_world_waits_for_its_next_save(self):
+        b = Book([order(), order(id="foro", card="foro", domain="foro.numen.games", state="stopped")])
+        queue = b.home / "run" / "copy-queue.json"
+        queue.parent.mkdir(parents=True)
+        self.assertEqual(R.copies_wait(b.home, b.orders), 0)
+        queue.write_text(json.dumps([{"world": "foro"}]), encoding="utf-8")
+        self.assertEqual(R.copies_wait(b.home, b.orders), 0)
+        queue.write_text(json.dumps([{"world": "foro"}, {"world": "plaza"}, "garbage"]), encoding="utf-8")
+        self.assertEqual(R.copies_wait(b.home, b.orders), 12)
+
+    def run_main(self, b, **patches):
+        signers = b.home / "signers"
+        signers.write_text("", encoding="utf-8")
+        argv = ["--orders", str(b.orders), "--home", str(b.home), "--alias", "open-1",
+                "--admin-code-file", str(b.home / "none"), "--signers-file", str(signers),
+                "--control-host-file", str(b.home / "none")]
+        with contextlib.ExitStack() as stack:
+            for name, value in patches.items():
+                stack.enter_context(mock.patch.object(R, name, value))
+            stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            return R.main(argv)
+
+    def test_every_run_says_when_it_ran_and_how_it_ended(self):
+        b = Book([])
+        self.assertEqual(self.run_main(b, sh=lambda *cmd: None), 0)
+        last = json.loads((b.home / "run" / "last-run.json").read_text(encoding="utf-8"))
+        self.assertEqual((last["ok"], last["rule"]), (True, None))
+        self.assertRegex(last["at"], r"\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\Z")
+
+        def refuse(*cmd):
+            raise subprocess.CalledProcessError(1, cmd)
+
+        self.assertEqual(self.run_main(b, sh=refuse), 1)
+        last = json.loads((b.home / "run" / "last-run.json").read_text(encoding="utf-8"))
+        self.assertEqual((last["ok"], last["rule"]), (False, "docker did not take the book"))
+
+    def test_a_run_that_breaks_still_says_so(self):
+        b = Book([])
+
+        def broken(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        with self.assertRaises(RuntimeError):
+            self.run_main(b, take_requests=broken)
+        last = json.loads((b.home / "run" / "last-run.json").read_text(encoding="utf-8"))
+        self.assertEqual((last["ok"], last["rule"]), (False, "the run stopped on an unexpected error"))
+        self.assertNotIn("boom", json.dumps(last))  # a rule, never what broke
+
     def test_apply_refuses_to_key_without_an_admin_code(self):
         b = Book([order()])
         p = b.plan(admin_code=CODE)
@@ -482,6 +604,34 @@ class ReconcileTests(unittest.TestCase):
 
     def test_bootstrap_is_valid_bash(self):
         self.assertEqual(subprocess.run(["bash", "-n", str(MACHINE / "bootstrap.sh")]).returncode, 0)
+
+    def test_bootstrap_is_read_whole_before_its_first_step_runs(self):
+        """Piped into bash, a script runs as it is read; a child reading stdin then ate the rest of it.
+
+        Everything sits in functions and the last line calls main: outside them
+        there is only `set` (heredocs sit inside main, and bash reads them whole).
+        """
+        top, inside, heredoc = [], False, False
+        for line in (MACHINE / "bootstrap.sh").read_text().splitlines():
+            if heredoc:
+                heredoc = line != "EOF"
+                continue
+            heredoc = "<<EOF" in line
+            if inside:
+                inside = line != "}"  # a function's body ends at a brace alone in the first column
+            elif line.strip() and not line.startswith("#"):
+                top.append(line)
+                inside = line.endswith("() {")
+        self.assertEqual(top, ["set -euo pipefail", "main() {", "wrapper() {", 'main "$@"'])
+
+    def test_bootstrap_ends_by_checking_that_the_machine_obeys(self):
+        """What the 12 October run lacked: it stopped before the timer started, and said nothing."""
+        text = (MACHINE / "bootstrap.sh").read_text()
+        check = text.index("== does the machine obey?")
+        self.assertLess(text.index("enable --now fleet-reconcile.timer fleet-reconcile.path"), check)
+        self.assertIn("for unit in fleetd.service fleet-reconcile.timer fleet-reconcile.path; do", text[check:])
+        self.assertIn('systemctl is-active --quiet "$unit"', text[check:])
+        self.assertIn("exit 1", text[check:])
 
     def test_bootstrap_clears_a_stray_debian_docker_source_before_the_first_update(self):
         text = (MACHINE / "bootstrap.sh").read_text()

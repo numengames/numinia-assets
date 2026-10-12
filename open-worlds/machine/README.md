@@ -47,8 +47,11 @@ moves with them.
    the alias, the machine's address for the console (`<alias>.numinia.com`),
    the Oracles' wallets and the admin code, adopts the machine's first
    orders from the public book (once), and starts the door and the
-   reconciler. It ends by showing the admin code. Running it again is safe,
-   keeps the same code, and keeps the wallets if you leave them out.
+   reconciler. It ends by showing the admin code and by checking that the
+   door and the reconciler are running: if they are not, it says so in
+   capitals and ends with an error, because such a machine takes every
+   signed request and does none of them. Running it again is safe, keeps
+   the same code, and keeps the wallets if you leave them out.
 4. DNS: while the fleet has one machine, the wildcard `*.numinia.com` already
    points at it, which covers its address for the console and every world
    under numinia.com. A second machine needs an `A` record for
@@ -65,10 +68,14 @@ name, the machine, the address, the engine and the limits, then *Create*.
 The wallet asks you to sign one message — `CreateWorld`, with the world,
 its address and the machine, which the wallet shows you before you sign.
 The room sends it to the machine's door; the machine checks it, writes the
-order, makes the world's keys, starts it and tells Caddy its address (a
-reload: the worlds already open stay connected). The world comes up at
-`https://<domain>` within a minute, and the room shows the admin code: type
-`/admin <code>` in the world's chat. Nothing is done on the machine by hand.
+order, makes the world's keys, starts it and tells Caddy its address. That
+is a reload of Caddy's whole configuration, which by default closes every
+WebSocket it carries — every visitor of every world on the machine would
+see "You have been disconnected". Each world's site therefore keeps its
+connections open across a reload (`stream_close_delay 12h`). The world
+comes up at `https://<domain>` within a minute, and the room shows the
+admin code: type `/admin <code>` in the world's chat. Nothing is done on
+the machine by hand.
 
 ### The keys, made by the machine
 
@@ -96,9 +103,14 @@ a world with an empty admin code would make every visitor an admin.
 The same way: one signed message each, from the world's card in the room.
 
 - **Stop** takes the container down and leaves `/srv/fleet/data/<id>/` as
-  it is; **start** brings it back.
-- **Download** zips the world whole: a consistent copy of its database
-  (SQLite's online backup, safe while the world runs), its files, a compose
+  it is; **start** brings it back. The engine writes what was placed,
+  moved or edited in a world to its database every `SAVE_INTERVAL`
+  seconds (10 here), and not when it is told to stop, so the reconciler
+  waits for the world's next save before Docker stops it: a stop takes up
+  to 12 seconds longer, and loses nothing.
+- **Download** zips the world whole, after its next save: a consistent
+  copy of its database (SQLite's online backup, safe while the world
+  runs), its files, a compose
   file that runs it on `localhost:3000` with the same engine build, **fresh
   keys** (not the published world's), a manifest (`world.json`) with each
   file's size and SHA-256, and a short guide. The room gets a link to it
@@ -108,7 +120,9 @@ The same way: one signed message each, from the world's card in the room.
 - **Delete** asks you, in the room, to type the world's name. Then the
   order goes, Docker removes the container, and the world's folder, keys
   and copies are deleted. It cannot be undone: download a copy first if
-  you may want it back.
+  you may want it back. Until the folder and keys are gone, the door
+  refuses a new world under the same name or address (`still-deleting`):
+  it would inherit them.
 
 ## The signed requests
 
@@ -133,6 +147,11 @@ requests from one address in five minutes. Then the reconciler checks the
 signature, the signer, the machine and the fields **again** before it
 touches the book. What the machine did is public:
 `https://<alias>.numinia.com/fleet/v1/worlds`, `/log`, `/machine`.
+`/machine` also says whether the machine keeps up: when the reconciler last
+ran and whether that run ended well (`lastRun`, with the broken rule, never
+a value), and how many requests wait in the inbox and since when
+(`waiting`). A time that stops moving, or a request that waits more than a
+minute or two, is a machine that has stopped obeying.
 
 ## Where things are on the machine
 
@@ -144,7 +163,7 @@ touches the book. What the machine did is public:
 | `/srv/fleet/copies/` | the copies, for a day (`<c>.zip` and `<c>.json`) |
 | `/srv/fleet/data/<id>/` | the world: `db.sqlite` and `assets/` |
 | `/srv/fleet/env/<id>.env` | the world's keys (mode 600, made by the machine, never in git) |
-| `/srv/fleet/run/` | the generated `docker-compose.yml`, `Caddyfile` and Caddy's state; `Caddyfile.applied` is the list of sites Caddy last accepted; `purge.json` and `copy-queue.json` hold deletes and copies in progress |
+| `/srv/fleet/run/` | the generated `docker-compose.yml`, `Caddyfile` and Caddy's state; `Caddyfile.applied` is the list of sites Caddy last accepted and `docker-compose.applied.yml` the compose file Docker last accepted; `purge.json` and `copy-queue.json` hold deletes and copies in progress; `last-run.json` says when the reconciler last ran and how it ended |
 | `/srv/fleet/sock/fleetd.sock` | the door's socket; Caddy is the only way in to it |
 | `/srv/fleet/log.jsonl` | what was done here: when, what, which world, a short wallet |
 | `/srv/fleet/book/` | the clone of this repository: the recipe, and the orders adopted once |
@@ -224,6 +243,12 @@ paid, not forgotten.
   copy (`MIS-158`) takes the book with the worlds.
 - **No nightly copy yet.** A copy is made when someone downloads one. What
   pays it: the nightly copy (`MIS-158`).
+- **The machine waits for the engine's save, from outside.** The engine
+  saves on a timer and not when it is stopped, so the machine passes a
+  short `SAVE_INTERVAL` (10 s) and waits one interval before a stop or a
+  copy. A world that dies without warning (a crash, a reboot, no memory
+  left) still loses up to 10 seconds. What pays it: the engine saving when
+  it is told to stop (`SIGTERM`), in its own repository.
 - **The Oracles are listed by hand.** Adding or removing one is a re-run of
   the bootstrap line with the new list. What pays it: owners by wallet in
   the order, and a signed request that changes the list.

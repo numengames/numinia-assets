@@ -16,9 +16,10 @@ What it does, and nothing more:
   Oracles listed on this machine, and that the request number is new; then
   it drops the request into /srv/fleet/inbox/ and answers 202. The
   reconciler (root) checks it again and does the work.
-- GET /fleet/v1/machine, /worlds, /log — public facts: the machine, its
-  worlds and their phase, the last things done here. No wallet in full, no
-  key, no code.
+- GET /fleet/v1/machine, /worlds, /log — public facts: the machine and
+  whether its reconciler keeps up (when it last ran, how it ended, how many
+  requests wait and since when), its worlds and their phase, the last
+  things done here. No wallet in full, no key, no code.
 - GET /fleet/v1/requests/<n> — how a request went.
 - GET /fleet/v1/copies/<c> and /copies/<c>/file — a copy's state and the
   zip. The copy's number (128 random bits, given only to the Oracle who
@@ -147,12 +148,39 @@ class Door:
         return origin in CONSOLE_ORIGINS or origin in extra
 
     def machine(self) -> dict:
+        """The machine's public facts: who it is, and whether its reconciler is keeping up."""
         return {
             "machine": self.alias,
             "door": "fleetd/1",
             "oracles": len(R.read_signers(self.signers_file)),
             "zones": list(R.HOUSE_ZONES),
+            "lastRun": self.last_run(),
+            "waiting": self.waiting(),
+            "at": R.utc(self.clock()),
         }
+
+    def last_run(self) -> dict | None:
+        """When the reconciler last ran and how it ended: a time that stops moving means it stopped."""
+        raw = R.read_json(self.home / "run" / R.LAST_RUN, None)
+        if not isinstance(raw, dict) or not isinstance(raw.get("at"), str) or not isinstance(raw.get("ok"), bool):
+            return None
+        rule = raw.get("rule") if isinstance(raw.get("rule"), str) else None
+        return {"at": raw["at"][:32], "ok": raw["ok"], "rule": rule[:200] if rule else None}
+
+    def waiting(self) -> dict:
+        """How many requests the reconciler has not taken yet, and since when the oldest waits."""
+        inbox = self.inbox()
+        times = sorted(r["receivedAt"] for r in inbox if isinstance(r.get("receivedAt"), str))
+        return {"requests": len(inbox), "since": times[0][:32] if times else None}
+
+    def purging(self) -> dict[str, str | None]:
+        """Worlds whose delete was taken but whose folder and keys are not gone yet: id → address."""
+        purge = R.read_json(self.home / "run" / "purge.json", {})
+        found = {}
+        for wid, job in (purge.items() if isinstance(purge, dict) else []):
+            if R.matches(R.SLUG, wid) and isinstance(job, dict):
+                found[wid] = job.get("domain") if R.matches(R.HOST, job.get("domain")) else None
+        return found
 
     def worlds(self) -> dict:
         """This machine's worlds and what is happening to each: no wallet, no key."""
@@ -175,10 +203,8 @@ class Door:
                                "maxUploadMb": message["maxUploadMb"]},
                     "phase": "creating",
                 })
-        purge = R.read_json(self.home / "run" / "purge.json", {})
-        for wid, job in (purge.items() if isinstance(purge, dict) else []):
-            if wid not in known and R.matches(R.SLUG, wid) and isinstance(job, dict):
-                domain = job.get("domain") if R.matches(R.HOST, job.get("domain")) else None
+        for wid, domain in self.purging().items():
+            if wid not in known:
                 listed.append({"id": wid, "domain": domain, "phase": "deleting"})
         return {"machine": self.alias, "worlds": sorted(listed, key=lambda w: w["id"]), "at": R.utc(self.clock())}
 
@@ -232,6 +258,12 @@ class Door:
             if current is not None or any(r.get("type") == "CreateWorld" for r in waiting):
                 return "exists"
             domain = message["domain"]
+            # A world deleted a moment ago keeps its folder and keys until its
+            # container is gone; one born now under its name or address would
+            # inherit them.
+            deleting = self.purging()
+            if wid in deleting or domain in deleting.values():
+                return "still-deleting"
             taken = {o.get("domain") for o in R.read_orders(self.orders)}
             taken |= {r["message"].get("domain") for r in self.inbox() if r.get("type") == "CreateWorld"}
             if domain in taken:
