@@ -189,6 +189,38 @@ class Facts(unittest.TestCase):
         self.assertEqual((facts["machine"], facts["oracles"]), ("open-1", 1))
         self.assertNotIn(ORACLE, json.dumps(facts))
 
+    def test_the_machine_says_whether_its_reconciler_keeps_up(self):
+        """A request nobody takes, or a last run that stops moving, is a machine that no longer obeys."""
+        rig = Rig(self)
+        facts = rig.door.machine()
+        self.assertIsNone(facts["lastRun"])  # this reconciler never ran here
+        self.assertEqual(facts["waiting"], {"requests": 0, "since": None})
+        self.assertEqual(facts["at"], R.utc(NOW))
+        rig.put_world()
+        self.assertEqual(rig.accept(body("StopWorld"))[0], 202)
+        last = {"at": "2029-12-31T23:58:00Z", "ok": False, "rule": "docker did not take the book"}
+        (rig.home / "run" / "last-run.json").write_text(json.dumps(last))
+        facts = rig.door.machine()
+        self.assertEqual(facts["lastRun"], last)
+        self.assertEqual(facts["waiting"], {"requests": 1, "since": R.utc(NOW)})
+        for broken in ("{broken", json.dumps({"at": 5, "ok": True}), json.dumps({"at": "x", "ok": "yes"})):
+            (rig.home / "run" / "last-run.json").write_text(broken)
+            self.assertIsNone(rig.door.machine()["lastRun"])
+        (rig.home / "run" / "last-run.json").write_text(json.dumps({"at": "x", "ok": True, "rule": 7}))
+        self.assertEqual(rig.door.machine()["lastRun"], {"at": "x", "ok": True, "rule": None})
+
+    def test_a_world_being_deleted_is_not_born_again_until_it_is_gone(self):
+        """Its folder and keys outlive its order until Docker takes the container down."""
+        for gone in ({"plaza": {"nonce": "a" * 32, "domain": "plaza.numinia.com"}},  # the same name
+                     {"vieja": {"nonce": "a" * 32, "domain": "plaza.numinia.com"}}):  # the same address
+            rig = Rig(self)
+            (rig.home / "run" / "purge.json").write_text(json.dumps(gone))
+            self.assertEqual(rig.accept(body("CreateWorld")), (409, {"error": "still-deleting"}))
+            self.assertEqual(list((rig.home / "inbox").iterdir()), [])
+        rig = Rig(self)
+        (rig.home / "run" / "purge.json").write_text(json.dumps({"vieja": {"domain": "vieja.numinia.com"}}))
+        self.assertEqual(rig.accept(body("CreateWorld"))[0], 202)
+
     def test_worlds_show_their_phase_and_no_wallet(self):
         rig = Rig(self)
         rig.put_world()

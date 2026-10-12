@@ -289,6 +289,36 @@ class Delete(unittest.TestCase):
         self.assertIsNotNone(m.order())
         self.assertIn("address", m.result("DeleteWorld")["rule"])
 
+    def test_a_world_being_deleted_is_not_born_again_until_it_is_gone(self):
+        """Its folder and keys outlive its order until Docker takes the container down.
+
+        A world born under the same name or address before then would keep them.
+        """
+        m = Machine(self)
+        m.put_world()
+        m.drop("DeleteWorld")
+        m.drop("CreateWorld")  # signed a moment later, taken in the same run
+        m.take()
+        self.assertEqual(m.result("DeleteWorld")["state"], "working")
+        self.assertEqual(m.result("CreateWorld")["state"], "failed")
+        self.assertIn("still being deleted", m.result("CreateWorld")["rule"])
+        self.assertIsNone(m.order())
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(R.purge_deleted(m.home, m.orders, NOW), ["plaza"])
+        self.assertFalse((m.home / "env" / "plaza.env").exists())
+
+    def test_an_address_being_deleted_is_not_given_to_another_world(self):
+        m = Machine(self)
+        create = SIGNED["CreateWorld"]
+        entry = {"type": "CreateWorld", "world": "plaza", "nonce": "c" * 32, "by": ORACLE}
+        old = {"vieja": "plaza.numinia.com"}  # deleted a moment ago under the address plaza now asks for
+        rule = R.change_book(entry, create["message"], m.orders, "open-1", frozenset(), CONTROL, NOW, old)
+        self.assertIn("still being deleted", rule)
+        self.assertIsNone(m.order())
+        self.assertIsNone(R.change_book(entry, create["message"], m.orders, "open-1", frozenset(), CONTROL, NOW,
+                                        {"vieja": "vieja.numinia.com"}))
+        self.assertEqual(m.order()["domain"], "plaza.numinia.com")
+
     def test_a_folder_reached_through_a_link_is_unlinked_not_emptied(self):
         m = Machine(self)
         outside = m.home / "elsewhere"
