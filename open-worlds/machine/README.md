@@ -31,27 +31,30 @@ moves with them.
    does): the first login uses the password OVH emails, which it makes you
    change; then copy your key in with `ssh-copy-id` and use the key from
    then on.
-3. Run, with the machine's alias and your wallet (the address you sign in to
-   numinia.com with; several Oracles go separated by commas):
+3. Run the line the worlds room shows under the machine (LAP › Mundos): it
+   carries the machine's alias, your wallet (the address you sign in to
+   numinia.com with; several Oracles go separated by commas) and the commit
+   of this repository the room was built for:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/numengames/numinia-assets/main/open-worlds/machine/bootstrap.sh \
-     | sudo bash -s -- open-1 0xYourWallet
+   curl -fsSL https://raw.githubusercontent.com/numengames/numinia-assets/<commit>/open-worlds/machine/bootstrap.sh \
+     | sudo FLEET_REF=<commit> bash -s -- open-1 0xYourWallet
    ```
 
    It installs Docker (from Docker's repository on Debian, from Ubuntu's own
    archive on Ubuntu; an existing Docker is kept) and `python3-ecdsa`, adds
    a 2 GB swap file, opens only ports 22, 80 and 443, turns on unattended
-   upgrades, clones this repository to `/srv/fleet/book` (the recipe),
-   creates the door's own user (`fleetd`), installs the programs, writes
-   the alias, the machine's address for the console (`<alias>.numinia.com`),
-   the Oracles' wallets and the admin code, adopts the machine's first
+   upgrades, clones this repository to `/srv/fleet/book` and leaves it on
+   exactly the commit in `FLEET_REF` (the recipe), creates the door's own
+   user (`fleetd`), installs the programs, writes the alias, the machine's
+   address for the console (`<alias>.numinia.com`), the Oracles' wallets
+   and the folder for each world's admin code, adopts the machine's first
    orders from the public book (once), and starts the door and the
-   reconciler. It ends by showing the admin code and by checking that the
-   door and the reconciler are running: if they are not, it says so in
-   capitals and ends with an error, because such a machine takes every
-   signed request and does none of them. Running it again is safe, keeps
-   the same code, and keeps the wallets if you leave them out.
+   reconciler. It ends by saying which commit it installed and by checking
+   that the door and the reconciler are running: if they are not, it says
+   so in capitals and ends with an error, because such a machine takes
+   every signed request and does none of them. Running it again is safe,
+   keeps every world's code, and keeps the wallets if you leave them out.
 4. DNS: while the fleet has one machine, the wildcard `*.numinia.com` already
    points at it, which covers its address for the console and every world
    under numinia.com. A second machine needs an `A` record for
@@ -59,7 +62,15 @@ moves with them.
 
 The programs are copied to `/usr/local/lib/fleet/` by the bootstrap and run
 from there, never from the clone. A request changes orders, not the code
-that obeys them. To update a machine, run the bootstrap line again.
+that obeys them. To update a machine, run its line again.
+
+**One commit, pinned.** `FLEET_REF` is a whole commit (40 hex characters):
+the bootstrap fetches exactly that one, installs nothing if what it got is
+another, and writes it to `/etc/fleet/recipe`; the door says it
+(`/fleet/v1/machine` → `recipe`), so the room can tell a machine that runs
+an older recipe. A later change to `main` reaches no machine until someone
+hands out a line with its commit. Without `FLEET_REF` the bootstrap installs
+`main`'s newest commit and says so: *NOT pinned*.
 
 ## Bring up a world
 
@@ -74,31 +85,41 @@ WebSocket it carries — every visitor of every world on the machine would
 see "You have been disconnected". Each world's site therefore keeps its
 connections open across a reload (`stream_close_delay 12h`). The world
 comes up at `https://<domain>` within a minute, and the room shows the
-admin code: type `/admin <code>` in the world's chat. Nothing is done on
-the machine by hand.
+world's own admin code: type `/admin <code>` in the world's chat. Nothing
+is done on the machine by hand.
 
 ### The keys, made by the machine
 
-The first time a `running` order has no `env/<id>.env`, the reconciler
-writes one (mode 600, never in git): a JWT secret of the world's own, 64
-random hex characters nobody needs to read, and the machine's admin code
-from `/etc/fleet/admin-code`. A key file that already exists is never
-touched, so a world can still be given keys of its own by hand, with the
-optional `LIVEKIT_WS_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` lines
-for voice:
+Each world has its own admin code. The door makes it when the world is
+created — 16 random hex characters — and shows it once to the Oracle who
+signed; the inbox entry carries it to the reconciler, which writes the
+world's key file `env/<id>.env` (mode 600, never in git): a JWT secret of
+the world's own, 64 random hex characters nobody needs to read, and that
+code. It also writes the code to `/etc/fleet/codes/<id>` (`root:fleetd`,
+mode 640), where the door reads it to show it to a signed Oracle. The key
+file is the truth — the engine reads it — and every run makes each code
+file say what its key file gives. A world created under a name a world had
+before gets new keys, never the old ones.
+
+A key file can still be written by hand, with the optional
+`LIVEKIT_WS_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` lines for
+voice; a change of code rewrites only its `ADMIN_CODE` line:
 
 ```sh
 sudo install -m 600 /dev/null /srv/fleet/env/<id>.env
-printf 'JWT_SECRET=%s\nADMIN_CODE=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 6)" \
+printf 'JWT_SECRET=%s\nADMIN_CODE=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 8)" \
   | sudo tee /srv/fleet/env/<id>.env >/dev/null
 ```
 
-A machine with no admin code (no file, or anything in it but 8 to 64
-letters, digits, `-` or `_`) makes no keys: a `running` order with no key
-file is then **not** started and the reconciler says so in its log, because
-a world with an empty admin code would make every visitor an admin.
+The machine's old shared code (`/etc/fleet/admin-code`, made once by the
+bootstrap) is what the worlds keyed before each had its own still have,
+until an Oracle changes theirs, and what an order adopted from the public
+book is keyed with. A machine with no such code (no file, or anything in it
+but 8 to 64 letters, digits, `-` or `_`) keys no adopted order: that world
+is **not** started and the reconciler says so in its log, because a world
+with an empty admin code would make every visitor an admin.
 
-## Stop, start, download, delete
+## Stop, start, download, delete, a world's code
 
 The same way: one signed message each, from the world's card in the room.
 
@@ -123,6 +144,15 @@ The same way: one signed message each, from the world's card in the room.
   you may want it back. Until the folder and keys are gone, the door
   refuses a new world under the same name or address (`still-deleting`):
   it would inherit them.
+- **Show its code** gives the world's admin code to the Oracle who signed,
+  and changes nothing; the log says who asked. **Change its code** makes a
+  new one, which the door shows once to the Oracle who signed: the world
+  keeps its JWT secret (everyone who has been in it keeps who they are)
+  and is restarted alone, after its next save, so the engine reads the new
+  code and whoever is inside reconnects in a few seconds. A stopped world
+  takes its new code when it starts. A leaked code is closed with one
+  signature. While a change of code, or the world's creation, waits in the
+  inbox, the door answers `busy` to another show or change of that world.
 
 ## The signed requests
 
@@ -135,7 +165,8 @@ as Snapshot does with votes. The wallet shows every field before signing.
 | `CreateWorld` | machine, world, domain, image, memory, cpus, maxUploadMb, nonce, expires |
 | `DeleteWorld` | machine, world, domain, nonce, expires |
 | `StopWorld`, `StartWorld`, `DownloadWorld` | machine, world, nonce, expires |
-| `ShowAdminCode` | machine, nonce, expires |
+| `ShowWorldCode`, `RotateWorldCode` | machine, world, nonce, expires |
+| `ShowAdminCode` | machine, nonce, expires — the machine's old shared code, for the room that still asks for it |
 
 `nonce` is 128 random bits chosen by the browser; `expires` is at most
 fifteen minutes ahead. The door refuses a request for another machine, an
@@ -147,10 +178,12 @@ requests from one address in five minutes. Then the reconciler checks the
 signature, the signer, the machine and the fields **again** before it
 touches the book. What the machine did is public:
 `https://<alias>.numinia.com/fleet/v1/worlds`, `/log`, `/machine`.
-`/machine` also says whether the machine keeps up: when the reconciler last
-ran and whether that run ended well (`lastRun`, with the broken rule, never
-a value), and how many requests wait in the inbox and since when
-(`waiting`). A time that stops moving, or a request that waits more than a
+`/machine` says which commit of this repository the machine's programs came
+from (`recipe`, `null` when the bootstrap that set it up wrote none), and
+whether the machine keeps up: when the reconciler last ran and whether that
+run ended well (`lastRun`, with the broken rule, never a value), and how
+many requests wait in the inbox and since when (`waiting`). A time that
+stops moving, or a request that waits more than a
 minute or two, is a machine that has stopped obeying.
 
 ## Where things are on the machine
@@ -162,15 +195,17 @@ minute or two, is a machine that has stopped obeying.
 | `/srv/fleet/requests/<n>.json` | how each request went, as the door shows it |
 | `/srv/fleet/copies/` | the copies, for a day (`<c>.zip` and `<c>.json`) |
 | `/srv/fleet/data/<id>/` | the world: `db.sqlite` and `assets/` |
-| `/srv/fleet/env/<id>.env` | the world's keys (mode 600, made by the machine, never in git) |
-| `/srv/fleet/run/` | the generated `docker-compose.yml`, `Caddyfile` and Caddy's state; `Caddyfile.applied` is the list of sites Caddy last accepted and `docker-compose.applied.yml` the compose file Docker last accepted; `purge.json` and `copy-queue.json` hold deletes and copies in progress; `last-run.json` says when the reconciler last ran and how it ended |
+| `/srv/fleet/env/<id>.env` | the world's keys: its JWT secret and its admin code (mode 600, made by the machine, never in git) |
+| `/srv/fleet/run/` | the generated `docker-compose.yml`, `Caddyfile` and Caddy's state; `Caddyfile.applied` is the list of sites Caddy last accepted and `docker-compose.applied.yml` the compose file Docker last accepted; `purge.json` and `copy-queue.json` hold deletes and copies in progress, `restart.json` the worlds whose code changed and that wait to be restarted; `last-run.json` says when the reconciler last ran and how it ended |
 | `/srv/fleet/sock/fleetd.sock` | the door's socket; Caddy is the only way in to it |
 | `/srv/fleet/log.jsonl` | what was done here: when, what, which world, a short wallet |
-| `/srv/fleet/book/` | the clone of this repository: the recipe, and the orders adopted once |
+| `/srv/fleet/book/` | the clone of this repository, left on the commit the machine's line named: the recipe, and the orders adopted once |
 | `/etc/fleet/alias` | this machine's alias |
+| `/etc/fleet/recipe` | the commit the machine's programs were installed from |
 | `/etc/fleet/signers` | the Oracles' wallets this machine obeys, one per line |
 | `/etc/fleet/control-host` | the machine's address for the console, e.g. `open-1.numinia.com` |
-| `/etc/fleet/admin-code` | the admin code every world keyed here gets (`root:fleetd`, mode 640: the door shows it to a signed Oracle) |
+| `/etc/fleet/codes/<id>` | each world's admin code, as its key file gives it (`root:fleetd`, mode 640: the door shows it to a signed Oracle) |
+| `/etc/fleet/admin-code` | the machine's old shared code: the worlds keyed before each had its own keep it until it is changed, and an adopted order gets it (`root:fleetd`, mode 640) |
 | `/etc/fleet/domains` | client domains this machine may serve (optional) |
 | `/etc/fleet/console-origins` | other consoles allowed to send requests from a browser, one origin per line (optional; numinia.com always is) |
 | `/var/lib/fleetd/nonces.json` | the request numbers the door already took |
@@ -206,8 +241,8 @@ curl https://open-1.numinia.com/fleet/v1/worlds         # what the console sees
   values reach the compose file, and that file is built as data and written
   as JSON (which is YAML), so no field can add a setting to it. The log
   names the broken rule, never the value.
-- A `running` order with no `env/<id>.env` on a machine with no admin code:
-  not started, logged.
+- A `running` order adopted from the public book, with no `env/<id>.env`,
+  on a machine with no old shared code: not started, logged.
 
 ## Security, in one table
 
@@ -215,11 +250,12 @@ curl https://open-1.numinia.com/fleet/v1/worlds         # what the console sees
 |---|---|---|
 | the machine | its worlds' data and keys, and the admin code of every world on it | GitHub (no credential), the other machines, the console, any Oracle's wallet |
 | the console (numinia.com) | nothing on the machines: it holds no key and signs nothing. It could show an Oracle a false page and ask for a signature — the wallet shows exactly what is signed (the request, the world, its address, the machine) | any machine, any world's keys |
-| an Oracle's wallet | create, stop, start, download and delete worlds on the machines that list it; their admin code | code execution on machines (the programs are installed, not pulled, and an order's fields are checked values, never configuration); images outside the house's registry or unpinned; domains outside the house zones or the machine's list |
-| the door (`fleetd`) broken into | the book, the copies and the admin code, read; requests put in the inbox | anything signed: the reconciler checks every signature again, and the door has no root, no Docker, no network of its own, and writes only its inbox, its socket and its list of used numbers |
+| an Oracle's wallet | create, stop, start, download and delete worlds on the machines that list it; show and change any of their worlds' admin codes | code execution on machines (the programs are installed, not pulled, and an order's fields are checked values, never configuration); images outside the house's registry or unpinned; domains outside the house zones or the machine's list |
+| the door (`fleetd`) broken into | the book, the copies and every world's admin code, read; requests put in the inbox, and the code a world gets when an Oracle signs its creation or a change of its code (the door makes it) | anything signed: the reconciler checks every signature again, and the door has no root, no Docker, no network of its own, and writes only its inbox, its socket and its list of used numbers — never a key file |
 | a signed request, intercepted | nothing more: it is good once, for one machine and one world, for fifteen minutes | anything else |
 | a download link | that copy, for a day | the world's keys (the copy's are fresh), anything else |
-| the admin code | admin of every world on that machine, from any browser | the machine, its files, the other machines |
+| a world's admin code | admin of that world, from any browser, until an Oracle changes it with one signature | the other worlds (each has its own), the machine, its files, the other machines |
+| a merge on this repository's `main` | nothing on any machine by itself: a machine installs only the commit its line names (`FLEET_REF`) and says which (`recipe`) | the machines, until someone hands out and runs a line with that commit |
 
 Log in to the machine with an SSH key, never a password (after the first
 login, see *Bring up a machine*). Docker itself runs as root, and so does
@@ -231,10 +267,19 @@ The fleet is a trial, not yet in alpha: these make a world appear, travel
 and go with nothing done by hand, and are written here so that they are
 paid, not forgotten.
 
-- **One admin code per machine.** Whoever holds it administers every world
-  on the machine; the room shows it to a signed Oracle and it is typed in
-  a chat. What pays it: each world's administrators named in its order as
-  wallets, proved by a signature (decided for the fleet, not built yet).
+- **An admin code is still a shared secret.** Each world has its own, and
+  one signature changes it, but whoever holds it administers that world
+  from any browser, and it is typed in a chat. What pays it: each world's
+  administrators named in its order as wallets, proved by a signature
+  (decided for the fleet, not built yet).
+- **The machine's old shared code lives on.** The worlds keyed before each
+  had its own keep it until an Oracle changes theirs, an order adopted from
+  the public book is keyed with it, and `ShowAdminCode` still shows it.
+  What pays it: changing the code of every world made before, then
+  retiring `ShowAdminCode` once no room asks for it.
+- **A pin is only as good as the commit it names.** A machine installs the
+  commit its line carries; nothing yet requires a review before a merge on
+  this repository's `main`. What pays it: a rule on `main` that does.
 - **The engine runs as root in its container.** Its image creates a user it
   never switches to. What pays it: `user:` in the compose file and a `chown`
   of `data/<id>/`.

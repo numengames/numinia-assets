@@ -8,6 +8,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -544,13 +545,17 @@ class ReconcileTests(unittest.TestCase):
         signers.write_text("", encoding="utf-8")
         argv = ["--orders", str(b.orders), "--home", str(b.home), "--alias", "open-1",
                 "--admin-code-file", str(b.home / "none"), "--signers-file", str(signers),
-                "--control-host-file", str(b.home / "none")]
+                "--control-host-file", str(b.home / "none"), "--codes-dir", str(b.home / "codes")]
         with contextlib.ExitStack() as stack:
             for name, value in patches.items():
                 stack.enter_context(mock.patch.object(R, name, value))
-            stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+            err = io.StringIO()
+            stack.enter_context(contextlib.redirect_stderr(err))
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
-            return R.main(argv)
+            try:
+                return R.main(argv)
+            finally:
+                self.main_err = err.getvalue()
 
     def test_every_run_says_when_it_ran_and_how_it_ended(self):
         b = Book([])
@@ -577,6 +582,106 @@ class ReconcileTests(unittest.TestCase):
         last = json.loads((b.home / "run" / "last-run.json").read_text(encoding="utf-8"))
         self.assertEqual((last["ok"], last["rule"]), (False, "the run stopped on an unexpected error"))
         self.assertNotIn("boom", json.dumps(last))  # a rule, never what broke
+
+    def test_every_run_first_makes_each_code_file_say_what_its_key_file_gives(self):
+        """How the worlds keyed before each had its own code keep theirs: the first run copies it."""
+        b = Book([order()])
+        (b.home / "env" / "plaza.env").write_text("JWT_SECRET=" + "0f" * 32 + f"\nADMIN_CODE={CODE}\n",
+                                                  encoding="utf-8")
+        self.assertEqual(self.run_main(b, sh=lambda *cmd: None), 0)
+        self.assertEqual((b.home / "codes" / "plaza").read_text(encoding="utf-8"), CODE + "\n")
+
+    def test_code_files_that_cannot_be_written_do_not_stop_the_run(self):
+        b = Book([order()])
+        (b.home / "env" / "plaza.env").write_text("JWT_SECRET=" + "0f" * 32 + f"\nADMIN_CODE={CODE}\n",
+                                                  encoding="utf-8")
+        (b.home / "codes").write_text("a file where the folder should be", encoding="utf-8")
+        self.assertEqual(self.run_main(b, sh=lambda *cmd: None), 0)
+        self.assertIn("could not be made equal", self.main_err)
+
+    # --- a world whose admin code changed is restarted, alone, after its save ----
+
+    def restart_calls(self, b, p, fail=False):
+        """apply() with a fake shell and a fake clock: the commands it ran and the waits."""
+        calls, sleeps = [], []
+
+        def fake_sh(*cmd):
+            calls.append(cmd)
+            if fail and "--force-recreate" in cmd:
+                raise subprocess.CalledProcessError(1, cmd)
+
+        with mock.patch.object(R, "sh", fake_sh), contextlib.redirect_stderr(io.StringIO()):
+            R.apply(p, b.home, CODE, sleep=sleeps.append)
+        return calls, sleeps
+
+    def test_a_world_whose_code_changed_is_restarted_alone_after_its_next_save(self):
+        b = Book([order(), order(id="foro", card="foro", domain="foro.numen.games")], keys=["plaza", "foro"])
+        p = b.plan(admin_code=CODE)
+        self.restart_calls(b, p)  # both running, as Docker last took them
+        R.queue_restart(b.home, "plaza")
+        calls, sleeps = self.restart_calls(b, p)
+        compose = str(b.home / "run" / "docker-compose.yml")
+        self.assertEqual(sleeps, [12])  # SAVE_INTERVAL 10 + 2: what was placed in it is saved first
+        self.assertEqual(calls[0], ("docker", "compose", "-f", compose, "up", "-d", "--force-recreate", "--no-deps",
+                                    "plaza"))
+        self.assertEqual(calls[1], ("docker", "compose", "-f", compose, "up", "-d", "--remove-orphans"))
+        self.assertEqual(len(calls), 2)  # foro is not touched, Caddy is not reloaded
+        self.assertEqual(R.read_restarts(b.home), [])
+        self.assertEqual(self.restart_calls(b, p), ([("docker", "compose", "-f", compose, "up", "-d",
+                                                      "--remove-orphans")], []))  # once
+
+    def test_a_restart_that_fails_is_tried_again_on_the_next_run(self):
+        b = Book([order()], keys=["plaza"])
+        p = b.plan(admin_code=CODE)
+        self.restart_calls(b, p)
+        R.queue_restart(b.home, "plaza")
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.restart_calls(b, p, fail=True)
+        self.assertEqual(R.read_restarts(b.home), ["plaza"])
+        calls, _ = self.restart_calls(b, p)
+        self.assertIn("--force-recreate", calls[0])
+
+    def test_a_world_stopped_deleted_or_started_needs_no_restart_for_its_code(self):
+        """Its container goes, or is made anew from its new key file."""
+        for before, after in (("running", "stopped"), ("running", None), ("stopped", "running")):
+            with self.subTest(before=before, after=after):
+                b = Book([order(state=before)], keys=["plaza"])
+                self.restart_calls(b, b.plan(admin_code=CODE))
+                if after is None:
+                    (b.orders / "plaza.json").unlink()
+                else:
+                    (b.orders / "plaza.json").write_text(json.dumps(order(state=after)), encoding="utf-8")
+                R.queue_restart(b.home, "plaza")
+                calls, _ = self.restart_calls(b, b.plan(admin_code=CODE))
+                self.assertNotIn("--force-recreate", [part for call in calls for part in call])
+                self.assertEqual(R.read_restarts(b.home), [])
+
+    def test_the_restart_queue_holds_world_names_only(self):
+        b = Book([])
+        (b.home / "run").mkdir(parents=True)
+        queue = b.home / "run" / "restart.json"
+        queue.write_text(json.dumps(["plaza", "../etc", "caddy", 5, "foro", "plaza"]), encoding="utf-8")
+        self.assertEqual(R.read_restarts(b.home), ["caddy", "foro", "plaza"])
+        queue.write_text('{"plaza": true}', encoding="utf-8")
+        self.assertEqual(R.read_restarts(b.home), [])
+        before = {"services": {"caddy": {}, "plaza": {}, "foro": "garbage"}}
+        after = {"services": {"caddy": {}, "plaza": {}, "foro": {}}}
+        self.assertEqual(R.restarting(before, after, ["caddy", "foro", "plaza", "gone"]), ["plaza"])
+        self.assertEqual(R.restarting(None, after, ["plaza"]), [])
+
+    def test_an_adopted_world_keyed_with_the_old_code_gets_its_code_file_at_once(self):
+        b = Book([order()])
+        codes = b.home / "codes"
+        with mock.patch.object(R, "sh"):
+            R.apply(b.plan(admin_code=CODE), b.home, CODE, codes_dir=codes)
+        self.assertEqual((codes / "plaza").read_text(encoding="utf-8"), CODE + "\n")
+        c = Book([order(id="foro", card="foro", domain="foro.numen.games")])
+        (c.home / "codes").write_text("a file where the folder should be", encoding="utf-8")
+        err = io.StringIO()
+        with mock.patch.object(R, "sh"), contextlib.redirect_stderr(err):
+            R.apply(c.plan(admin_code=CODE), c.home, CODE, codes_dir=c.home / "codes")
+        self.assertIn("next run tries again", err.getvalue())
+        self.assertTrue((c.home / "env" / "foro.env").is_file())  # the world still gets its keys
 
     def test_apply_refuses_to_key_without_an_admin_code(self):
         b = Book([order()])
@@ -645,6 +750,55 @@ class ReconcileTests(unittest.TestCase):
         self.assertIn("chown root:fleetd /etc/fleet/admin-code", text)
         self.assertIn("chmod 640 /etc/fleet/admin-code", text)
         self.assertLess(text.index("/etc/fleet/admin-code"), text.index("== first run"))
+
+    def test_bootstrap_makes_the_folder_of_each_worlds_code_for_the_door_alone(self):
+        text = (MACHINE / "bootstrap.sh").read_text()
+        for line in ("mkdir -p /etc/fleet/codes", "chown root:fleetd /etc/fleet/codes", "chmod 750 /etc/fleet/codes"):
+            with self.subTest(line=line):
+                self.assertIn(line, text)
+        self.assertLess(text.index("useradd --system"), text.index("chown root:fleetd /etc/fleet/codes"))
+        self.assertLess(text.index("mkdir -p /etc/fleet/codes"), text.index("== first run"))
+        self.assertEqual(R.CODES_DIR, Path("/etc/fleet/codes"))
+
+    def test_bootstrap_never_prints_a_code(self):
+        """A code on the screen stays in the terminal's history; the room shows it to a signed Oracle."""
+        text = (MACHINE / "bootstrap.sh").read_text()
+        self.assertNotIn("cat /etc/fleet/admin-code", text)
+        self.assertNotIn("cat /etc/fleet/codes", text)
+
+    def test_bootstrap_installs_exactly_the_commit_it_is_given(self):
+        text = (MACHINE / "bootstrap.sh").read_text()
+        self.assertIn('FLEET_REF="${FLEET_REF:-}"', text)
+        self.assertIn('git -C "$BOOK_DIR" fetch --quiet --depth 1 origin "${FLEET_REF:-main}"', text)
+        self.assertIn('git -C "$BOOK_DIR" checkout --quiet --force --detach FETCH_HEAD', text)
+        self.assertNotIn("pull --ff-only", text)  # a branch moves under the machine
+        # The commit checked out is the one asked for, or nothing is installed.
+        self.assertIn('if [[ -n "$FLEET_REF" && "$RECIPE" != "$FLEET_REF" ]]; then', text)
+        self.assertLess(text.index("checkout --quiet --force --detach FETCH_HEAD"),
+                        text.index('install -m 0644 "$BOOK_DIR/open-worlds/machine/$program"'))
+        # Which commit runs here, for the door to say (`recipe`), once the programs came from it.
+        self.assertLess(text.index("wrapper fleetd fleetd.py"), text.index('echo "$RECIPE" > /etc/fleet/recipe'))
+        self.assertIn("chmod 644 /etc/fleet/recipe", text)
+        # The line it documents is the pinned one.
+        self.assertIn("numinia-assets/<commit>/open-worlds/machine/bootstrap.sh", text)
+        self.assertIn("sudo FLEET_REF=<commit> bash -s -- open-1 0xYourWallet", text)
+        self.assertIn("NOT pinned", text)
+
+    def test_bootstrap_refuses_a_ref_that_is_not_a_whole_commit(self):
+        """Checked before anything else, so it fails the same as root or not, and touches nothing."""
+        for ref in ("main", "abc1234", "A" * 40, "0" * 39, "0" * 41, "0" * 40 + "\n", "0" * 40 + ";reboot", " " + "0" * 40):
+            with self.subTest(ref=ref):
+                run = subprocess.run(["bash", str(MACHINE / "bootstrap.sh"), "open-1"], capture_output=True, text=True,
+                                     env={**os.environ, "FLEET_REF": ref})
+                self.assertEqual(run.returncode, 2)
+                self.assertIn("FLEET_REF IS NOT A COMMIT", run.stderr)
+        if subprocess.run(["id", "-u"], capture_output=True, text=True).stdout.strip() != "0":
+            # A whole commit passes this check; a user who is not root is stopped at the next one.
+            run = subprocess.run(["bash", str(MACHINE / "bootstrap.sh"), "open-1"], capture_output=True, text=True,
+                                 env={**os.environ, "FLEET_REF": "0123456789abcdef0123456789abcdef01234567"})
+            self.assertEqual(run.returncode, 2)
+            self.assertNotIn("FLEET_REF", run.stderr)
+            self.assertIn("root", run.stderr)
 
     def test_bootstrap_runs_the_reconciler_once_before_the_timer_and_survives_a_failed_run(self):
         text = (MACHINE / "bootstrap.sh").read_text()

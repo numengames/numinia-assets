@@ -11,15 +11,21 @@ What it does, and nothing more:
 
 - POST /fleet/v1/actions — a request an Oracle signed with their wallet
   (EIP-712, see walletsig.py): create, stop, start, delete or download a
-  world, or show the machine's admin code. It checks the shape, the
-  machine, the time window, the signature, that the signer is one of the
-  Oracles listed on this machine, and that the request number is new; then
-  it drops the request into /srv/fleet/inbox/ and answers 202. The
-  reconciler (root) checks it again and does the work.
-- GET /fleet/v1/machine, /worlds, /log — public facts: the machine and
-  whether its reconciler keeps up (when it last ran, how it ended, how many
-  requests wait and since when), its worlds and their phase, the last
-  things done here. No wallet in full, no key, no code.
+  world, show a world's admin code or change it, or show the machine's
+  legacy code. It checks the shape, the machine, the time window, the
+  signature, that the signer is one of the Oracles listed on this machine,
+  and that the request number is new; then it drops the request into
+  /srv/fleet/inbox/ and answers 202. The reconciler (root) checks it again
+  and does the work. A world's admin code is the one secret the door
+  carries: it reads it from /etc/fleet/codes/<id> to show it, and makes a
+  new one for a world just created or whose code an Oracle changes —
+  written into the inbox entry for the reconciler, which puts it in the
+  world's key file. The door never writes a key file and never logs a code.
+- GET /fleet/v1/machine, /worlds, /log — public facts: the machine, the
+  commit of the recipe it installed, and whether its reconciler keeps up
+  (when it last ran, how it ended, how many requests wait and since when),
+  its worlds and their phase, the last things done here. No wallet in
+  full, no key, no code.
 - GET /fleet/v1/requests/<n> — how a request went.
 - GET /fleet/v1/copies/<c> and /copies/<c>/file — a copy's state and the
   zip. The copy's number (128 random bits, given only to the Oracle who
@@ -39,6 +45,7 @@ import argparse
 import collections
 import json
 import os
+import re
 import shutil
 import socketserver
 import sys
@@ -53,6 +60,10 @@ import walletsig as W
 STATE = Path("/var/lib/fleetd")  # the request numbers already used
 SOCKET = R.HOME / "sock" / "fleetd.sock"
 ORIGINS_FILE = Path("/etc/fleet/console-origins")  # extra consoles (a staging room), one origin per line
+# The commit of numinia-assets the machine's programs were installed from,
+# written by bootstrap.sh: the room compares it with the one it hands out.
+RECIPE_FILE = Path("/etc/fleet/recipe")
+RECIPE = re.compile(r"[0-9a-f]{40}")
 CONSOLE_ORIGINS = frozenset({"https://numinia.com", "https://www.numinia.com"})
 WINDOW = 15 * 60  # a signed request is good for at most fifteen minutes
 MAX_BODY = 16 * 1024
@@ -108,6 +119,8 @@ class Door:
         alias: str | None = None,
         signers_file: Path = R.SIGNERS_FILE,
         admin_code_file: Path = R.ADMIN_CODE_FILE,
+        codes_dir: Path = R.CODES_DIR,
+        recipe_file: Path = RECIPE_FILE,
         control_host_file: Path = R.CONTROL_HOST_FILE,
         domains_file: Path = R.DOMAINS_FILE,
         origins_file: Path = ORIGINS_FILE,
@@ -118,6 +131,8 @@ class Door:
         self.alias = alias or R.ALIAS_FILE.read_text(encoding="utf-8").strip()
         self.signers_file = signers_file
         self.admin_code_file = admin_code_file
+        self.codes_dir = codes_dir
+        self.recipe_file = recipe_file
         self.control_host_file = control_host_file
         self.domains_file = domains_file
         self.origins_file = origins_file
@@ -148,16 +163,29 @@ class Door:
         return origin in CONSOLE_ORIGINS or origin in extra
 
     def machine(self) -> dict:
-        """The machine's public facts: who it is, and whether its reconciler is keeping up."""
+        """The machine's public facts: who it is, its recipe, and whether its reconciler is keeping up."""
         return {
             "machine": self.alias,
             "door": "fleetd/1",
             "oracles": len(R.read_signers(self.signers_file)),
             "zones": list(R.HOUSE_ZONES),
+            "recipe": self.recipe(),
             "lastRun": self.last_run(),
             "waiting": self.waiting(),
             "at": R.utc(self.clock()),
         }
+
+    def recipe(self) -> str | None:
+        """The commit the machine's programs were installed from, or None when it is not known.
+
+        bootstrap.sh writes it; a machine set up before that, or a file that
+        holds anything but a full commit, says nothing rather than something false.
+        """
+        try:
+            ref = self.recipe_file.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError):
+            return None
+        return ref if R.matches(RECIPE, ref) else None
 
     def last_run(self) -> dict | None:
         """When the reconciler last ran and how it ended: a time that stops moving means it stopped."""
@@ -254,6 +282,15 @@ class Door:
         wid = message["world"]
         current = R.read_order(self.orders / f"{wid}.json")
         waiting = [r for r in self.inbox() if r["message"].get("world") == wid]
+        if kind in ("ShowWorldCode", "RotateWorldCode"):
+            # A world's own code: shown or changed only for a world that is
+            # here, settled, and not already changing its code — else the
+            # Oracle would be shown a code about to stop working.
+            if wid in self.purging() or any(r.get("type") == "DeleteWorld" for r in waiting):
+                return "still-deleting"
+            if any(r.get("type") in ("CreateWorld", "RotateWorldCode") for r in waiting):
+                return "busy"
+            return "missing" if current is None else None
         if kind == "CreateWorld":
             if current is not None or any(r.get("type") == "CreateWorld" for r in waiting):
                 return "exists"
@@ -323,12 +360,18 @@ class Door:
                        "signer": signer, "receivedAt": R.utc(now)}
             if kind == "DownloadWorld":
                 reply["copy"] = dropped["copy"] = os.urandom(16).hex()
-            if kind in ("ShowAdminCode", "CreateWorld"):
-                code = R.read_admin_code(self.admin_code_file)
-                if code is None and kind == "ShowAdminCode":
+            if kind in ("ShowAdminCode", "ShowWorldCode"):
+                # The machine's legacy code, or this one world's own.
+                kept = self.admin_code_file if kind == "ShowAdminCode" else self.codes_dir / message["world"]
+                code = R.read_admin_code(kept)
+                if code is None:
                     return 503, {"error": "no-admin-code"}
-                if code is not None:
-                    reply["adminCode"] = code
+                reply["adminCode"] = code
+            elif kind in ("CreateWorld", "RotateWorldCode"):
+                # A new code of the world's own, made here and shown once to the
+                # Oracle who signed; the inbox entry carries it to the
+                # reconciler, which writes it into the world's key file.
+                reply["adminCode"] = dropped["adminCode"] = R.make_code()
             name = f"{int(now * 1000):013d}-{nonce}.json"
             R.write_json(self.home / "inbox" / name, dropped, mode=0o640)
         target = f" {message['world']}" if "world" in message else ""

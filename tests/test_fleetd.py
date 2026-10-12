@@ -42,7 +42,9 @@ SIGNED = {v["type"]: v for v in VECTORS["vectors"]}
 ORACLE = SIGNED["CreateWorld"]["signer"]
 EXPIRES = SIGNED["CreateWorld"]["message"]["expires"]
 NOW = EXPIRES - 60
-CODE = "a1b2c3d4e5f6"
+CODE = "a1b2c3d4e5f6"  # the machine's old shared code
+PLAZA_CODE = "f1a2f1a2f1a2f1a2"  # plaza's own
+OWN_CODE = r"\A[0-9a-f]{16}\Z"  # a world's own code, as the door makes them
 
 
 def body(kind, message=None, signature=None, **extra):
@@ -61,22 +63,38 @@ class Rig:
         self.home = self.root / "home"
         for folder in ("inbox", "orders", "requests", "copies", "run", "sock"):
             (self.home / folder).mkdir(parents=True)
-        etc = self.root / "etc"
+        etc = self.etc = self.root / "etc"
         etc.mkdir()
+        (etc / "codes").mkdir()
         (etc / "signers").write_text(f"{ORACLE}\n", encoding="utf-8")
         (etc / "control-host").write_text("open-1.numinia.com\n", encoding="utf-8")
         if admin_code:
             (etc / "admin-code").write_text(CODE + "\n", encoding="utf-8")
         self.now = now
+        self.err = ""
         self.door = D.Door(
             home=self.home, alias=alias, signers_file=etc / "signers", admin_code_file=etc / "admin-code",
+            codes_dir=etc / "codes", recipe_file=etc / "recipe",
             control_host_file=etc / "control-host", domains_file=etc / "domains",
             origins_file=etc / "origins", state=self.root / "state", clock=lambda: self.now,
         )
 
     def accept(self, payload, client="203.0.113.7"):
-        with contextlib.redirect_stderr(io.StringIO()):
-            return self.door.accept(payload, client)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            answer = self.door.accept(payload, client)
+        self.err += err.getvalue()
+        return answer
+
+    def dropped(self):
+        """What the door left in the inbox, oldest first."""
+        return [json.loads(p.read_text()) for p in sorted((self.home / "inbox").iterdir())]
+
+    def wait(self, kind, wid="plaza", nonce="e" * 32):
+        """A request of another Oracle's, taken by the door and not yet by the reconciler."""
+        message = {"machine": "open-1", "world": wid, "nonce": nonce, "expires": EXPIRES}
+        (self.home / "inbox" / f"0000000000001-{nonce}.json").write_text(
+            json.dumps({"type": kind, "message": message, "signer": ORACLE, "receivedAt": R.utc(NOW)}))
 
     def put_world(self, wid="plaza", domain="plaza.numinia.com"):
         order = {"id": wid, "card": wid, "state": "running", "server": "open-1", "domain": domain,
@@ -87,20 +105,28 @@ class Rig:
 
 
 class Accept(unittest.TestCase):
-    def test_an_oracles_create_is_dropped_into_the_inbox_with_the_admin_code_in_reply(self):
+    def test_an_oracles_create_is_dropped_into_the_inbox_with_the_worlds_own_code_in_reply(self):
         rig = Rig(self)
         status, reply = rig.accept(body("CreateWorld"))
         self.assertEqual(status, 202)
-        self.assertEqual(reply, {"request": SIGNED["CreateWorld"]["message"]["nonce"], "adminCode": CODE})
+        self.assertEqual(set(reply), {"request", "adminCode"})
+        self.assertEqual(reply["request"], SIGNED["CreateWorld"]["message"]["nonce"])
+        self.assertRegex(reply["adminCode"], OWN_CODE)
+        self.assertNotEqual(reply["adminCode"], CODE)  # never the machine's shared one
         [dropped] = list((rig.home / "inbox").iterdir())
         raw = json.loads(dropped.read_text())
         self.assertEqual(raw["signer"], ORACLE)
         self.assertEqual(raw["message"], SIGNED["CreateWorld"]["message"])
+        self.assertEqual(raw["adminCode"], reply["adminCode"])  # what the reconciler writes into its keys
         self.assertEqual(dropped.stat().st_mode & 0o777, 0o640)
+        self.assertNotIn(reply["adminCode"], rig.err)  # the door never logs a code
         self.assertEqual(rig.door.request(raw["message"]["nonce"]), {"request": raw["message"]["nonce"],
                                                                      "state": "pending"})
         [world] = rig.door.worlds()["worlds"]
         self.assertEqual((world["id"], world["phase"], world["domain"]), ("plaza", "creating", "plaza.numinia.com"))
+        self.assertNotIn(reply["adminCode"], json.dumps(rig.door.worlds()) + json.dumps(rig.door.machine()))
+        # Each create gets a code of its own.
+        self.assertNotEqual(Rig(self).accept(body("CreateWorld"))[1]["adminCode"], reply["adminCode"])
 
     def test_a_request_counts_once(self):
         rig = Rig(self)
@@ -173,6 +199,69 @@ class Accept(unittest.TestCase):
         self.assertEqual(none.accept(body("ShowAdminCode")), (503, {"error": "no-admin-code"}))
         self.assertNotIn(CODE, json.dumps(rig.door.worlds()) + json.dumps(rig.door.machine()))
 
+    def test_a_worlds_own_code_is_shown_to_a_signed_oracle(self):
+        rig = Rig(self)
+        rig.put_world()
+        (rig.etc / "codes" / "plaza").write_text(PLAZA_CODE + "\n")
+        status, reply = rig.accept(body("ShowWorldCode"))
+        self.assertEqual((status, reply), (202, {"request": SIGNED["ShowWorldCode"]["message"]["nonce"],
+                                                 "adminCode": PLAZA_CODE}))
+        [raw] = rig.dropped()
+        self.assertNotIn("adminCode", raw)  # the record for the log carries no code
+        self.assertNotIn(PLAZA_CODE, rig.err + json.dumps(rig.door.worlds()) + json.dumps(rig.door.machine()))
+
+    def test_a_world_with_no_readable_code_says_so(self):
+        """Its key file gives no plain code: a signed change of code puts it right."""
+        for content in (None, "", "bad code\n", "a1b2c3d4\nJWT_SECRET=x\n"):
+            with self.subTest(content=content):
+                rig = Rig(self)
+                rig.put_world()
+                if content is not None:
+                    (rig.etc / "codes" / "plaza").write_text(content)
+                self.assertEqual(rig.accept(body("ShowWorldCode")), (503, {"error": "no-admin-code"}))
+                self.assertEqual(rig.dropped(), [])
+
+    def test_a_change_of_code_makes_a_new_one_and_carries_it_to_the_reconciler(self):
+        rig = Rig(self)
+        rig.put_world()
+        (rig.etc / "codes" / "plaza").write_text(PLAZA_CODE + "\n")
+        status, reply = rig.accept(body("RotateWorldCode"))
+        self.assertEqual(status, 202)
+        self.assertRegex(reply["adminCode"], OWN_CODE)
+        self.assertNotIn(reply["adminCode"], (PLAZA_CODE, CODE))
+        [raw] = rig.dropped()
+        self.assertEqual((raw["type"], raw["adminCode"]), ("RotateWorldCode", reply["adminCode"]))
+        self.assertEqual((rig.etc / "codes" / "plaza").read_text(), PLAZA_CODE + "\n")  # the reconciler writes it
+        self.assertNotIn(reply["adminCode"], rig.err)
+
+    def test_a_code_is_shown_or_changed_only_for_a_settled_world(self):
+        """Each case on its own door: a refused request still spends its number."""
+        for kind in ("ShowWorldCode", "RotateWorldCode"):
+            with self.subTest(kind=kind):
+                rig = Rig(self)
+                self.assertEqual(rig.accept(body(kind)), (409, {"error": "missing"}))
+                rig = Rig(self)
+                rig.put_world()
+                rig.wait("DeleteWorld")
+                self.assertEqual(rig.accept(body(kind)), (409, {"error": "still-deleting"}))
+                rig = Rig(self)  # taken by the reconciler, its folder and keys not gone yet
+                (rig.home / "run" / "purge.json").write_text(json.dumps({"plaza": {"domain": "plaza.numinia.com"}}))
+                self.assertEqual(rig.accept(body(kind)), (409, {"error": "still-deleting"}))
+                rig = Rig(self)
+                rig.put_world()
+                rig.wait("RotateWorldCode")  # its code is changing: the old one is about to stop working
+                self.assertEqual(rig.accept(body(kind)), (409, {"error": "busy"}))
+                rig = Rig(self)
+                rig.wait("CreateWorld")
+                self.assertEqual(rig.accept(body(kind)), (409, {"error": "busy"}))
+                self.assertEqual(len(rig.dropped()), 1)  # only the one that was waiting
+                rig = Rig(self)
+                rig.put_world()
+                rig.put_world(wid="foro", domain="foro.numinia.com")
+                rig.wait("RotateWorldCode", wid="foro")  # another world's change is no reason
+                (rig.etc / "codes" / "plaza").write_text(PLAZA_CODE + "\n")
+                self.assertEqual(rig.accept(body(kind))[0], 202)
+
     def test_too_many_requests_from_one_address_slow_down(self):
         rig = Rig(self)
         rig.door.limiter = D.Limiter(per_client=2, overall=100, window=60)
@@ -188,6 +277,19 @@ class Facts(unittest.TestCase):
         facts = rig.door.machine()
         self.assertEqual((facts["machine"], facts["oracles"]), ("open-1", 1))
         self.assertNotIn(ORACLE, json.dumps(facts))
+
+    def test_the_machine_says_which_commit_of_its_recipe_it_runs(self):
+        rig = Rig(self)
+        self.assertIsNone(rig.door.machine()["recipe"])  # set up before the bootstrap wrote it
+        commit = "0123456789abcdef0123456789abcdef01234567"
+        (rig.etc / "recipe").write_text(commit + "\n")
+        self.assertEqual(rig.door.machine()["recipe"], commit)
+        for garbage in ("main", commit[:7], commit.upper(), commit + "0", f"{commit}\nx", ""):
+            with self.subTest(content=garbage):
+                (rig.etc / "recipe").write_text(garbage)
+                self.assertIsNone(rig.door.machine()["recipe"])
+        (rig.etc / "recipe").write_bytes(b"\xff" * 40)
+        self.assertIsNone(rig.door.machine()["recipe"])
 
     def test_the_machine_says_whether_its_reconciler_keeps_up(self):
         """A request nobody takes, or a last run that stops moving, is a machine that no longer obeys."""
@@ -253,6 +355,44 @@ class Facts(unittest.TestCase):
         self.assertIsNone(rig.door.request("not-a-number"))
 
 
+class EndToEnd(unittest.TestCase):
+    """The door and the reconciler agree on what a request carries: the code an Oracle is shown is the world's."""
+
+    def take(self, rig):
+        with contextlib.redirect_stderr(io.StringIO()):
+            return R.take_requests(rig.home, rig.home / "orders", "open-1", frozenset({ORACLE}), frozenset(),
+                                   "open-1.numinia.com", NOW, codes_dir=rig.etc / "codes")
+
+    def result(self, rig, kind):
+        nonce = SIGNED[kind]["message"]["nonce"]
+        return json.loads((rig.home / "requests" / f"{nonce}.json").read_text())
+
+    def test_the_code_a_create_shows_is_the_code_the_world_gets(self):
+        rig = Rig(self)
+        shown = rig.accept(body("CreateWorld"))[1]["adminCode"]
+        self.take(rig)
+        self.assertEqual(self.result(rig, "CreateWorld")["state"], "done")
+        self.assertRegex((rig.home / "env" / "plaza.env").read_text(),
+                         rf"\AJWT_SECRET=[0-9a-f]{{64}}\nADMIN_CODE={shown}\n\Z")
+        self.assertEqual(R.read_admin_code(rig.etc / "codes" / "plaza"), shown)
+
+    def test_a_change_of_code_reaches_the_world_and_keeps_who_everyone_is(self):
+        rig = Rig(self)
+        rig.put_world()
+        keys = rig.home / "env" / "plaza.env"
+        keys.parent.mkdir()
+        keys.write_text("JWT_SECRET=" + "ab" * 32 + f"\nADMIN_CODE={CODE}\n")
+        R.sync_codes(rig.home, rig.etc / "codes")  # the first run of this version: plaza keeps the code it has
+        self.assertEqual(rig.accept(body("ShowWorldCode"))[1]["adminCode"], CODE)
+        new = rig.accept(body("RotateWorldCode"))[1]["adminCode"]
+        self.take(rig)
+        self.assertEqual([self.result(rig, k)["state"] for k in ("ShowWorldCode", "RotateWorldCode")], ["done", "done"])
+        self.assertEqual(keys.read_text(), "JWT_SECRET=" + "ab" * 32 + f"\nADMIN_CODE={new}\n")
+        self.assertEqual(R.read_admin_code(rig.etc / "codes" / "plaza"), new)  # what the door shows from now on
+        self.assertEqual(R.read_restarts(rig.home), ["plaza"])  # and the engine reads it once restarted
+        self.assertNotIn(new, (rig.home / "log.jsonl").read_text())
+
+
 class UnixHTTPConnection(http.client.HTTPConnection):
     def __init__(self, path):
         super().__init__("localhost", timeout=5)
@@ -315,7 +455,7 @@ class OverHTTP(unittest.TestCase):
                                    {"Origin": "https://numinia.com", "Content-Type": "application/json"})
         self.assertEqual(response.status, 202)
         self.assertEqual(response.getheader("Access-Control-Allow-Origin"), "https://numinia.com")
-        self.assertEqual(json.loads(data)["adminCode"], CODE)
+        self.assertRegex(json.loads(data)["adminCode"], OWN_CODE)
         nonce = SIGNED["CreateWorld"]["message"]["nonce"]
         response, data = self.call("GET", f"/fleet/v1/requests/{nonce}")
         self.assertEqual(json.loads(data)["state"], "pending")
