@@ -1,0 +1,245 @@
+{
+  "$comment": "EIP-712 vectors for the fleet protocol, made with viem 2.57 (hashTypedData, signTypedData) by two keys generated and thrown away; only public data is kept. Regenerate with any EIP-712 library: the digests must not change.",
+  "domain": {
+    "name": "Numinia Fleet",
+    "version": "1"
+  },
+  "types": {
+    "CreateWorld": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "type": "string"
+      },
+      {
+        "name": "domain",
+        "type": "string"
+      },
+      {
+        "name": "image",
+        "type": "string"
+      },
+      {
+        "name": "memory",
+        "type": "string"
+      },
+      {
+        "name": "cpus",
+        "type": "string"
+      },
+      {
+        "name": "maxUploadMb",
+        "type": "uint256"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
+    ],
+    "DeleteWorld": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "type": "string"
+      },
+      {
+        "name": "domain",
+        "type": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
+    ],
+    "StopWorld": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "type": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
+    ],
+    "StartWorld": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "type": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
+    ],
+    "DownloadWorld": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "type": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
+    ],
+    "ShowAdminCode": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
+    ]
+  },
+  "vectors": [
+    {
+      "type": "CreateWorld",
+      "message": {
+        "machine": "open-1",
+        "world": "plaza",
+        "domain": "plaza.numinia.com",
+        "image": "ghcr.io/numengames/numinia-hyperfy2:sha-0e2045370989d051e73f81c7c9d53121d5c374b3",
+        "memory": "2g",
+        "cpus": "1.5",
+        "maxUploadMb": 50,
+        "nonce": "0123456789abcdef0123456789abcdef",
+        "expires": 1893456000
+      },
+      "digest": "0x6390352cb3395b9e08c31daaec3288413a5800cef65a6569164809637382ca1d",
+      "signature": "0x98e42891013b9c61fa1a0707f9abf30309eb3684062d3f75a57d8ec14dd898aa195c3861cd07d171da44ec49daba180880949644e5cd8e605e793b9c68d18a821b",
+      "signer": "0xc6e2ba381ace7dd1d3a6dbfeeacf42c746f96f12"
+    },
+    {
+      "type": "DeleteWorld",
+      "message": {
+        "machine": "open-1",
+        "world": "plaza",
+        "domain": "plaza.numinia.com",
+        "nonce": "1123456789abcdef0123456789abcdef",
+        "expires": 1893456000
+      },
+      "digest": "0x4a05422e004fb6b333ed98bbc3d487bdbd231f0ebbf1e6d12516123f4f890a67",
+      "signature": "0x453411454d0c4959030fde4744932fc42deb55940cb609be14809e120e786c66479ff7f9c2baade4c40ff492126a008d0e892a914f53f43567a8b647e49b57a71b",
+      "signer": "0xc6e2ba381ace7dd1d3a6dbfeeacf42c746f96f12"
+    },
+    {
+      "type": "StopWorld",
+      "message": {
+        "machine": "open-1",
+        "world": "plaza",
+        "nonce": "2123456789abcdef0123456789abcdef",
+        "expires": 1893456000
+      },
+      "digest": "0xcce8832bb8c525e8a94356bd6e02d9d3e39d4fa88b0d9cf49eff9e7eaf8965d1",
+      "signature": "0xc587c0cb42dd9d36e0c4609f2e59336ef5c678527697f37c3ce1fa0cfc152ec86d2b5827ef3a8209345bf3b3b0c3aae9434698b55aa69b6360ab6b0e1d31602b1c",
+      "signer": "0xc6e2ba381ace7dd1d3a6dbfeeacf42c746f96f12"
+    },
+    {
+      "type": "StartWorld",
+      "message": {
+        "machine": "open-1",
+        "world": "plaza",
+        "nonce": "3123456789abcdef0123456789abcdef",
+        "expires": 1893456000
+      },
+      "digest": "0xd84f2ea0aea5ef8176282fb8b08b92dfdc169109ed22205f2271d8c372d82a26",
+      "signature": "0x3f2253feae91261b27b0607cd3ad8e9bb7e4009724fa86cdbdc742ca8cc3b43d13515c02a25be5407170ee78d5e47269db551460c2624c301cb2302b825f58321b",
+      "signer": "0xc6e2ba381ace7dd1d3a6dbfeeacf42c746f96f12"
+    },
+    {
+      "type": "DownloadWorld",
+      "message": {
+        "machine": "open-1",
+        "world": "plaza",
+        "nonce": "4123456789abcdef0123456789abcdef",
+        "expires": 1893456000
+      },
+      "digest": "0xe03580fe93dd2192b20cd5fe6cba48e25020390d9e46e608440cfd5ec2651a27",
+      "signature": "0x46c4d29055fdfef8f33fe351b6856ee5597f40e539dfe8eeaf08c3f0424383515c6685d43a149c1971720458e7bc34789ce1a69ca1d42d77225fdd3c33f223701c",
+      "signer": "0xc6e2ba381ace7dd1d3a6dbfeeacf42c746f96f12"
+    },
+    {
+      "type": "ShowAdminCode",
+      "message": {
+        "machine": "open-1",
+        "nonce": "5123456789abcdef0123456789abcdef",
+        "expires": 1893456000
+      },
+      "digest": "0x026533a50e419d03f37105c6f319572c0500f9b65237935ac8670b8dd46ecfe9",
+      "signature": "0xc228770e517934ab79d4e1caf53b5978e1d4c441c43c5b6998158c8bedc2373309b8bc2462ef73314bfe07e12a0541bfd2385b2cafc26738252e1ea022a561211c",
+      "signer": "0xc6e2ba381ace7dd1d3a6dbfeeacf42c746f96f12"
+    }
+  ],
+  "stranger": {
+    "type": "StopWorld",
+    "message": {
+      "machine": "open-1",
+      "world": "plaza",
+      "nonce": "2123456789abcdef0123456789abcdef",
+      "expires": 1893456000
+    },
+    "signature": "0x4da7c8d6c4ec83165a16e611b53a52fbb305959e269edaf166a714070adaf4bb509a237a6f7db1bbc882c59f5830717040a67cb63f3ffe01f9f1c4c3a997193d1b",
+    "signer": "0x780c49b2ae2298085f3b2af90e68da28d5edb323"
+  },
+  "keccak": [
+    {
+      "input": "",
+      "hex": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+    },
+    {
+      "input": "abc",
+      "hex": "0x4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45"
+    },
+    {
+      "input": "Numinia Fleet",
+      "hex": "0xb16b402dbf9c3f6bbba1d461e221c2198f91541497686217ec102aaa34590238"
+    },
+    {
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "hex": "0x3c3800defb6a25a70a2737e0716eeb5d270559ad3cad8f6abddac58802d7158e"
+    }
+  ]
+}

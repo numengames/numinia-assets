@@ -35,3 +35,11 @@ SPDX-License-Identifier = "CC0-1.0"
 path = ["open-worlds/*.json"]
 SPDX-FileCopyrightText = "2026 Numen Games S.L."
 SPDX-License-Identifier = "CC0-1.0"
+
+# Test data for the fleet's signed requests: EIP-712 digests and signatures
+# made by throwaway keys (only public data). JSON cannot carry a header, so
+# the one file is declared here by name.
+[[annotations]]
+path = ["tests/fleet_vectors.json"]
+SPDX-FileCopyrightText = "2026 Numen Games S.L."
+SPDX-License-Identifier = "CC0-1.0"

@@ -1,3 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Numen Games S.L.
 # SPDX-License-Identifier: MIT
 reuse==6.2.0
+# The fleet machine's signature check (open-worlds/machine/walletsig.py);
+# on the machine it is the distribution's python3-ecdsa (0.18 on Debian 12).
+ecdsa==0.19.1

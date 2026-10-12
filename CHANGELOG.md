@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- `open-worlds/machine/`: a world is created, stopped, started, downloaded
+  and deleted from the worlds room on numinia.com with one signature, and
+  nothing else — no pull request, no merge, no SSH. The Oracle's wallet
+  signs each request (EIP-712 typed data, which the wallet shows field by
+  field); a new door on each machine (`fleetd.py`, its own user, a Unix
+  socket behind Caddy at `https://<alias>.numinia.com/fleet/v1/`) checks
+  the shape, the machine, the fifteen-minute window, the signature against
+  the Oracles' wallets listed on the machine (`/etc/fleet/signers`) and that
+  the request is new, and the reconciler, as root, checks it all again
+  before it changes the machine's own book (`/srv/fleet/orders/`).
+  `walletsig.py` recovers the signer (Keccak-256 written out, since
+  Python's `sha3_256` pads differently; `python3-ecdsa` for the curve;
+  low-s only), proved against signatures made by viem, the browser's side.
+  Download zips a world whole while it runs — a consistent copy of its
+  database, its files, a compose file for `localhost:3000`, fresh keys, a
+  manifest with each file's SHA-256 — kept a day, the Alchemists' Tower's
+  copy made by the machine. Delete removes the order, waits for Docker to
+  take the container down, then deletes the world's folder, keys and
+  copies. The machine adopts, once, the orders the public book gave it, so
+  `prueba` and `pablofm` keep running. The bootstrap takes the Oracles'
+  wallets as its second argument. What the machine did is public at
+  `/fleet/v1/log`. Proved on real containers: a viem-signed request through
+  Caddy to the door, then create, download, delete.
+
 - `open-worlds/machine/reconcile.py`: a world added after Caddy started got
   no address. Caddy reads its Caddyfile only when it starts, and
   `docker compose up` leaves a running Caddy alone when only that file's
