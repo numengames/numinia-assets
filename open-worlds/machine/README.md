@@ -30,7 +30,9 @@ moves with them.
    Ubuntu. OVH's VPS order does not ask for an SSH key (its Public Cloud
    does): the first login uses the password OVH emails, which it makes you
    change; then copy your key in with `ssh-copy-id` and use the key from
-   then on.
+   then on. Do it before step 3: the line turns SSH passwords off once your
+   key is in, and leaves them on, saying `SSH STILL TAKES PASSWORDS`, while
+   it is not.
 3. Run the line the worlds room shows under the machine (LAP › Mundos): it
    carries the machine's alias, your wallet (the address you sign in to
    numinia.com with; several Oracles go separated by commas) and the commit
@@ -324,10 +326,13 @@ curl https://open-1.numinia.com/fleet/v1/worlds         # what the console sees
 | a download link | that copy, for a day | the world's keys (the copy's are fresh), anything else |
 | a world's admin code | admin of that world, from any browser, until an Oracle changes it with one signature | the other worlds (each has its own), the machine, its files, the other machines |
 | a merge on this repository's `main` | nothing on any machine by itself: a machine installs only the commit its line names (`FLEET_REF`) and says which (`recipe`) | the machines, until someone hands out and runs a line with that commit |
+| the machine's SSH password, guessed | nothing, once the line has run with a key in: the SSH door takes keys only (`/etc/ssh/sshd_config.d/00-fleet-keys-only.conf`) | the machine. Before that, `ubuntu` with a guessed password is the whole machine, and the door keeps taking guesses |
 
 Log in to the machine with an SSH key, never a password (after the first
-login, see *Bring up a machine*). Docker itself runs as root, and so does
-the engine inside its container (see *Debts*).
+login, see *Bring up a machine*). The bootstrap keeps the rule itself: once
+the person running the line logs in with a key, it turns SSH passwords off,
+and it says `SSH STILL TAKES PASSWORDS` when it cannot. Docker itself runs as
+root, and so does the engine inside its container (see *Debts*).
 
 ## Debts, on purpose
 

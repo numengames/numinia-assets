@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -837,6 +838,90 @@ class ReconcileTests(unittest.TestCase):
         self.assertIn('chown fleetd:fleetd "$HOME_DIR/inbox" "$HOME_DIR/sock" "$HOME_DIR/uploads"', text)
         self.assertIn('chmod 750 "$HOME_DIR/inbox" "$HOME_DIR/uploads"', text)
         self.assertIn('chmod 700 "$HOME_DIR/staging"', text)
+
+    # --- the SSH door: a key, never a password ---------------------------------
+
+    SSH_CONF_LINE = "local ssh_conf=/etc/ssh/sshd_config.d/00-fleet-keys-only.conf"
+
+    def ssh_step(self):
+        text = (MACHINE / "bootstrap.sh").read_text()
+        return text[text.index('  echo "== ssh: a key, never a password"'):text.index('  echo "== unattended upgrades"')]
+
+    def test_bootstrap_turns_ssh_passwords_off_only_once_a_key_is_in(self):
+        """A fresh OVH image takes passwords at the SSH door: the README's 'never a password' was a habit, not a rule."""
+        text = (MACHINE / "bootstrap.sh").read_text()
+        step = self.ssh_step()
+        self.assertLess(text.index("== firewall: 22, 80, 443"), text.index("== ssh: a key, never a password"))
+        self.assertIn(self.SSH_CONF_LINE, step)
+        # sshd keeps the first value it reads and reads the folder in name order:
+        # cloud-init's 50-cloud-init.conf (PasswordAuthentication yes) must come later.
+        self.assertLess("00-fleet-keys-only.conf", "50-cloud-init.conf")
+        for line in ("PasswordAuthentication no", "KbdInteractiveAuthentication no"):
+            with self.subTest(line=line):
+                self.assertIn(line, step)
+        # Only once the person running the line already logs in with a key.
+        self.assertLess(step.index('ssh-keygen -l -f "$ssh_home/.ssh/authorized_keys" </dev/null'), step.index("install -m 0644"))
+        # A setting sshd refuses is taken out before anything reloads; then what sshd will do is read back.
+        self.assertLess(step.index("sshd -t </dev/null"), step.index("systemctl reload ssh"))
+        self.assertLess(step.index("systemctl reload ssh"), step.index("sshd -T </dev/null"))
+        self.assertIn("grep -qx 'passwordauthentication no'", step)
+
+    def run_ssh_step(self, key, sshd_t_exit="0"):
+        """The step as written, run with stand-ins for sshd, systemctl and getent; what it did."""
+        if not shutil.which("ssh-keygen"):
+            self.skipTest("ssh-keygen is not installed")
+        step = self.ssh_step()
+        self.assertIn(self.SSH_CONF_LINE, step)
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        conf = tmp / "sshd_config.d" / "00-fleet-keys-only.conf"
+        home, bin_dir = tmp / "home", tmp / "bin"
+        (home / ".ssh").mkdir(parents=True)
+        bin_dir.mkdir()
+        if key:
+            subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(tmp / "k")],
+                           stdin=subprocess.DEVNULL, check=True)
+            (home / ".ssh" / "authorized_keys").write_text((tmp / "k.pub").read_text())
+        stand_ins = {
+            "sshd": f'#!/bin/sh\ncase "$1" in\n  -t) exit {sshd_t_exit} ;;\n'
+                    f'  -T) if [ -f "{conf}" ]; then echo "passwordauthentication no"; else echo "passwordauthentication yes"; fi ;;\nesac\n',
+            "systemctl": f'#!/bin/sh\necho "$*" >> "{tmp}/systemctl.log"\nexit 0\n',
+            "getent": f'#!/bin/sh\necho "ubuntu:x:1000:1000::{home}:/bin/bash"\n',
+        }
+        for name, body in stand_ins.items():
+            (bin_dir / name).write_text(body)
+            (bin_dir / name).chmod(0o755)
+        script = ("set -euo pipefail\nstep() {\n"
+                  + step.replace(self.SSH_CONF_LINE, f"local ssh_conf={conf}")
+                  + "}\nstep\necho 'the script goes on'\n")
+        env = dict(os.environ, SUDO_USER="ubuntu", PATH=f"{bin_dir}:{os.environ['PATH']}")
+        run = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL)
+        log = (tmp / "systemctl.log").read_text() if (tmp / "systemctl.log").exists() else ""
+        return run, conf, log
+
+    def test_without_a_key_the_ssh_step_leaves_passwords_on_and_says_so(self):
+        run, conf, log = self.run_ssh_step(key=False)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("the script goes on", run.stdout)
+        self.assertFalse(conf.exists())
+        self.assertIn("SSH STILL TAKES PASSWORDS", run.stderr)
+        self.assertNotIn("reload", log)
+
+    def test_with_a_key_the_ssh_step_turns_passwords_off_and_reloads(self):
+        run, conf, log = self.run_ssh_step(key=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("the script goes on", run.stdout)
+        self.assertIn("PasswordAuthentication no\nKbdInteractiveAuthentication no\n", conf.read_text())
+        self.assertIn("reload ssh", log)
+        self.assertIn("keys only", run.stdout)
+
+    def test_a_setting_sshd_refuses_is_taken_back_out(self):
+        run, conf, log = self.run_ssh_step(key=True, sshd_t_exit="1")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("the script goes on", run.stdout)
+        self.assertFalse(conf.exists())
+        self.assertIn("taken back out", run.stderr)
+        self.assertNotIn("reload", log)
 
     # --- the door's address --------------------------------------------------
 

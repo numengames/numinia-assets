@@ -21,7 +21,8 @@
 # the list the machine already has.
 #
 # What it does, in order: Docker, a 2 GB swap file, the firewall (22, 80, 443
-# only), unattended upgrades, a clone of this repository at the pinned commit
+# only), SSH by key only (once the person running it logs in with a key),
+# unattended upgrades, a clone of this repository at the pinned commit
 # (the recipe), the door's own user and its folders (the inbox, the upload
 # folder for a world's zip), the programs, the alias, the machine's
 # address for the console (<alias>.numinia.com), the Oracles' wallets, the
@@ -131,6 +132,47 @@ main() {
   ufw allow 80/tcp >/dev/null
   ufw allow 443/tcp >/dev/null
   ufw --force enable >/dev/null
+
+  echo "== ssh: a key, never a password"
+  # The README's rule, kept by the machine itself. A fresh VPS still takes
+  # passwords at the SSH door (OVH's first login uses the one it emails, and
+  # cloud-init may allow them in 50-cloud-init.conf), so anyone may keep
+  # guessing the password of a well-known user. Once the person running this
+  # line can log in with a key, the door stops taking passwords. sshd keeps
+  # the FIRST value it reads for a setting and reads its drop-in folder in name
+  # order: this file is called 00-… so that no later file turns passwords back
+  # on. Without a key nothing changes, and it says so: turning passwords off
+  # then would lock that person out.
+  local ssh_conf=/etc/ssh/sshd_config.d/00-fleet-keys-only.conf
+  local ssh_user ssh_home ssh_tmp ssh_said
+  ssh_user="${SUDO_USER:-root}"
+  ssh_home="$(getent passwd "$ssh_user" | cut -d: -f6 || true)"
+  if ! command -v sshd >/dev/null; then
+    echo "no sshd on this machine: nothing to do"
+  elif [[ -n "$ssh_home" ]] && ssh-keygen -l -f "$ssh_home/.ssh/authorized_keys" </dev/null >/dev/null 2>&1; then
+    mkdir -p "$(dirname "$ssh_conf")"
+    ssh_tmp="$(mktemp)"
+    printf '# Written by the fleet bootstrap: log in with a key, never a password.\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n' > "$ssh_tmp"
+    install -m 0644 "$ssh_tmp" "$ssh_conf"
+    rm -f "$ssh_tmp"
+    if ! sshd -t </dev/null; then
+      rm -f "$ssh_conf"
+      echo "!! SSH STILL TAKES PASSWORDS: sshd refused the new setting, so it was taken back out." >&2
+    else
+      if systemctl is-active --quiet ssh; then
+        systemctl reload ssh || echo "!! sshd did not reload: the setting applies from its next start" >&2
+      fi
+      ssh_said="$(sshd -T </dev/null 2>/dev/null || true)"
+      if grep -qx 'passwordauthentication no' <<<"$ssh_said"; then
+        echo "keys only: $ssh_user logs in with a key, and the door takes no password"
+      else
+        echo "!! SSH STILL TAKES PASSWORDS: sshd does not read $ssh_conf (does /etc/ssh/sshd_config include sshd_config.d?)" >&2
+      fi
+    fi
+  else
+    echo "!! SSH STILL TAKES PASSWORDS: $ssh_user has no key in ${ssh_home:-its home}/.ssh/authorized_keys." >&2
+    echo "!! Copy yours in (ssh-copy-id), log in with it, and run this line again with sudo." >&2
+  fi
 
   echo "== unattended upgrades"
   dpkg-reconfigure -f noninteractive unattended-upgrades

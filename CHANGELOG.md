@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- `open-worlds/machine/`: the SSH door takes a key, never a password.
+  - A machine brought up from a fresh OVH image still took passwords at its
+    SSH door (`publickey,password`, seen from outside without trying one):
+    the README's rule, "never a password", was a habit the machine did not
+    keep, and anyone could keep guessing the password of `ubuntu`, which is
+    the whole machine.
+  - The bootstrap now writes `/etc/ssh/sshd_config.d/00-fleet-keys-only.conf`
+    (`PasswordAuthentication no`, `KbdInteractiveAuthentication no`), but
+    only once the person running the line logs in with a key. Otherwise
+    nothing changes, and it says `SSH STILL TAKES PASSWORDS`. The name starts
+    with `00-` because sshd keeps the first value it reads, and cloud-init's
+    `50-cloud-init.conf` may turn passwords on. A file sshd refuses is taken
+    back out before anything reloads, and what sshd will really do is read
+    back (`sshd -T`).
+  - A merge changes no machine: a machine gets it when its line, with this
+    commit, is run again.
+
 - `open-worlds/machine/`: a world comes back from its zip, born stopped.
   - A world's zip — the copy Download makes, or an Alchemists' Tower
     backup — could only be run by hand on someone's computer. Now one
