@@ -20,7 +20,7 @@ moves with them.
 | `fleetd.py` | the door: takes an Oracle's signed request and a world's zip, shows the machine's public facts, hands out copies |
 | `reconcile.py` | every minute and on each request: checks the requests again, changes the book, makes the containers match, deletes, zips copies, brings worlds back from zips |
 | `walletsig.py` | who signed a request: EIP-712 typed data, recovered to a wallet address |
-| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py` | the tests, run by the depot's `python -m unittest` |
+| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py` | the tests, run by the depot's `python -m unittest` |
 
 ## Bring up a machine
 
@@ -89,6 +89,54 @@ connections open across a reload (`stream_close_delay 12h`). The world
 comes up at `https://<domain>` within a minute, and the room shows the
 world's own admin code: type `/admin <code>` in the world's chat. Nothing
 is done on the machine by hand.
+
+### Two engines, told apart by their image
+
+A machine runs two engines, and knows which one an order runs by its
+image's repository in the house's registry:
+
+| Engine | Image | Its container | Its site |
+|---|---|---|---|
+| Hyperfy | `ghcr.io/numengames/numinia-hyperfy2` | Hyperfy's settings (`PORT 3000`, its database and assets), the world at `/app/world` | `reverse_proxy <id>:3000` |
+| Numinia Engine | `ghcr.io/numengames/numinia-engine` | `user: 10001:10001` (the image's own user, never root), the key file and nothing else, the world at `/mundo`; `data/<id>/` is that user's, mode 700 | `encode zstd gzip`, 404 for `/metrics*` and `/sesiones*`, `reverse_proxy <id>:8790` |
+
+Both keep their visitors connected across a reload
+(`stream_close_delay 12h`) and read the same key file: the Numinia Engine
+reads `JWT_SECRET` and `ADMIN_CODE` when it has no `MOTOR_SECRET` and
+`MOTOR_ADMIN` of its own, and its `/dueño <code>` takes the world's admin
+code. A new world, an import or an update must name one of the two
+(`unknown-engine`); an order already in a book with another repository of
+the registry runs as every order ran before engines were told apart. The
+door says which engines the machine runs (`/fleet/v1/machine` →
+`engines`), and the room offers only those. The Numinia Engine saves when
+it is told to stop, so the machine waits for no save before stopping it.
+
+A Numinia Engine world's zip is the engine's business: the machine never
+re-implements its rules. It runs the world's own image, with no network,
+no capability and the world's limits, as the engine's user:
+
+```sh
+docker run --rm --network none -v <data/id>:/mundo:ro <image> copia     > mundo.zip  # Download
+docker run --rm --network none -i <image> comprobar                     < mundo.zip  # Import: exit 0 or 1 + one line
+docker run --rm --network none -i -v <staging/n>:/mundo <image> importar < mundo.zip  # into an empty folder
+```
+
+### Another build of the engine: UpdateWorld
+
+One signed `UpdateWorld` (machine, world, image) moves a world to another
+build of its own engine — a newer one, or an older one to undo an update.
+The door refuses it for a world that is not here (`missing`), an image of
+another engine (`engine-mismatch`), one the machine does not run
+(`unknown-engine`), and while any other change of that world waits
+(`busy`) or it is being deleted (`still-deleting`). The reconciler checks
+it again, fetches the build (`docker pull`; a build the registry does not
+have never reaches the compose file, where it would stop Docker from
+taking the book for every world), writes the order and lets the next
+`docker compose up` make that one container anew, after the world's save
+like a stop. The door shows the world `updating` until Docker has started
+the new build; the log says who asked, with the short wallet. A stopped
+world takes its new build when it starts. The door says it takes updates
+(`/fleet/v1/machine` → `updates: true`).
 
 ### The keys, made by the machine
 
@@ -193,7 +241,12 @@ it when it is wanted, never the import. One signature and one upload:
 
 Nothing else in the zip is used: its `.env`, its compose file, its guide,
 its engine image stay in the zip. If the zip has the manifest Download
-writes (`world.json`), every file must be the one it lists. A refused zip
+writes (`world.json`), every file must be the one it lists. A Numinia
+Engine world's zip (an import signed with a `numinia-engine` image) keeps
+the rules every zip keeps here — size, files, ratio, paths, links,
+encryption, the fingerprint — and then goes to the engine's own
+`comprobar` and `importar` (see *Two engines*): `engine-refused` names the
+engine's one line to whoever asked. A refused zip
 names its rule — `zip-too-big`, `file-too-big`, `unpacked-too-big`,
 `too-many-files`, `ratio`, `zip-slip`, `link`, `encrypted`, `not-a-zip`,
 `not-a-world`, `unexpected`, `db-open` (zipped while the world ran),
@@ -229,6 +282,7 @@ as Snapshot does with votes. The wallet shows every field before signing.
 | `DeleteWorld` | machine, world, domain, nonce, expires |
 | `StopWorld`, `StartWorld`, `DownloadWorld` | machine, world, nonce, expires |
 | `ShowWorldCode`, `RotateWorldCode` | machine, world, nonce, expires |
+| `UpdateWorld` | machine, world, image, nonce, expires — another build of the world's own engine |
 | `ShowAdminCode` | machine, nonce, expires — the machine's old shared code, for the room that still asks for it |
 
 `nonce` is 128 random bits chosen by the browser; `expires` is at most
@@ -259,9 +313,9 @@ minute or two, is a machine that has stopped obeying.
 | `/srv/fleet/copies/` | the copies, for a day (`<c>.zip` and `<c>.json`) |
 | `/srv/fleet/uploads/` | a world's zip on its way in: the upload slot (`<n>.json`, an hour), the zip arriving (`.<n>.zip.part`), the zip waiting for the reconciler (`<n>.zip`). The door's (`fleetd`, mode 750); root reads it and deletes each zip once taken |
 | `/srv/fleet/staging/` | where the reconciler unpacks a zip and checks it before it becomes `data/<id>/` (root's alone, mode 700; empty between runs) |
-| `/srv/fleet/data/<id>/` | the world: `db.sqlite` and `assets/` |
+| `/srv/fleet/data/<id>/` | the world: `db.sqlite` and `assets/` (Hyperfy); `mundo.json`, `datos/`, `aventura/`, `entorno/`, `sesiones/` (the Numinia Engine's, user 10001, mode 700) |
 | `/srv/fleet/env/<id>.env` | the world's keys: its JWT secret and its admin code (mode 600, made by the machine, never in git) |
-| `/srv/fleet/run/` | the generated `docker-compose.yml`, `Caddyfile` and Caddy's state; `Caddyfile.applied` is the list of sites Caddy last accepted and `docker-compose.applied.yml` the compose file Docker last accepted; `purge.json` and `copy-queue.json` hold deletes and copies in progress, `restart.json` the worlds whose code changed and that wait to be restarted; `last-run.json` says when the reconciler last ran and how it ended |
+| `/srv/fleet/run/` | the generated `docker-compose.yml`, `Caddyfile` and Caddy's state; `Caddyfile.applied` is the list of sites Caddy last accepted and `docker-compose.applied.yml` the compose file Docker last accepted; `purge.json` and `copy-queue.json` hold deletes and copies in progress, `restart.json` the worlds whose code changed and that wait to be restarted, `updating.json` the worlds moved to a new build until Docker has started it; `last-run.json` says when the reconciler last ran and how it ended |
 | `/srv/fleet/sock/fleetd.sock` | the door's socket; Caddy is the only way in to it |
 | `/srv/fleet/log.jsonl` | what was done here: when, what, which world, a short wallet |
 | `/srv/fleet/book/` | the clone of this repository, left on the commit the machine's line named: the recipe, and the orders adopted once |
@@ -321,7 +375,7 @@ curl https://open-1.numinia.com/fleet/v1/worlds         # what the console sees
 | the console (numinia.com) | nothing on the machines: it holds no key and signs nothing. It could show an Oracle a false page and ask for a signature — the wallet shows exactly what is signed (the request, the world, its address, the machine) | any machine, any world's keys |
 | an Oracle's wallet | create, stop, start, download and delete worlds on the machines that list it; bring worlds back from zips, stopped; show and change any of their worlds' admin codes | code execution on machines (the programs are installed, not pulled, and an order's fields are checked values, never configuration); images outside the house's registry or unpinned; domains outside the house zones or the machine's list |
 | the door (`fleetd`) broken into | the book, the copies and every world's admin code, read; requests put in the inbox and zips in the upload folder, and the code a world gets when an Oracle signs its creation, its import or a change of its code (the door makes it) | anything signed: the reconciler checks every signature again, and the zip's size and SHA-256 against the signed ones; the door has no root, no Docker, no network of its own, and writes only its inbox, its upload folder, its socket and its list of used numbers — never a key file |
-| a hostile zip, signed by an Oracle | nothing: refused by rule before anything is written outside `uploads/` — no path out of the world's folder, no link, no bomb past the caps, no key or compose file of its own | the machine, its other worlds. An imported world's scripts run like any world's, inside its container |
+| a hostile zip, signed by an Oracle | nothing: refused by rule before anything is written outside `uploads/` — no path out of the world's folder, no link, no bomb past the caps, no key or compose file of its own | the machine, its other worlds. An imported world's scripts run like any world's, inside its container. A Numinia Engine zip reaches the engine's own tools only after those rules, in a container with no network, no capability, the world's limits and the engine's user, which sees one empty folder |
 | a signed request, intercepted | nothing more: it is good once, for one machine and one world, for fifteen minutes | anything else |
 | a download link | that copy, for a day | the world's keys (the copy's are fresh), anything else |
 | a world's admin code | admin of that world, from any browser, until an Oracle changes it with one signature | the other worlds (each has its own), the machine, its files, the other machines |
@@ -353,9 +407,10 @@ paid, not forgotten.
 - **A pin is only as good as the commit it names.** A machine installs the
   commit its line carries; nothing yet requires a review before a merge on
   this repository's `main`. What pays it: a rule on `main` that does.
-- **The engine runs as root in its container.** Its image creates a user it
-  never switches to. What pays it: `user:` in the compose file and a `chown`
-  of `data/<id>/`.
+- **Hyperfy runs as root in its container.** Its image creates a user it
+  never switches to. The Numinia Engine already runs as its own user
+  (10001), its folder that user's. What pays it for Hyperfy: `user:` in the
+  compose file and a `chown` of `data/<id>/`.
 - **The book lives only on the machine.** A lost machine loses its book with
   its worlds; the public log tells what was done. What pays it: the nightly
   copy (`MIS-158`) takes the book with the worlds.
