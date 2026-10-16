@@ -12,8 +12,9 @@ lands in the inbox (a systemd path unit). Three jobs, in this order:
    the fields — and then changes the book (/srv/fleet/orders/): an order is
    written (create), its state changes (stop, start) or it goes (delete),
    a copy is queued (download), a world gets a new admin code (change of
-   code), or a world comes back from its zip (import; see below). Each
-   request ends with a result the door shows to whoever asked.
+   code), a world moves to another build of its engine (update), or a
+   world comes back from its zip (import; see below). Each request ends
+   with a result the door shows to whoever asked.
 2. Containers. From the orders, render a docker-compose file and a
    Caddyfile and ask Docker to make the containers match; when the list of
    sites changed, ask Caddy to read it again (a reload; each world's site
@@ -21,9 +22,12 @@ lands in the inbox (a systemd path unit). Three jobs, in this order:
    address (/etc/fleet/control-host) is always one of the sites: it is how
    the console on numinia.com reaches the door. Before Docker stops or
    restarts a running world, the reconciler waits for that world's next
-   save, since the engine writes its objects to disk only on a timer and
-   not when it is told to stop. A world whose admin code changed is
-   restarted alone, after that save, so the engine reads its new code.
+   save, since Hyperfy writes its objects to disk only on a timer and
+   not when it is told to stop (the Numinia Engine saves when it is told
+   to stop). A world whose admin code changed is restarted alone, after
+   that save, so the engine reads its new code. Two engines run here, each
+   known by its image (engine_of): Hyperfy and the Numinia Engine, whose
+   zips are made and read by its own image's tools.
 3. After. A deleted world's folder, keys, code and copies are removed once
    its container is gone; queued copies are zipped, after the world's next
    save; copies older than a day go. The run ends by writing when it ran
@@ -176,6 +180,7 @@ WORLD_FILES = frozenset({ENGINE_DB, "storage.json"})
 WORLD_FOLDERS = ("assets/", "collections/")
 ENGINE_TABLES = ("config", "users", "blueprints", "entities")
 IMPORTING = "import.json"  # run/: the world being unpacked right now, for the door to show
+UPDATING = "updating.json"  # run/: the worlds moved to a new build, until Docker has started it
 
 # Every pattern is used with re.fullmatch: `$` alone would let a trailing
 # newline through, and a newline is how text turns into a new setting.
@@ -189,6 +194,29 @@ IMAGE = re.compile(
 MEMORY = re.compile(r"[0-9]+(?:\.[0-9]+)?[mg]")
 CPUS = re.compile(r"[0-9]+(?:\.[0-9]+)?")
 STATES = ("running", "stopped")
+# The engines a machine runs, each known by its image's repository in the
+# house's registry. A new request must name one of them (unknown-engine); an
+# order already in a book with any other repository of the registry runs the
+# way every order ran before engines were told apart: Hyperfy's.
+REGISTRY = "ghcr.io/numengames/"
+HYPERFY = "numinia-hyperfy2"
+NUMINIA_ENGINE = "numinia-engine"
+ENGINES = (HYPERFY, NUMINIA_ENGINE)
+# The Numinia Engine's image (numinia-engine `Dockerfile`): it runs as its own
+# user, never root, listens on one port and keeps the world in one folder.
+ENGINE_UID = ENGINE_GID = 10001
+ENGINE_USER = f"{ENGINE_UID}:{ENGINE_GID}"
+ENGINE_PORT = 8790
+ENGINE_FOLDER = "/mundo"
+# Paths of an engine world's site that stay private: Caddy answers 404.
+ENGINE_PRIVATE = ("/metrics*", "/sesiones*")
+# The engine writes what it holds when it is told to stop (SIGTERM) and exits
+# within 10 s; Docker waits this long before it kills it.
+ENGINE_STOP_GRACE = "15s"
+# The engine's own tools for a world's zip (`copia`, `comprobar`, `importar`),
+# each run in a container of the world's image, with no network: the longest one may take.
+ENGINE_TOOLS = ("copia", "comprobar", "importar")
+TOOL_SECONDS = 1800
 # What may be written into a world's key file. No `=`, `$`, quote, space or
 # newline can pass: in an env file any of them could add or bend a setting.
 ADMIN_CODE = re.compile(r"[A-Za-z0-9_-]{8,64}")
@@ -219,6 +247,20 @@ FIELD_RULES = {
 def matches(pattern: re.Pattern[str], value: object) -> bool:
     """True only for a string the whole of which the pattern matches."""
     return isinstance(value, str) and pattern.fullmatch(value) is not None
+
+
+def engine_of(image: object) -> str | None:
+    """The engine an image runs, by its repository: numinia-hyperfy2 or numinia-engine; None for any other."""
+    if not isinstance(image, str) or not matches(IMAGE, image):
+        return None
+    repository = re.split(r"[:@]", image, maxsplit=1)[0]
+    name = repository[len(REGISTRY):]
+    return name if name in ENGINES else None
+
+
+def runs_engine(order: dict) -> bool:
+    """Whether an order runs the Numinia Engine; every other order runs as Hyperfy, as all did before."""
+    return engine_of(order.get("image")) == NUMINIA_ENGINE
 
 
 def utc(now: float | None = None) -> str:
@@ -495,6 +537,9 @@ def compose_dict(running: list[dict], home: Path) -> dict:
     }
     for o in running:
         wid, domain, limits = o["id"], o["domain"], o["limits"]
+        if runs_engine(o):
+            services[wid] = engine_service(o, home)
+            continue
         services[wid] = {
             "image": o["image"],
             "restart": "unless-stopped",
@@ -506,6 +551,26 @@ def compose_dict(running: list[dict], home: Path) -> dict:
     return {"services": services}
 
 
+def engine_service(o: dict, home: Path) -> dict:
+    """A Numinia Engine world's service: its own user, its keys from its key file, its folder at /mundo.
+
+    The engine reads JWT_SECRET and ADMIN_CODE from the key file (its
+    MOTOR_SECRET and MOTOR_ADMIN fall back to them) and needs no other
+    setting: its image says its port. No ports here either: Caddy reaches it
+    on the machine's own network.
+    """
+    wid, limits = o["id"], o["limits"]
+    return {
+        "image": o["image"],
+        "restart": "unless-stopped",
+        "user": ENGINE_USER,
+        "env_file": f"{home}/env/{wid}.env",
+        "volumes": [f"{home}/data/{wid}:{ENGINE_FOLDER}"],
+        "stop_grace_period": ENGINE_STOP_GRACE,
+        "deploy": {"resources": {"limits": {"memory": limits["memory"], "cpus": limits["cpus"]}}},
+    }
+
+
 def render_compose(running: list[dict], home: Path) -> str:
     """The compose file as JSON — valid YAML that no field can restructure."""
     return json.dumps(compose_dict(running, home), indent=2) + "\n"
@@ -513,8 +578,17 @@ def render_compose(running: list[dict], home: Path) -> str:
 
 def world_site(o: dict) -> str:
     """A world's site: HTTPS at its address, its connections kept open across a reload."""
+    if runs_engine(o):
+        return engine_site(o)
     return (f"{o['domain']} {{\n\treverse_proxy {o['id']}:3000 {{\n"
             f"\t\tstream_close_delay {STREAM_CLOSE_DELAY}\n\t}}\n}}")
+
+
+def engine_site(o: dict) -> str:
+    """A Numinia Engine world's site: compressed, its metrics and sessions private, its connections kept across a reload."""
+    private = "".join(f"\trespond {path} 404\n" for path in ENGINE_PRIVATE)
+    return (f"{o['domain']} {{\n\tencode zstd gzip\n{private}"
+            f"\treverse_proxy {o['id']}:{ENGINE_PORT} {{\n\t\tstream_close_delay {STREAM_CLOSE_DELAY}\n\t}}\n}}")
 
 
 def door_site(control_host: str) -> str:
@@ -576,6 +650,8 @@ def plan(
         "stopped": stopped,
         "keyless": [o["id"] for o in keyless],
         "new_keys": [o["id"] for o in new_keys],
+        # The running worlds of the Numinia Engine: their folders are the engine user's.
+        "engine_worlds": [o["id"] for o in running if runs_engine(o)],
         "compose": render_compose(running, home),
         "caddyfile": render_caddyfile(running, control_host),
     }
@@ -624,6 +700,10 @@ def save_waits(
             continue
         if new.get(name) == service and name not in restart:
             continue
+        if engine_of(service.get("image")) == NUMINIA_ENGINE:
+            # The Numinia Engine writes what it holds when it is told to stop.
+            waits[name] = SAVE_MARGIN
+            continue
         environment = service.get("environment")
         waits[name] = save_pause(environment.get("SAVE_INTERVAL") if isinstance(environment, dict) else None)
     return waits
@@ -663,6 +743,21 @@ def sh(*cmd: str) -> None:
     subprocess.run(cmd, check=True, stdin=subprocess.DEVNULL)
 
 
+def engine_folder(path: Path) -> None:
+    """A Numinia Engine world's folder: made when missing, the engine user's (10001:10001), mode 700.
+
+    The engine runs as that user, never as root, and reads and writes the
+    world there; nobody else on the machine but root reads it. A link where
+    the folder should be is left alone, never followed.
+    """
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if path.is_symlink() or not path.is_dir():
+        return
+    if os.geteuid() == 0:
+        os.chown(path, ENGINE_UID, ENGINE_GID, follow_symlinks=False)
+    os.chmod(path, 0o700)
+
+
 def apply(p: dict, home: Path, admin_code: str | None = None, sleep=time.sleep,
           codes_dir: Path | None = None) -> None:
     """Make Docker and Caddy match the plan; restart, alone, each world whose admin code changed.
@@ -681,8 +776,12 @@ def apply(p: dict, home: Path, admin_code: str | None = None, sleep=time.sleep,
                     print(f"{wid}: its code file could not be written; the next run tries again", file=sys.stderr)
     run = home / "run"
     run.mkdir(parents=True, exist_ok=True)
+    engines = set(p.get("engine_worlds", ()))
     for wid in p["running"]:
-        (home / "data" / wid).mkdir(parents=True, exist_ok=True)
+        if wid in engines:
+            engine_folder(home / "data" / wid)
+        else:
+            (home / "data" / wid).mkdir(parents=True, exist_ok=True)
     compose = run / "docker-compose.yml"
     compose_applied = run / COMPOSE_APPLIED
     # What the running containers came from: the copy Docker last accepted, or,
@@ -955,6 +1054,8 @@ def change_book(
             return "a world with this name or address is still being deleted here"
         if any(o.get("domain") == domain for o in read_orders(orders)):
             return "another world already has this address"
+        if engine_of(message["image"]) is None:
+            return "unknown-engine"
         order = {
             "id": wid,
             "card": wid,
@@ -984,6 +1085,59 @@ def change_book(
     # DownloadWorld: the copy is made after the containers. RotateWorldCode:
     # the book stays as it is; the new code is given right after (key_world).
     return None
+
+
+def pull_image(image: str) -> None:
+    """Fetch an engine build onto the machine before an order names it (a failed fetch raises)."""
+    sh("docker", "pull", image)
+
+
+def update_world(entry: dict, message: dict, orders: Path, now: float, pull=None) -> str | None:
+    """Move a world to another build of its own engine: the broken rule, or None when its order names the new image.
+
+    The image must be of the world's own engine (engine-mismatch), one this
+    machine knows (unknown-engine); it is fetched before the order changes,
+    so a build the registry does not have never reaches the compose file —
+    where it would stop Docker from taking the book for every world. Its
+    container is made anew by the next `docker compose up`, after the
+    world's save, like any change to its service. Any build of the same
+    engine is allowed, an older one too: that is how an update is undone.
+    """
+    path = orders / f"{entry['world']}.json"
+    current = read_order(path)
+    if current is None:
+        return "no world with this name on this machine"
+    engine, now_runs = engine_of(message["image"]), engine_of(current.get("image"))
+    if engine is None or now_runs is None:
+        return "unknown-engine"
+    if engine != now_runs:
+        return "engine-mismatch"
+    if current.get("image") != message["image"]:
+        try:
+            (pull or pull_image)(message["image"])
+        except (subprocess.CalledProcessError, OSError):
+            return "the image could not be fetched here"
+    write_json(path, {**current, "image": message["image"], "updatedAt": utc(now), "updatedBy": entry["by"]})
+    return None
+
+
+def read_updates(home: Path) -> dict[str, dict]:
+    """The worlds whose new build is being started (run/updating.json): id → the request that asked."""
+    raw = read_json(home / "run" / UPDATING, {})
+    found = {}
+    for wid, job in (raw.items() if isinstance(raw, dict) else []):
+        if matches(SLUG, wid) and isinstance(job, dict) and matches(NONCE, job.get("nonce")):
+            found[wid] = job
+    return found
+
+
+def finish_updates(home: Path, now: float | None = None) -> list[str]:
+    """Answer the updates whose new build Docker took: done. Only once the book was applied."""
+    pending = read_updates(home)
+    for wid, job in sorted(pending.items()):
+        answer(home, {"nonce": job["nonce"], "type": "UpdateWorld", "world": wid, "by": job.get("by")}, "done", None, now)
+    (home / "run" / UPDATING).unlink(missing_ok=True)
+    return sorted(pending)
 
 
 def carried_code(raw: object, kind: object) -> tuple[str | None, str | None]:
@@ -1067,6 +1221,7 @@ def take_requests(
     now: float | None = None,
     *,
     codes_dir: Path,
+    pull=None,
 ) -> list[dict]:
     """Every request waiting in the inbox, oldest first: checked again, applied, answered.
 
@@ -1077,9 +1232,11 @@ def take_requests(
     door made (codes_dir and its key file); a change of code also queues the
     world's restart. An import is unpacked here, whole, before the next
     request (import_world): its world is born stopped, so the containers have
-    nothing to do for it. A delete waits in run/purge.json until its container is
-    gone; a download waits in run/copy-queue.json. Returns the entries taken,
-    for the summary.
+    nothing to do for it. An update fetches its build and writes the order
+    (update_world); a running world's waits in run/updating.json until Docker
+    has started its new build (finish_updates). A delete waits in
+    run/purge.json until its container is gone; a download waits in
+    run/copy-queue.json. Returns the entries taken, for the summary.
     """
     now = time.time() if now is None else now
     inbox = home / "inbox"
@@ -1107,6 +1264,8 @@ def take_requests(
             if entry["type"] == "ImportWorld":
                 rule, detail = import_world(home, orders, codes_dir, entry, message, raw, admin_code, alias,
                                             allowed, control_host, now, deleting)
+            elif entry["type"] == "UpdateWorld":
+                rule = update_world(entry, message, orders, now, pull)
             else:
                 rule = change_book(entry, message, orders, alias, allowed, control_host, now, deleting)
                 if rule is None and admin_code is not None:
@@ -1129,6 +1288,13 @@ def take_requests(
             write_json(home / "copies" / f"{entry['copy']}.json",
                        {"copy": entry["copy"], "world": entry["world"], "state": "preparing", "at": utc(now)},
                        mode=0o640, group=door_gid())
+            answer(home, entry, "working", None, now)
+        elif entry["type"] == "UpdateWorld" and (read_order(orders / f"{entry['world']}.json") or {}).get(
+                "state") == "running":
+            # Done once Docker has started the new build (finish_updates); until then the door says updating.
+            updates = read_updates(home)
+            updates[entry["world"]] = {"nonce": entry["nonce"], "by": entry["by"], "image": message["image"]}
+            write_json(home / "run" / UPDATING, updates)
             answer(home, entry, "working", None, now)
         else:
             answer(home, entry, "done", None, now)
@@ -1334,17 +1500,12 @@ def place(relative: str) -> str:
     return "unexpected"
 
 
-def inspect_zip(zipped: zipfile.ZipFile) -> dict:
-    """What of this zip becomes the world, once every rule holds; Refused, naming the first rule broken.
+def check_entries(infos: list[zipfile.ZipInfo]) -> int:
+    """The rules every zip keeps, whichever engine it is for; what its entries unpack to, or Refused.
 
-    Reads the zip's index (and its world.json) and nothing else: no entry is
-    unpacked and nothing is written while a zip is inspected. The rules, in
-    order, over every entry, inside the world's folder or not: encrypted,
-    zip-slip, link, file-too-big, ratio, then unpacked-too-big for the
-    declared total; then not-a-world, db-open and unexpected inside the
-    world's folder; then the manifest.
+    Reads the index alone. In order, over every entry: encrypted, zip-slip,
+    link, file-too-big, ratio; then unpacked-too-big for the declared total.
     """
-    infos = zipped.infolist()
     checks = (
         ("encrypted", lambda info: bool(info.flag_bits & 0x1)),
         ("zip-slip", lambda info: not safe_name(info)),
@@ -1356,8 +1517,24 @@ def inspect_zip(zipped: zipfile.ZipFile) -> dict:
         for info in infos:
             if broken(info):
                 raise Refused(rule, shown(info.filename))
-    if sum(info.file_size for info in infos) > UNPACKED_MAX:
+    total = sum(info.file_size for info in infos)
+    if total > UNPACKED_MAX:
         raise Refused("unpacked-too-big")
+    return total
+
+
+def inspect_zip(zipped: zipfile.ZipFile) -> dict:
+    """What of this zip becomes the world, once every rule holds; Refused, naming the first rule broken.
+
+    Reads the zip's index (and its world.json) and nothing else: no entry is
+    unpacked and nothing is written while a zip is inspected. The rules, in
+    order, over every entry, inside the world's folder or not: encrypted,
+    zip-slip, link, file-too-big, ratio, then unpacked-too-big for the
+    declared total (check_entries); then not-a-world, db-open and unexpected
+    inside the world's folder; then the manifest.
+    """
+    infos = zipped.infolist()
+    check_entries(infos)
     root = world_root([info.filename for info in infos])
     if root is None:
         raise Refused("not-a-world")
@@ -1489,6 +1666,71 @@ def check_database(path: Path) -> None:
         raise Refused("db-foreign")
 
 
+# ---------------------------------------------------------------------------
+# The Numinia Engine's own tools: its zip made and read by its image
+# ---------------------------------------------------------------------------
+
+
+def run_tool(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
+    """Run one of an engine image's tools (subprocess.run; the tests put another in its place)."""
+    return subprocess.run(cmd, check=False, **kwargs)
+
+
+def engine_tool(image: str, tool: str, limits: dict, mount: str | None = None, stdin: bool = False) -> list[str]:
+    """The `docker run` of one of the engine image's own tools (copia, comprobar, importar).
+
+    The world's image, as the engine's own user, with no network, no
+    capability, no new privilege and the world's limits; removed when it
+    ends. `mount` is the one folder it sees, at /mundo. Every value was
+    checked by its pattern before it got here.
+    """
+    if engine_of(image) != NUMINIA_ENGINE or tool not in ENGINE_TOOLS:
+        raise ValueError("not a tool of the Numinia Engine")
+    if not matches(MEMORY, limits.get("memory")) or not matches(CPUS, limits.get("cpus")):
+        raise ValueError("limits are not plain")
+    cmd = ["docker", "run", "--rm", "--network", "none", "--user", ENGINE_USER, "--cap-drop", "ALL",
+           "--security-opt", "no-new-privileges", "--memory", limits["memory"], "--cpus", limits["cpus"]]
+    if stdin:
+        cmd.append("-i")
+    if mount is not None:
+        cmd += ["-v", mount]
+    return cmd + [image, tool]
+
+
+def tool_line(done: subprocess.CompletedProcess) -> str:
+    """The one line a tool gave for its answer: the last line it wrote on stderr, else on stdout; printable, 200 at most."""
+    for stream in (done.stderr, done.stdout):
+        text = stream.decode("utf-8", "replace") if isinstance(stream, bytes) else (stream or "")
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if lines:
+            return shown(lines[-1])
+    return "no reason given"
+
+
+def engine_import(copy, target: Path, image: str, limits: dict) -> None:
+    """Hand the machine's own copy of the zip to the engine: `comprobar`, then `importar` into the empty folder.
+
+    The machine never re-implements the engine's rules for its zip: the
+    image of the world's own engine says whether it reads the zip (exit 0)
+    or not (exit 1 and one line why: engine-refused, that line to whoever
+    asked, never to the log), then unpacks it. The generic rules
+    (check_entries) and the fingerprint were kept before this runs.
+    """
+    if os.geteuid() == 0:
+        os.chown(target, ENGINE_UID, ENGINE_GID, follow_symlinks=False)
+    for tool, mount in (("comprobar", None), ("importar", f"{target}:{ENGINE_FOLDER}")):
+        copy.seek(0)
+        try:
+            done = run_tool(engine_tool(image, tool, limits, mount, stdin=True), stdin=copy,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=TOOL_SECONDS)
+        except subprocess.TimeoutExpired:
+            raise Refused("engine-refused", f"{tool}: it took longer than {TOOL_SECONDS} s") from None
+        if done.returncode == 1:
+            raise Refused("engine-refused", tool_line(done))
+        if done.returncode != 0:
+            raise Refused("the engine's tools could not run here")
+
+
 def import_clash(home: Path, orders: Path, wid: str, domain: str, deleting: dict[str, str | None]) -> str | None:
     """Why a world cannot be born here under this name and address now (CreateWorld's rules); None when it can.
 
@@ -1513,11 +1755,13 @@ def settle_import(home: Path, orders: Path, codes_dir: Path, staged: Path, order
     The order goes last: the world is in the book only once its data and its
     keys are. Fresh keys, as for a world just created: a JWT secret of its
     own and the code the door showed. What cannot be written is taken back.
+    A Numinia Engine world's folder stays the engine user's, mode 700.
     """
     wid = order["id"]
     data = home / "data" / wid
     data.parent.mkdir(parents=True, exist_ok=True)
-    os.chmod(staged, 0o755)  # as a created world's folder; staging/ itself stays root's alone
+    # As a created world's folder; staging/ itself stays root's alone.
+    os.chmod(staged, 0o700 if runs_engine(order) else 0o755)
     os.rename(staged, data)
     try:
         give_code(home, codes_dir, wid, admin_code, fresh=True)
@@ -1562,6 +1806,7 @@ def import_world(
     wid, nonce = entry["world"], entry["nonce"]
     staging = home / "staging"
     target = staging / nonce
+    engine = engine_of(message["image"])
     order = {
         "id": wid,
         "card": wid,
@@ -1575,6 +1820,8 @@ def import_world(
     }
     try:
         rule = import_clash(home, orders, wid, message["domain"], deleting)
+        if rule is None and engine is None:
+            rule = "unknown-engine"
         if rule is None and refusal(order, allowed, control_host) is not None:
             rule = "refused"
         if rule is None and message["zipBytes"] > ZIP_MAX:
@@ -1590,12 +1837,20 @@ def import_world(
         with take_zip(home / "uploads" / f"{nonce}.zip", message["zipBytes"], message["zipSha256"], staging) as copy:
             forget_upload(home, nonce)  # from here on only the machine's own copy is read
             with open_zip(copy) as zipped:
-                plan = inspect_zip(zipped)
+                if engine == NUMINIA_ENGINE:
+                    # The rules every zip keeps; the engine's own come next, from its image.
+                    plan = {"bytes": check_entries(zipped.infolist())}
+                else:
+                    plan = inspect_zip(zipped)
                 if shutil.disk_usage(staging).free < plan["bytes"] + RESERVE:
                     raise Refused("no-room")
                 os.mkdir(target, 0o700)
-                unpack(zipped, plan, target)
-        check_database(target / ENGINE_DB)
+                if engine != NUMINIA_ENGINE:
+                    unpack(zipped, plan, target)
+            if engine == NUMINIA_ENGINE:
+                engine_import(copy, target, message["image"], order["limits"])
+        if engine != NUMINIA_ENGINE:
+            check_database(target / ENGINE_DB)
         settle_import(home, orders, codes_dir, target, order, admin_code)
     except Refused as refused:
         return refused.rule, refused.entry
@@ -1800,7 +2055,6 @@ def build_copy(home: Path, order: dict, copy_id: str, alias: str, now: float | N
     copies = home / "copies"
     copies.mkdir(parents=True, exist_ok=True)
     part = copies / f".{copy_id}.zip.part"
-    final = copies / f"{copy_id}.zip"
     filename = f"{wid}-{time.strftime('%Y%m%d-%H%M', time.gmtime(now))}.zip"
     files = []
 
@@ -1841,6 +2095,13 @@ def build_copy(home: Path, order: dict, copy_id: str, alias: str, now: float | N
             "files": files,
         }
         zipped.writestr("world.json", json.dumps(manifest, indent=2) + "\n")
+    return finish_copy(home, wid, copy_id, part, filename, now)
+
+
+def finish_copy(home: Path, wid: str, copy_id: str, part: Path, filename: str, now: float) -> dict:
+    """A copy's zip moved into place, readable by the door's group alone, and its state: ready."""
+    copies = home / "copies"
+    final = copies / f"{copy_id}.zip"
     os.chmod(part, 0o640)
     group = door_gid()
     if group is not None:
@@ -1859,6 +2120,38 @@ def build_copy(home: Path, order: dict, copy_id: str, alias: str, now: float | N
     }
     write_json(copies / f"{copy_id}.json", status, mode=0o640, group=group)
     return status
+
+
+def build_engine_copy(home: Path, order: dict, copy_id: str, now: float | None = None) -> dict:
+    """A Numinia Engine world's zip, made by the engine itself (`copia`): the machine never re-implements its rules.
+
+    The world's own image runs with no network and the world's folder
+    read-only; its zip — the world, its adventure and environment, how to run
+    it at home, never its keys — comes out on stdout, straight into the
+    copy's part file. The engine writes each snapshot whole, so this works
+    with the world running or stopped.
+    """
+    now = time.time() if now is None else now
+    wid = order["id"]
+    data = home / "data" / wid
+    copies = home / "copies"
+    copies.mkdir(parents=True, exist_ok=True)
+    part = copies / f".{copy_id}.zip.part"
+    if data.is_symlink() or not data.is_dir():
+        raise OSError("the world has no folder here")
+    fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o640)
+    try:
+        with os.fdopen(fd, "wb") as out:
+            done = run_tool(engine_tool(order["image"], "copia", order["limits"], f"{data}:{ENGINE_FOLDER}:ro"),
+                            stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.PIPE, timeout=TOOL_SECONDS)
+        if done.returncode != 0:
+            raise OSError("the engine did not make the copy")
+        if not zipfile.is_zipfile(part):
+            raise OSError("the engine's copy is not a zip")
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+    return finish_copy(home, wid, copy_id, part, f"{wid}-{time.strftime('%Y%m%d-%H%M', time.gmtime(now))}.zip", now)
 
 
 def made_at(status: object) -> int | None:
@@ -1890,7 +2183,8 @@ def copies_wait(home: Path, orders: Path) -> int:
     for job in queue if isinstance(queue, list) else []:
         wid = job.get("world") if isinstance(job, dict) else None
         order = read_order(orders / f"{wid}.json") if matches(SLUG, wid) else None
-        if order is not None and order.get("state") == "running":
+        # The Numinia Engine's own copy needs no wait: it writes each snapshot whole.
+        if order is not None and order.get("state") == "running" and not runs_engine(order):
             return save_pause(SAVE_INTERVAL)
     return 0
 
@@ -1926,9 +2220,11 @@ def make_copies(home: Path, orders: Path, alias: str, now: float | None = None) 
                 os.link(home / "copies" / f"{again['copy']}.zip", home / "copies" / f"{job['copy']}.zip")
                 write_json(home / "copies" / f"{job['copy']}.json", {**again, "copy": job["copy"]},
                            mode=0o640, group=group)
+            elif runs_engine(order):
+                build_engine_copy(home, order, job["copy"], now)
             else:
                 build_copy(home, order, job["copy"], alias, now)
-        except (OSError, sqlite3.Error, zipfile.BadZipFile) as error:
+        except (OSError, sqlite3.Error, zipfile.BadZipFile, ValueError, subprocess.SubprocessError) as error:
             print(f"the copy of {order['id']} failed ({type(error).__name__})", file=sys.stderr)
             write_json(home / "copies" / f"{job['copy']}.json", failed, mode=0o640, group=group)
             answer(home, entry, "failed", "the copy could not be made", now)
@@ -2051,6 +2347,8 @@ def run_once(args: argparse.Namespace, alias: str, orders: Path, admin_code: str
         applied = False
         print("docker did not take the book; the next run tries again", file=sys.stderr)
     deleted = purge_deleted(args.home, orders, codes_dir=args.codes_dir) if applied else []
+    # A world moved to a new build is done once Docker took the book with it.
+    updated = finish_updates(args.home) if applied else []
     pause = copies_wait(args.home, orders)
     if pause:
         time.sleep(pause)
@@ -2062,6 +2360,8 @@ def run_once(args: argparse.Namespace, alias: str, orders: Path, admin_code: str
         print(f"{alias}: {len(expired)} upload slot(s) past their hour removed")
     for wid in p["new_keys"]:
         print(f"{wid}: keys made on this machine (its own JWT secret, the machine's legacy admin code)")
+    if updated:
+        print(f"{alias}: moved to their new build {updated}")
     print(f"{alias}: running {p['running']} stopped {p['stopped']} keyless {p['keyless']}"
           f" deleted {deleted} copies {len(copied)}")
     return applied

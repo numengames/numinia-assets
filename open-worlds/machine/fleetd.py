@@ -11,11 +11,12 @@ What it does, and nothing more:
 
 - POST /fleet/v1/actions — a request an Oracle signed with their wallet
   (EIP-712, see walletsig.py): create, stop, start, delete or download a
-  world, bring one back from its zip, show a world's admin code or change
-  it, or show the machine's legacy code. It checks the shape, the machine,
-  the time window, the signature, that the signer is one of the Oracles
-  listed on this machine, and that the request number is new; then it
-  drops the request into /srv/fleet/inbox/ and answers 202. The reconciler
+  world, bring one back from its zip, move one to another build of its
+  engine, show a world's admin code or change it, or show the machine's
+  legacy code. It checks the shape, the machine, the time window, the
+  signature, that the signer is one of the Oracles listed on this machine,
+  and that the request number is new; then it drops the request into
+  /srv/fleet/inbox/ and answers 202. The reconciler
   (root) checks it again and does the work. A world's admin code is the one
   secret the door carries: it reads it from /etc/fleet/codes/<id> to show
   it, and makes a new one for a world just created, brought back or whose
@@ -32,9 +33,10 @@ What it does, and nothing more:
 - GET /fleet/v1/machine, /worlds, /log — public facts: the machine, the
   commit of the recipe it installed, and whether its reconciler keeps up
   (when it last ran, how it ended, how many requests wait and since when),
-  whether it takes zips and up to what size, its worlds and their phase
-  (an import shows its upload's progress), the last things done here. No
-  wallet in full, no key, no code.
+  whether it takes zips and up to what size, which engines it runs and
+  that it takes updates, its worlds and their phase (an import shows its
+  upload's progress), the last things done here. No wallet in full, no
+  key, no code.
 - GET /fleet/v1/requests/<n> — how a request went.
 - GET /fleet/v1/copies/<c> and /copies/<c>/file — a copy's state and the
   zip. The copy's number (128 random bits, given only to the Oracle who
@@ -79,8 +81,10 @@ CONSOLE_ORIGINS = frozenset({"https://numinia.com", "https://www.numinia.com"})
 WINDOW = 15 * 60  # a signed request is good for at most fifteen minutes
 MAX_BODY = 16 * 1024
 LOG_LINES = 50
-PHASES = {"DeleteWorld": "deleting", "StopWorld": "stopping", "StartWorld": "starting"}
+PHASES = {"DeleteWorld": "deleting", "StopWorld": "stopping", "StartWorld": "starting", "UpdateWorld": "updating"}
 BIRTHS = ("CreateWorld", "ImportWorld")  # the requests that make a world that is not here yet
+# The requests that change a world that is here: one at a time (busy).
+CHANGES = ("RotateWorldCode", "UpdateWorld", "StopWorld", "StartWorld")
 LENGTH = re.compile(r"[0-9]{1,20}")  # a Content-Length, digits only
 PROGRESS_SECONDS = 1.0  # an upload's slot says how far it got at most this often
 
@@ -228,7 +232,11 @@ class Door:
         return origin in CONSOLE_ORIGINS or origin in extra
 
     def machine(self) -> dict:
-        """The machine's public facts: who it is, its recipe, whether its reconciler is keeping up, what zips it takes."""
+        """The machine's public facts: who it is, its recipe, whether its reconciler is keeping up, what zips it takes.
+
+        Also which engines it runs and that it moves a world to another build
+        of its engine (UpdateWorld): the room offers each only to a door that says so.
+        """
         return {
             "machine": self.alias,
             "door": "fleetd/1",
@@ -239,6 +247,8 @@ class Door:
             "waiting": self.waiting(),
             # The room offers to bring a world back from a zip only to a door that says this.
             "imports": {"zipMaxBytes": R.ZIP_MAX},
+            "engines": list(R.ENGINES),
+            "updates": True,
             "at": R.utc(self.clock()),
         }
 
@@ -286,10 +296,13 @@ class Door:
         """
         allowed = R.read_allowed_domains(self.domains_file)
         pending = {r["message"].get("world"): r for r in self.inbox()}
+        updating = R.read_updates(self.home)
         listed = []
         for order in R.select_orders(R.read_orders(self.orders), self.alias, allowed):
             kind = pending.get(order["id"], {}).get("type")
-            listed.append({**order, "phase": PHASES.get(kind, order["state"])})
+            # A world moved to a new build says so until Docker has started it.
+            settled = "updating" if order["id"] in updating else order["state"]
+            listed.append({**order, "phase": PHASES.get(kind, settled)})
         known = {world["id"] for world in listed}
 
         def coming(message: dict, phase: str, **more: object) -> None:
@@ -384,12 +397,31 @@ class Door:
         if kind in ("ShowWorldCode", "RotateWorldCode"):
             # A world's own code: shown or changed only for a world that is
             # here, settled, and not already changing its code — else the
-            # Oracle would be shown a code about to stop working.
+            # Oracle would be shown a code about to stop working. A change of
+            # code also waits for a new build to start (one change at a time).
             if wid in self.purging() or any(r.get("type") == "DeleteWorld" for r in waiting):
                 return "still-deleting"
-            if coming or any(r.get("type") in (*BIRTHS, "RotateWorldCode") for r in waiting):
+            changing = (*BIRTHS, "RotateWorldCode") + (("UpdateWorld",) if kind == "RotateWorldCode" else ())
+            if coming or any(r.get("type") in changing for r in waiting):
+                return "busy"
+            if kind == "RotateWorldCode" and wid in R.read_updates(self.home):
                 return "busy"
             return "missing" if current is None else None
+        if kind == "UpdateWorld":
+            # Another build of the world's own engine, for a world that is
+            # here and settled: one change at a time.
+            if wid in self.purging() or any(r.get("type") == "DeleteWorld" for r in waiting):
+                return "still-deleting"
+            if coming or any(r.get("type") in (*BIRTHS, *CHANGES) for r in waiting):
+                return "busy"
+            if wid in R.read_updates(self.home):
+                return "busy"
+            if current is None:
+                return "missing"
+            engine, now_runs = R.engine_of(message["image"]), R.engine_of(current.get("image"))
+            if engine is None or now_runs is None:
+                return "unknown-engine"
+            return "engine-mismatch" if engine != now_runs else None
         if kind in BIRTHS:
             if current is not None or coming or any(r.get("type") in BIRTHS for r in waiting):
                 return "exists"
@@ -405,6 +437,9 @@ class Door:
             taken |= {s["message"]["domain"] for s in slots} | {m["domain"] for m in importing.values()}
             if domain in taken:
                 return "address-taken"
+            # Only an engine this machine runs: numinia-hyperfy2 or numinia-engine.
+            if R.engine_of(message["image"]) is None:
+                return "unknown-engine"
             draft = {
                 "id": wid, "state": "running" if kind == "CreateWorld" else "stopped", "domain": domain,
                 "image": message["image"],

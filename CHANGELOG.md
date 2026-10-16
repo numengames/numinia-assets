@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- `open-worlds/machine/`: a machine runs the Numinia Engine beside Hyperfy,
+  and moves a world to another build of its engine with one signature.
+  - A machine told its worlds apart by nothing: every order ran Hyperfy's
+    container, so the Numinia Engine could only be installed by hand,
+    outside the fleet. Now the image's repository says the engine:
+    `ghcr.io/numengames/numinia-hyperfy2` as before, and
+    `ghcr.io/numengames/numinia-engine` as its own image says — its own
+    user (`10001:10001`, never root), the key file and nothing else, the
+    world at `/mundo` in a folder of that user's (mode 700), fifteen
+    seconds to save when it stops, and a site that compresses, keeps
+    `/metrics*` and `/sesiones*` private (404) and reaches port 8790. Its
+    zips are its own business: Download runs its `copia`, an import keeps
+    the rules every zip keeps here and then its `comprobar` and `importar`
+    (`engine-refused` names the engine's one line), each in the world's
+    image with no network, no capability and the world's limits.
+  - A new world or an import must name one of the two (`unknown-engine`).
+    An order already in a book with another repository of the registry
+    runs as before. A Hyperfy world's compose service and site are the
+    same bytes as before.
+  - `UpdateWorld` (machine, world, image), signed like the others: another
+    build of the world's own engine (`engine-mismatch` otherwise), fetched
+    before its order changes (`docker pull`), started by the next
+    `docker compose up` after the world's save; one change of a world at a
+    time (`busy`), and the world says `updating` until Docker has started
+    it. The shared vectors add it; every earlier message and digest is
+    unchanged.
+  - The door says what the room may offer: `/fleet/v1/machine` →
+    `engines` and `updates: true`.
+  - A merge changes no machine: a machine gets it when its line, with this
+    commit, is run again.
+
 - `open-worlds/machine/`: the SSH door takes a key, never a password.
   - A machine brought up from a fresh OVH image still took passwords at its
     SSH door (`publickey,password`, seen from outside without trying one):

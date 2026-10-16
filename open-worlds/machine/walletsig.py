@@ -4,11 +4,12 @@
 """Who signed a fleet request: EIP-712 typed data, recovered to a wallet address.
 
 An Oracle asks a fleet machine for something (create, stop, start, delete or
-download a world, bring one back from its zip, show a world's admin code or
-change it, or show the machine's legacy admin code) by signing a small typed
-message with the wallet they already sign in with. The wallet shows exactly
-what is being signed; the machine recovers the address that signed it and
-obeys only the addresses an Oracle installed on it (/etc/fleet/signers).
+download a world, bring one back from its zip, move one to another build of
+its engine, show a world's admin code or change it, or show the machine's
+legacy admin code) by signing a small typed message with the wallet they
+already sign in with. The wallet shows exactly what is being signed; the
+machine recovers the address that signed it and obeys only the addresses an
+Oracle installed on it (/etc/fleet/signers).
 
 This is EIP-712 (typed structured data), the way Ethereum wallets sign
 off-chain messages that a server checks (Snapshot's votes, permits). The
@@ -69,6 +70,14 @@ ACTIONS: dict[str, tuple[tuple[str, str], ...]] = {
         ("maxUploadMb", "uint256"),
         ("zipBytes", "uint256"),
         ("zipSha256", "string"),
+        ("nonce", "string"),
+        ("expires", "uint256"),
+    ),
+    # A world moved to another build of its own engine: the image is all that changes.
+    "UpdateWorld": (
+        ("machine", "string"),
+        ("world", "string"),
+        ("image", "string"),
         ("nonce", "string"),
         ("expires", "uint256"),
     ),
