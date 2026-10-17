@@ -446,3 +446,15 @@ the rule that a stolen website cannot touch the machines.
 compose file, so a git-to-compose tool would need a translation step anyway;
 the translation *is* the reconciler, pure functions with tests. If the fleet
 grows past one compose file per machine, revisit.
+
+## Automatic engine updates (`release.py`)
+
+Numinia Engine worlds follow the latest published engine by themselves; no Oracle signs each version.
+`fleet-release.timer` runs `/usr/local/sbin/fleet-release` every five minutes (installed by the bootstrap, never run from the clone).
+
+- **Target**: the public asset `imagen.json` of the release `latest` of `numengames/numinia-engine`, fetched anonymously over https (no GitHub credential on the machine). Its image must be `ghcr.io/numengames/numinia-engine@sha256:…`.
+- **Order**: stopped worlds change together (nothing restarts). Running worlds change **one per pass**, the canary first (`/etc/fleet/canary`, a world id; else the lowest id), then by id. Hyperfy worlds, pinned worlds (`pin` in the order) and worlds with another change under way (`busy`) are skipped.
+- **Per world**: a copy before (kept 14 days in `/srv/fleet/release/preupdate/`), `docker pull`, the order's image changes (`previousImage` is kept), the reconciler remakes only that container (the Caddyfile does not change: no Caddy reload), then health: container running without restarts and `/status` reporting the target commit within 90 s.
+- **Failure**: the world goes back to `previousImage`, the digest is written to `bad`, and the machine **halts** (`halted` in `/srv/fleet/release/state.json`) until a different digest is published. `updateError` stays in the order.
+- **Kill switch (optional)**: a signed `FleetRelease` placed at `/srv/fleet/release/fleet-release.json` (`{message, signature}`) from an Oracle in `/etc/fleet/signers`, with the highest `seq` seen, replaces the target: a digest pins the fleet there, an empty `image` pauses it. Without it the machine follows `latest`. How the record gets to the machine is not built yet.
+- `fleet-release --dry-run` prints the target and the plan and changes nothing.

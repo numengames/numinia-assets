@@ -81,6 +81,24 @@ ACTIONS: dict[str, tuple[tuple[str, str], ...]] = {
         ("nonce", "string"),
         ("expires", "uint256"),
     ),
+    # A version of an engine for the whole fleet, signed by an Oracle. No machine
+    # and no nonce: `seq` only grows, so an old record can never be replayed.
+    "FleetRelease": (
+        ("engine", "string"),
+        ("image", "string"),
+        ("commit", "string"),
+        ("seq", "uint256"),
+        ("issuedAt", "uint256"),
+    ),
+    # One world held on a build; an empty image releases it. UpdateWorld plus why.
+    "PinWorld": (
+        ("machine", "string"),
+        ("world", "string"),
+        ("image", "string"),
+        ("reason", "string"),
+        ("nonce", "string"),
+        ("expires", "uint256"),
+    ),
 }
 
 SIGNATURE = re.compile(r"0x[0-9a-fA-F]{130}")

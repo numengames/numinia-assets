@@ -71,6 +71,12 @@ class TypedData(unittest.TestCase):
                     W.signer_of(vector["type"], vector["message"], vector["signature"]), vector["signer"]
                 )
 
+    def test_release_and_pin_types_have_vectors(self):
+        kinds = [v["type"] for v in VECTORS["vectors"]]
+        self.assertEqual(kinds.count("FleetRelease"), 1)
+        self.assertGreaterEqual(kinds.count("PinWorld"), 2)  # a pin and its release (empty image)
+        self.assertIn("", [v["message"]["image"] for v in VECTORS["vectors"] if v["type"] == "PinWorld"])
+
     def test_a_stranger_is_a_stranger(self):
         stranger = VECTORS["stranger"]
         signer = W.signer_of(stranger["type"], stranger["message"], stranger["signature"])
