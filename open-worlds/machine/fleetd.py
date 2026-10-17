@@ -656,6 +656,9 @@ class Door:
 PREFIX = "/fleet/v1/"
 
 
+DRAIN_MAX = 1 << 20  # the most of a refused body we read before answering
+
+
 class Handler(BaseHTTPRequestHandler):
     door: Door
     server_version = "fleetd/1"
@@ -694,6 +697,17 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):
             return  # whoever asked has gone (an upload cut on their side): nobody to answer
+
+    def refuse(self, status: int, payload: dict) -> None:
+        """Answer a write we will not take. A small body is read first: closing a socket that still
+        holds unread bytes makes the kernel reset it, and the sender sees a broken pipe, not our answer."""
+        length = self.headers.get("Content-Length", "")
+        if length.isdigit() and int(length) <= DRAIN_MAX:
+            try:
+                self.rfile.read(int(length))
+            except OSError:
+                pass
+        self.reply(status, payload, write=True)
 
     def route(self) -> list[str]:
         path = self.path.split("?", 1)[0]
@@ -751,10 +765,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         if self.route() != ["actions"]:
-            return self.reply(404, {"error": "not-found"}, write=True)
+            return self.refuse(404, {"error": "not-found"})
         origin = self.headers.get("Origin")
         if origin is not None and not self.door.origin_allowed(origin):
-            return self.reply(403, {"error": "origin"}, write=True)
+            return self.refuse(403, {"error": "origin"})
         length = self.headers.get("Content-Length", "")
         if not length.isdigit():
             return self.reply(411, {"error": "length"}, write=True)
@@ -767,10 +781,10 @@ class Handler(BaseHTTPRequestHandler):
         # An import's zip, into the slot its signed request opened.
         parts = self.route()
         if len(parts) != 2 or parts[0] != "uploads":
-            return self.reply(404, {"error": "not-found"}, write=True)
+            return self.refuse(404, {"error": "not-found"})
         origin = self.headers.get("Origin")
         if origin is not None and not self.door.origin_allowed(origin):
-            return self.reply(403, {"error": "origin"}, write=True)
+            return self.refuse(403, {"error": "origin"})
         status, payload = self.door.upload(parts[1], self.headers.get("Content-Length"), self.rfile, self.client())
         return self.reply(status, payload, write=True)
 

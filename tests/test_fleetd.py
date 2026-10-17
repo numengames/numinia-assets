@@ -809,6 +809,9 @@ class OverHTTP(unittest.TestCase):
         for wrong in ("/fleet/v1/uploads", f"/fleet/v1/uploads/{'a' * 32}/x", "/fleet/v1/actions"):
             with self.subTest(path=wrong):
                 self.assertEqual(self.call("PUT", wrong, b"PK")[0].status, 404)
+        # A refused body is read before the answer, so the sender gets the 404, not a broken pipe.
+        response, data = self.call("PUT", "/fleet/v1/actions", b"x" * (512 * 1024))
+        self.assertEqual((response.status, json.loads(data)), (404, {"error": "not-found"}))
 
     def test_a_zip_streams_into_its_slot_over_the_socket(self):
         data = Z.make_zip([("world/db.sqlite", os.urandom(3 * 1024**2))], compression=0)  # a few pieces
