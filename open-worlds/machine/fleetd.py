@@ -81,10 +81,10 @@ CONSOLE_ORIGINS = frozenset({"https://numinia.com", "https://www.numinia.com"})
 WINDOW = 15 * 60  # a signed request is good for at most fifteen minutes
 MAX_BODY = 16 * 1024
 LOG_LINES = 50
-PHASES = {"DeleteWorld": "deleting", "StopWorld": "stopping", "StartWorld": "starting", "UpdateWorld": "updating"}
+PHASES = {"DeleteWorld": "deleting", "StopWorld": "stopping", "StartWorld": "starting", "UpdateWorld": "updating", "PinWorld": "updating"}
 BIRTHS = ("CreateWorld", "ImportWorld")  # the requests that make a world that is not here yet
 # The requests that change a world that is here: one at a time (busy).
-CHANGES = ("RotateWorldCode", "UpdateWorld", "StopWorld", "StartWorld")
+CHANGES = ("RotateWorldCode", "UpdateWorld", "PinWorld", "StopWorld", "StartWorld")
 LENGTH = re.compile(r"[0-9]{1,20}")  # a Content-Length, digits only
 PROGRESS_SECONDS = 1.0  # an upload's slot says how far it got at most this often
 
@@ -249,7 +249,31 @@ class Door:
             "imports": {"zipMaxBytes": R.ZIP_MAX},
             "engines": list(R.ENGINES),
             "updates": True,
+            # Optional: a room that does not know them ignores them. `listens/pin`: this door takes a
+            # PinWorld (hold a world on a build, or let it follow the fleet again).
+            "listens": {"pin": True},
+            "release": self.release(),
             "at": R.utc(self.clock()),
+        }
+
+    def release(self) -> dict:
+        """What the self-updating pass (release.py) is doing: the build it aims at, whether it stopped, its last pass.
+
+        Read from its state file; every field is None/False when it never ran.
+        """
+        raw = R.read_json(self.home / "release" / "state.json", {})
+        raw = raw if isinstance(raw, dict) else {}
+        target, halted, last = raw.get("target"), raw.get("halted"), raw.get("lastPass")
+        image = target.get("image") if isinstance(target, dict) else None
+        commit = target.get("commit") if isinstance(target, dict) else None
+        stop = halted if isinstance(halted, dict) else None
+        return {
+            "target": image if R.matches(R.IMAGE, image) else None,
+            "commit": commit[:40] if isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{7,40}", commit) else None,
+            "halted": stop is not None,
+            "haltedReason": str(stop.get("reason"))[:200] if stop and stop.get("reason") else None,
+            "lastPass": ({"at": last["at"][:32], "action": str(last.get("action"))[:40]}
+                         if isinstance(last, dict) and isinstance(last.get("at"), str) else None),
         }
 
     def recipe(self) -> str | None:
@@ -298,11 +322,20 @@ class Door:
         pending = {r["message"].get("world"): r for r in self.inbox()}
         updating = R.read_updates(self.home)
         listed = []
-        for order in R.select_orders(R.read_orders(self.orders), self.alias, allowed):
+        raw_orders = R.read_orders(self.orders)
+        extras = {o["id"]: o for o in raw_orders}  # select_orders keeps only the fields the machine runs
+        for order in R.select_orders(raw_orders, self.alias, allowed):
             kind = pending.get(order["id"], {}).get("type")
             # A world moved to a new build says so until Docker has started it.
             settled = "updating" if order["id"] in updating else order["state"]
-            listed.append({**order, "phase": PHASES.get(kind, settled)})
+            shown = dict(order)
+            pin, error = extras[order["id"]].get("pin"), extras[order["id"]].get("updateError")
+            if isinstance(pin, dict) and R.matches(R.IMAGE, pin.get("image")):
+                shown["pin"] = {"image": pin["image"], "reason": str(pin.get("reason") or "")[:200],
+                                "at": str(pin.get("at") or "")[:32]}
+            if isinstance(error, str) and error:
+                shown["updateError"] = error[:200]
+            listed.append({**shown, "phase": PHASES.get(kind, settled)})
         known = {world["id"] for world in listed}
 
         def coming(message: dict, phase: str, **more: object) -> None:
@@ -401,13 +434,13 @@ class Door:
             # code also waits for a new build to start (one change at a time).
             if wid in self.purging() or any(r.get("type") == "DeleteWorld" for r in waiting):
                 return "still-deleting"
-            changing = (*BIRTHS, "RotateWorldCode") + (("UpdateWorld",) if kind == "RotateWorldCode" else ())
+            changing = (*BIRTHS, "RotateWorldCode") + (("UpdateWorld", "PinWorld") if kind == "RotateWorldCode" else ())
             if coming or any(r.get("type") in changing for r in waiting):
                 return "busy"
             if kind == "RotateWorldCode" and wid in R.read_updates(self.home):
                 return "busy"
             return "missing" if current is None else None
-        if kind == "UpdateWorld":
+        if kind in ("UpdateWorld", "PinWorld"):
             # Another build of the world's own engine, for a world that is
             # here and settled: one change at a time.
             if wid in self.purging() or any(r.get("type") == "DeleteWorld" for r in waiting):
@@ -418,6 +451,8 @@ class Door:
                 return "busy"
             if current is None:
                 return "missing"
+            if not message["image"]:
+                return None  # a pin released: nothing to compare
             engine, now_runs = R.engine_of(message["image"]), R.engine_of(current.get("image"))
             if engine is None or now_runs is None:
                 return "unknown-engine"

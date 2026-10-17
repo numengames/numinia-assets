@@ -405,7 +405,16 @@ def finish_interrupted(env: Env, state: dict, target: dict | None) -> bool:
 
 
 def run_pass(env: Env) -> dict:
-    """One pass. Returns what happened: {action, world(s), note}. Never raises on a bad network."""
+    """One pass, and a note of when it ran and how it ended (the door shows it). Never raises on a bad network."""
+    result = pass_once(env)
+    state = read_state(env)
+    state["lastPass"] = {"at": R.utc(env.now()), "action": str(result.get("action"))[:40]}
+    write_state(env, state)
+    return result
+
+
+def pass_once(env: Env) -> dict:
+    """One pass. Returns what happened: {action, world(s), note}."""
     env.dir.mkdir(parents=True, exist_ok=True)
     state = read_state(env)
     signers = R.read_signers(env.signers_file)
