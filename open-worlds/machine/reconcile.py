@@ -191,6 +191,8 @@ IMAGE = re.compile(
     r"ghcr\.io/numengames/[a-z0-9]+(?:[._/-][a-z0-9]+)*"  # the only registry an engine may come from
     r"(?::sha-[0-9a-f]{7,40}|@sha256:[0-9a-f]{64})"  # pinned to one build, never a moving tag
 )
+# Why a world is held on a build: one line of text, no control characters.
+REASON = re.compile(r"[^\x00-\x1f\x7f]{1,200}")
 MEMORY = re.compile(r"[0-9]+(?:\.[0-9]+)?[mg]")
 CPUS = re.compile(r"[0-9]+(?:\.[0-9]+)?")
 STATES = ("running", "stopped")
@@ -237,6 +239,7 @@ FIELD_RULES = {
     "world": SLUG,
     "domain": HOST,
     "image": IMAGE,
+    "reason": REASON,
     "memory": MEMORY,
     "cpus": CPUS,
     "nonce": NONCE,
@@ -966,7 +969,12 @@ def request_problem(kind: object, message: object) -> str | None:
         return "message does not have exactly the fields of its type"
     for name, kind_of in fields:
         value = message[name]
-        if kind_of == "string":
+        if kind == "PinWorld" and name == "image":
+            # The same rail as an update (the house registry, one build: a sha- tag or a digest);
+            # an empty image releases the pin.
+            if value != "" and not matches(IMAGE, value):
+                return "image is neither empty nor a build of the house registry"
+        elif kind_of == "string":
             if not matches(FIELD_RULES[name], value):
                 return f"{name} does not have its shape"
         elif isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -1121,6 +1129,32 @@ def update_world(entry: dict, message: dict, orders: Path, now: float, pull=None
     return None
 
 
+def pin_world(entry: dict, message: dict, orders: Path, now: float, pull=None) -> str | None:
+    """Hold a world on one build (a digest) or, with an empty image, let it follow the fleet again.
+
+    Holding moves the world to that build exactly like an update (same
+    rules, pull first) and writes `pin` on its order, which release.py
+    honours: it never moves a pinned world. Releasing only removes the pin;
+    the next release pass moves the world. Any pin or release is a new
+    signed request, so the reason of the last one is the one that stays.
+    """
+    path = orders / f"{entry['world']}.json"
+    current = read_order(path)
+    if current is None:
+        return "no world with this name on this machine"
+    if message["image"]:
+        rule = update_world(entry, message, orders, now, pull)
+        if rule is not None:
+            return rule
+        current = read_order(path) or current
+        write_json(path, {**current, "pin": {"image": message["image"], "reason": message["reason"],
+                                             "at": utc(now), "by": entry["by"]}})
+        return None
+    current.pop("pin", None)
+    write_json(path, current)
+    return None
+
+
 def read_updates(home: Path) -> dict[str, dict]:
     """The worlds whose new build is being started (run/updating.json): id → the request that asked."""
     raw = read_json(home / "run" / UPDATING, {})
@@ -1135,7 +1169,7 @@ def finish_updates(home: Path, now: float | None = None) -> list[str]:
     """Answer the updates whose new build Docker took: done. Only once the book was applied."""
     pending = read_updates(home)
     for wid, job in sorted(pending.items()):
-        answer(home, {"nonce": job["nonce"], "type": "UpdateWorld", "world": wid, "by": job.get("by")}, "done", None, now)
+        answer(home, {"nonce": job["nonce"], "type": job.get("type") if job.get("type") == "PinWorld" else "UpdateWorld", "world": wid, "by": job.get("by")}, "done", None, now)
     (home / "run" / UPDATING).unlink(missing_ok=True)
     return sorted(pending)
 
@@ -1266,6 +1300,8 @@ def take_requests(
                                             allowed, control_host, now, deleting)
             elif entry["type"] == "UpdateWorld":
                 rule = update_world(entry, message, orders, now, pull)
+            elif entry["type"] == "PinWorld":
+                rule = pin_world(entry, message, orders, now, pull)
             else:
                 rule = change_book(entry, message, orders, alias, allowed, control_host, now, deleting)
                 if rule is None and admin_code is not None:
@@ -1289,11 +1325,12 @@ def take_requests(
                        {"copy": entry["copy"], "world": entry["world"], "state": "preparing", "at": utc(now)},
                        mode=0o640, group=door_gid())
             answer(home, entry, "working", None, now)
-        elif entry["type"] == "UpdateWorld" and (read_order(orders / f"{entry['world']}.json") or {}).get(
-                "state") == "running":
+        elif entry["type"] in ("UpdateWorld", "PinWorld") and message["image"] and (
+                read_order(orders / f"{entry['world']}.json") or {}).get("state") == "running":
             # Done once Docker has started the new build (finish_updates); until then the door says updating.
             updates = read_updates(home)
-            updates[entry["world"]] = {"nonce": entry["nonce"], "by": entry["by"], "image": message["image"]}
+            updates[entry["world"]] = {"nonce": entry["nonce"], "by": entry["by"], "image": message["image"],
+                                       "type": entry["type"]}
             write_json(home / "run" / UPDATING, updates)
             answer(home, entry, "working", None, now)
         else:

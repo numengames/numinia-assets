@@ -283,6 +283,7 @@ as Snapshot does with votes. The wallet shows every field before signing.
 | `StopWorld`, `StartWorld`, `DownloadWorld` | machine, world, nonce, expires |
 | `ShowWorldCode`, `RotateWorldCode` | machine, world, nonce, expires |
 | `UpdateWorld` | machine, world, image, nonce, expires — another build of the world's own engine |
+| `PinWorld` | machine, world, image, reason, nonce, expires — hold a world on one build of its engine (`pin` in its order, which `release.py` honours); an empty image releases the pin |
 | `ShowAdminCode` | machine, nonce, expires — the machine's old shared code, for the room that still asks for it |
 
 `nonce` is 128 random bits chosen by the browser; `expires` is at most
@@ -458,3 +459,7 @@ Numinia Engine worlds follow the latest published engine by themselves; no Oracl
 - **Failure**: the world goes back to `previousImage`, the digest is written to `bad`, and the machine **halts** (`halted` in `/srv/fleet/release/state.json`) until a different digest is published. `updateError` stays in the order.
 - **Kill switch (optional)**: a signed `FleetRelease` placed at `/srv/fleet/release/fleet-release.json` (`{message, signature}`) from an Oracle in `/etc/fleet/signers`, with the highest `seq` seen, replaces the target: a digest pins the fleet there, an empty `image` pauses it. Without it the machine follows `latest`. How the record gets to the machine is not built yet.
 - `fleet-release --dry-run` prints the target and the plan and changes nothing.
+
+### What the door says about updates and pins
+
+`GET /fleet/v1/machine` carries two optional fields (a room that does not know them ignores them): `listens: {pin: true}` (this door takes a `PinWorld`) and `release` = `{target, commit, halted, haltedReason, lastPass: {at, action}}`, read from `release/state.json`. `GET /fleet/v1/worlds` adds `pin: {image, reason, at}` and `updateError` to a world only when it has them. `PinWorld` takes the same rails as `UpdateWorld` (house registry, Oracle signer, nonce, expires, one change at a time: `busy`, `engine-mismatch`); pinning also moves the world to that build.
