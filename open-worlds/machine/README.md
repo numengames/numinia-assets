@@ -119,6 +119,17 @@ door says which engines the machine runs (`/fleet/v1/machine` →
 `engines`), and the room offers only those. The Numinia Engine saves when
 it is told to stop, so the machine waits for no save before stopping it.
 
+Every Numinia Engine world also gets numinia.com's signed world pass
+settings (H3b, numinia-engine `packages/server/src/pase.ts`):
+`MOTOR_PASE_CLAVE` (numinia.com's public key, the same for every world) and
+`MOTOR_PASE_MUNDO` (the world's own id) — without them the engine ignores
+every pass and "Entrar" silently makes everyone a guest. `MOTOR_PASE_ORG`
+follows when the order names an `org` (lowercase letters, digits and
+hyphens): no signed request sets it yet, so today only an order edited by
+hand on the machine carries one — wiring it into `CreateWorld` and the
+room is its own change, across this repository, `walletsig.py`'s typed
+data and numinia-web's signing UI.
+
 A Numinia Engine world's zip is the engine's business: the machine never
 re-implements its rules. It runs the world's own image, with no network,
 no capability and the world's limits, as the engine's user:
