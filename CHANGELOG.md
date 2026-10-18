@@ -9,6 +9,11 @@
   or `/etc/fleet/provenance`: `off` by default, `api`, `gh`) so a machine follows `latest`
   only when its image carries a build attestation from the engine's publish workflow.
   Off, nothing changes for manual releases.
+- `open-worlds/machine/`: a nightly copy of every world (`nightly.py`,
+  `fleet-nightly.timer`, 03:30 machine time). One consistent zip per world per
+  day (SQLite online backup, read-only on the world's folder, no keys), kept
+  14 days, never deletes a world's newest copy, skips with a log line when disk
+  is low, idempotent. Stays on the machine's own disk for now.
 - Community health: `SECURITY.md` and `CODE_OF_CONDUCT.md` added (same contacts as
   numinia-archive); `CONTRIBUTING.md` asks for English commit messages and PR titles;
   `README.md` gains a map of the repository.

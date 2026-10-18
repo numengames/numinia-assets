@@ -220,14 +220,15 @@ main() {
   # A machine set up by an earlier version runs its reconciler every minute:
   # pause it while the programs change, so it never runs half-installed code
   # against a book not yet adopted. The end of this script starts it again.
-  systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer 2>/dev/null || true
+  systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer 2>/dev/null || true
   install -d -m 0755 "$LIB_DIR"
-  for program in reconcile.py walletsig.py fleetd.py release.py; do
+  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py; do
     install -m 0644 "$BOOK_DIR/open-worlds/machine/$program" "$LIB_DIR/$program"
   done
   wrapper fleet-reconcile reconcile.py
   wrapper fleetd fleetd.py
   wrapper fleet-release release.py
+  wrapper fleet-nightly nightly.py
   # Which commit the programs came from: the door shows it (/fleet/v1/machine
   # `recipe`), and the worlds room says when a machine runs an older one.
   mkdir -p /etc/fleet
@@ -331,6 +332,28 @@ AccuracySec=30s
 [Install]
 WantedBy=timers.target
 EOF
+  cat > /etc/systemd/system/fleet-nightly.service <<EOF
+[Unit]
+Description=Fleet nightly copy: every world, once a day, kept 14 days (reads the worlds, changes none)
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/local/sbin/fleet-nightly
+EOF
+  cat > /etc/systemd/system/fleet-nightly.timer <<EOF
+[Unit]
+Description=Copy every world each night at 03:30 (machine time)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
   cat > /etc/systemd/system/fleetd.service <<EOF
 [Unit]
 Description=Fleet door: Oracles' signed requests in, public facts and copies out
@@ -371,7 +394,7 @@ EOF
   if ! /usr/local/sbin/fleet-reconcile; then
     echo "the first run did not finish; the timer tries again every minute (journalctl -u fleet-reconcile -n 20)" >&2
   fi
-  systemctl enable --now fleet-reconcile.timer fleet-reconcile.path fleet-release.timer
+  systemctl enable --now fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer
 
   ORACLES="$(grep -c '^0x' /etc/fleet/signers || true)"
   cat <<EOF
@@ -398,7 +421,7 @@ EOF
   # The units this script paused or started must be running again, or no
   # request signed in the worlds room will ever be done here.
   local unit stopped=""
-  for unit in fleetd.service fleet-reconcile.timer fleet-reconcile.path fleet-release.timer; do
+  for unit in fleetd.service fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer; do
     if ! systemctl is-active --quiet "$unit"; then
       stopped="$stopped $unit"
     fi

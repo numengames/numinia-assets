@@ -414,9 +414,11 @@ paid, not forgotten.
   compose file and a `chown` of `data/<id>/`.
 - **The book lives only on the machine.** A lost machine loses its book with
   its worlds; the public log tells what was done. What pays it: the nightly
-  copy (`MIS-158`) takes the book with the worlds.
-- **No nightly copy yet.** A copy is made when someone downloads one. What
-  pays it: the nightly copy (`MIS-158`).
+  copy (`MIS-158`) also takes the book, and sends the copies off the machine.
+- **The nightly copy stays on the machine.** `fleet-nightly.timer` copies every
+  world each night and keeps 14 days (see below), but on the same disk: a lost
+  machine loses them too, and they hold no keys. What pays it: sending them off
+  the machine (`MIS-158`).
 - **The machine waits for the engine's save, from outside.** The engine
   saves on a timer and not when it is stopped, so the machine passes a
   short `SAVE_INTERVAL` (10 s) and waits one interval before a stop or a
@@ -464,3 +466,14 @@ Numinia Engine worlds follow the latest published engine by themselves; no Oracl
 ### What the door says about updates and pins
 
 `GET /fleet/v1/machine` carries two optional fields (a room that does not know them ignores them): `listens: {pin: true}` (this door takes a `PinWorld`) and `release` = `{target, commit, halted, haltedReason, lastPass: {at, action}}`, read from `release/state.json`. `GET /fleet/v1/worlds` adds `pin: {image, reason, at}` and `updateError` to a world only when it has them. `PinWorld` takes the same rails as `UpdateWorld` (house registry, Oracle signer, nonce, expires, one change at a time: `busy`, `engine-mismatch`); pinning also moves the world to that build.
+
+## Nightly copy (`nightly.py`)
+
+`fleet-nightly.timer` runs `/usr/local/sbin/fleet-nightly` at 03:30 machine time (`Persistent=`, up to 10 minutes of random delay, low CPU and IO priority; installed by the bootstrap, never run from the clone).
+
+- **What**: one zip per world per UTC day in `/srv/fleet/nightly/<world>/<world>-YYYYMMDD-HHMMSS.zip`: the world's folder (`db.sqlite` through SQLite's online backup, so it is consistent while the world runs), its order and a `world.json` manifest with the sha256 of each file. Never keys or admin codes. Folder and zips are root-only (0700/0600).
+- **Reads only**: nothing is written in a world's folder and no container is stopped or touched. The zip is built as a hidden `.part` and moved into place whole.
+- **Idempotent**: a world that already has a copy dated today is left alone.
+- **Kept 14 days**: older zips go, but the newest copy of a world is never deleted, and a world removed from the machine keeps its copies until they age out.
+- **Low disk**: a world is copied only if at least 2 GiB stay free after its folder's size; otherwise it is skipped and logged (`journalctl -u fleet-nightly`), and nothing else is deleted to make room. One world failing does not stop the others (the service then ends failed).
+- Result of the last pass: `/srv/fleet/nightly/state.json`. Different from the copy `release.py` makes before an update (`release/preupdate/`) and from the one a download makes (`copies/`, a day).
