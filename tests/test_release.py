@@ -8,6 +8,7 @@ what runs), the reconciler (copies each order's image to that dict) and the cloc
 """
 
 from pathlib import Path
+import base64
 import importlib.util
 import json
 import subprocess
@@ -370,6 +371,118 @@ class TestBootstrapWiring(unittest.TestCase):
 
     def test_the_updater_is_paused_while_programs_change(self):
         self.assertIn("systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer", self.text)
+
+
+def statement(image=NEW, commit="bbbbbbb2", path=".github/workflows/publicar-motor.yml", ref="refs/heads/main",
+              repo="https://github.com/numengames/numinia-engine", predicate="https://slsa.dev/provenance/v1"):
+    """The in-toto statement GitHub's attest-build-provenance stores (shape read from the live engine release)."""
+    return {"_type": "https://in-toto.io/Statement/v1", "predicateType": predicate,
+            "subject": [{"name": "ghcr.io/numengames/numinia-engine", "digest": {"sha256": image.split(":")[-1]}}],
+            "predicate": {"buildDefinition": {"externalParameters": {"workflow": {"ref": ref, "repository": repo, "path": path}},
+                                              "resolvedDependencies": [{"uri": "git+" + repo + "@" + ref, "digest": {"gitCommit": commit}}]}}}
+
+
+def listing(*statements):
+    return json.dumps({"attestations": [{"bundle": {"dsseEnvelope": {"payload": base64.b64encode(json.dumps(s).encode()).decode()}}}
+                                         for s in statements]}).encode()
+
+
+TARGET = {"image": NEW, "commit": "bbbbbbb2"}
+
+
+class TestProvenance(unittest.TestCase):
+    def api(self, raw, target=TARGET):
+        return REL.verify_api(target, fetch=lambda digest: raw if not isinstance(raw, Exception) else (_ for _ in ()).throw(raw))
+
+    def test_mode_is_off_without_a_setting(self):
+        self.assertEqual(REL.provenance_mode({}, Path("/nonexistent/provenance")), "off")
+
+    def test_mode_from_env_then_file_and_garbage_is_strict(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "provenance"
+            f.write_text("api\n")
+            self.assertEqual(REL.provenance_mode({}, f), "api")
+            self.assertEqual(REL.provenance_mode({"FLEET_RELEASE_PROVENANCE": "gh"}, f), "gh")
+            self.assertEqual(REL.provenance_mode({"FLEET_RELEASE_PROVENANCE": "yes please"}, f), "gh")
+            self.assertEqual(REL.provenance_mode({"FLEET_RELEASE_PROVENANCE": ""}, f), "off")
+
+    def test_a_matching_attestation_passes(self):
+        self.assertEqual(self.api(listing(statement())), (True, "ok"))
+
+    def test_any_one_matching_attestation_among_others_is_enough(self):
+        self.assertTrue(self.api(listing(statement(commit="1234567"), statement()))[0])
+
+    def test_each_wrong_claim_is_refused(self):
+        for bad in (statement(image=NEWER), statement(commit="1234567"), statement(path=".github/workflows/other.yml"),
+                    statement(ref="refs/heads/evil"), statement(repo="https://github.com/someone/fork"),
+                    statement(predicate="https://example.com/not-provenance")):
+            self.assertFalse(self.api(listing(bad))[0], bad)
+
+    def test_nothing_or_garbage_is_refused(self):
+        for raw in (listing(), b"not json", b"[]", b'{"attestations": [{"bundle": 3}]}', OSError("down")):
+            self.assertFalse(self.api(raw)[0], raw)
+
+    def test_gh_mode_needs_gh_and_its_blessing(self):
+        self.assertFalse(REL.verify_gh(TARGET, which=lambda n: None)[0])
+        calls = []
+        def run(cmd, **kw):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0)
+        self.assertTrue(REL.verify_gh(TARGET, run=run, which=lambda n: "/usr/bin/gh")[0])
+        self.assertIn("--signer-workflow", calls[0])
+        self.assertIn("oci://" + NEW, calls[0])
+        self.assertFalse(REL.verify_gh(TARGET, run=lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1), which=lambda n: "gh")[0])
+
+    def test_off_never_asks_anyone(self):
+        boom = lambda *a: self.fail("asked")
+        self.assertTrue(REL.verify_provenance(TARGET, "off", api=boom, gh=boom)[0])
+
+
+class TestProvenanceInThePass(Fleet):
+    def setUp(self):
+        super().setUp()
+        self.order("w1", OLD)
+        self.asked = []
+        self.attested = True
+        self.mode = "off"
+        self.env.mode = lambda: self.mode
+        def provenance(target, mode):
+            self.asked.append((target["image"], mode))
+            return (True, "ok") if self.attested else (False, "no attestation")
+        self.env.provenance = provenance
+
+    def test_off_is_todays_behaviour_and_asks_nobody(self):
+        self.attested = False
+        self.pass_()
+        self.assertEqual(self.image("w1"), NEW)
+        self.assertEqual(self.asked, [])
+
+    def test_on_and_attested_updates_and_asks_once_per_image(self):
+        self.mode = "api"
+        self.pass_()
+        self.assertEqual(self.image("w1"), NEW)
+        self.pass_()
+        self.assertEqual(self.asked, [(NEW, "api")])
+
+    def test_on_and_not_attested_changes_nothing_and_says_why(self):
+        self.mode = "api"
+        self.attested = False
+        result = self.pass_()
+        self.assertEqual(self.image("w1"), OLD)
+        self.assertNotIn(("pull", NEW), self.calls)
+        self.assertEqual(self.state()["provenanceRefused"]["why"], "no attestation")
+        self.assertEqual(result["action"], "none")
+        self.attested = True
+        self.pass_()  # a refusal is asked again next time and the world then moves
+        self.assertEqual(self.image("w1"), NEW)
+        self.assertNotIn("provenanceRefused", self.state())
+
+    def test_a_new_image_or_mode_is_asked_again(self):
+        self.mode = "api"
+        self.pass_()
+        self.mode = "gh"
+        self.pass_()
+        self.assertEqual([m for _, m in self.asked], ["api", "gh"])
 
 
 if __name__ == "__main__":

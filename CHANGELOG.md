@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `open-worlds/machine/release.py`: an optional provenance check (`FLEET_RELEASE_PROVENANCE`
+  or `/etc/fleet/provenance`: `off` by default, `api`, `gh`) so a machine follows `latest`
+  only when its image carries a build attestation from the engine's publish workflow.
+  Off, nothing changes for manual releases.
 - Community health: `SECURITY.md` and `CODE_OF_CONDUCT.md` added (same contacts as
   numinia-archive); `CONTRIBUTING.md` asks for English commit messages and PR titles;
   `README.md` gains a map of the repository.
