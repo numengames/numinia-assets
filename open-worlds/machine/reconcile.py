@@ -226,6 +226,25 @@ TOOL_SECONDS = 1800
 # silently makes everyone a guest. numinia.com re-publishes it at
 # /.well-known/world-pass-key.json if it ever rotates.
 WORLD_PASS_KEY = json.dumps({"alg": "Ed25519", "kid": "24673ddb", "publicKey": "tK59bXebbNZxn9wxiHkyOFMAiSHCYfm1rRKWYRez2O0"})
+# The three tallas fleet-pricing/ESTUDIO-precio-de-los-mundos.md §5.1 prices
+# (Pequeño, Mediano, Grande), each an order's memory and cpus tope, with the
+# people cap the machine sets for it — a little over what the talla promises
+# the client (20/50/100), so the machine turns away whoever is over the cap
+# before the world itself gets slow. An order whose memory and cpus match
+# neither tier (today's one legacy tariff, still 2g/1.5) carries no cap yet.
+TALLAS = (
+    ("0.75g", "0.25", 25),  # Pequeño: up to 20 people
+    ("1.5g", "0.5", 60),  # Mediano: up to 50 people
+    ("2g", "1", 120),  # Grande: up to 100 people
+)
+
+
+def people_cap(limits: dict) -> int | None:
+    """The people cap an order's talla (its memory and cpus tope) sets; None for a talla not in TALLAS yet."""
+    for memory, cpus, cap in TALLAS:
+        if limits.get("memory") == memory and limits.get("cpus") == cpus:
+            return cap
+    return None
 # What may be written into a world's key file. No `=`, `$`, quote, space or
 # newline can pass: in an env file any of them could add or bend a setting.
 ADMIN_CODE = re.compile(r"[A-Za-z0-9_-]{8,64}")
@@ -575,8 +594,14 @@ def engine_service(o: dict, home: Path) -> dict:
     engine ignores every pass and "Entrar" silently makes everyone a guest.
     MOTOR_PASE_ORG follows only when the order names an organization — no
     signed request sets `org` yet (see open-worlds/machine/README.md).
+    MOTOR_TOPE_PERSONAS follows only when the order's talla (its memory and
+    cpus tope) is one of the three in fleet-pricing/ESTUDIO-precio-de-los-
+    mundos.md §5.1: the people cap the machine sets for that talla, for the
+    engine to read and impose over the owner's own saved setting (a later,
+    numinia-engine change — not made here).
     """
     wid, limits = o["id"], o["limits"]
+    cap = people_cap(limits)
     return {
         "image": o["image"],
         "restart": "unless-stopped",
@@ -586,6 +611,7 @@ def engine_service(o: dict, home: Path) -> dict:
             "MOTOR_PASE_CLAVE": WORLD_PASS_KEY,
             "MOTOR_PASE_MUNDO": wid,
             **({"MOTOR_PASE_ORG": o["org"]} if "org" in o else {}),
+            **({"MOTOR_TOPE_PERSONAS": str(cap)} if cap is not None else {}),
         },
         "volumes": [f"{home}/data/{wid}:{ENGINE_FOLDER}"],
         "stop_grace_period": ENGINE_STOP_GRACE,
