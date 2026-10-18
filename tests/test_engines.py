@@ -141,6 +141,7 @@ class Engines(unittest.TestCase):
             "restart": "unless-stopped",
             "user": "10001:10001",
             "env_file": f"{h.home}/env/plaza.env",
+            "environment": {"MOTOR_PASE_CLAVE": R.WORLD_PASS_KEY, "MOTOR_PASE_MUNDO": "plaza"},
             "volumes": [f"{h.home}/data/plaza:/mundo"],
             "stop_grace_period": "15s",
             "deploy": {"resources": {"limits": {"memory": "2g", "cpus": "1.5"}}},
@@ -149,6 +150,21 @@ class Engines(unittest.TestCase):
         self.assertNotIn("JWT_SECRET", p["compose"])
         self.assertEqual([n for n, s in json.loads(p["compose"])["services"].items() if "ports" in s], ["caddy"])
         self.assertEqual(p["engine_worlds"], ["plaza"])
+
+    def test_an_engine_world_without_org_gets_no_motor_pase_org(self):
+        service = json.loads(Home(self, [order()], keys=["plaza"]).plan()["compose"])["services"]["plaza"]
+        self.assertNotIn("MOTOR_PASE_ORG", service["environment"])
+
+    def test_an_engine_world_with_an_org_gets_motor_pase_org(self):
+        """Without a signed request to set it yet, an order edited by hand can still carry `org`."""
+        service = json.loads(
+            Home(self, [{**order(), "org": "numen-games"}], keys=["plaza"]).plan()["compose"]
+        )["services"]["plaza"]
+        self.assertEqual(service["environment"]["MOTOR_PASE_ORG"], "numen-games")
+
+    def test_an_order_with_a_bad_org_is_refused(self):
+        self.assertIsNotNone(R.refusal({**order(), "org": "Numen Games"}))
+        self.assertIsNone(R.refusal({**order(), "org": "numen-games"}))
 
     def test_an_engine_worlds_site_keeps_metrics_and_sessions_private(self):
         h = Home(self, [order()], keys=["plaza"])

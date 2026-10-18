@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `open-worlds/machine/reconcile.py`: every Numinia Engine world's service now
+  carries numinia.com's signed world pass settings (`MOTOR_PASE_CLAVE`,
+  `MOTOR_PASE_MUNDO`, and `MOTOR_PASE_ORG` when the order names an organization),
+  so the engine's pass verifier (numinia-engine `packages/server/src/pase.ts`,
+  H3b) can check "Entrar" instead of silently treating every pass-holder as a
+  guest. The key is numinia.com's own, the same for every world, so it is a
+  constant in the recipe. No signed request sets `org` yet — only an order
+  edited by hand on the machine carries it today (see the recipe's README).
+
 - `open-worlds/machine/release.py`: the post-update health check reads the engine's real `/status`
   field, `commitHash` (`commit` stays as a fallback). Before, the first automatic update would
   have failed the check, rolled back and halted.

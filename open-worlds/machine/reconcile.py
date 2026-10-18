@@ -219,6 +219,13 @@ ENGINE_STOP_GRACE = "15s"
 # each run in a container of the world's image, with no network: the longest one may take.
 ENGINE_TOOLS = ("copia", "comprobar", "importar")
 TOOL_SECONDS = 1800
+# numinia.com's own public key for the signed world pass (numinia-engine
+# packages/server/src/pase.ts `leerClave`: raw 32 bytes base64url, or this
+# whole document). Every Numinia Engine world gets it, the same, as
+# MOTOR_PASE_CLAVE — without it the engine ignores every pass and "Entrar"
+# silently makes everyone a guest. numinia.com re-publishes it at
+# /.well-known/world-pass-key.json if it ever rotates.
+WORLD_PASS_KEY = json.dumps({"alg": "Ed25519", "kid": "24673ddb", "publicKey": "tK59bXebbNZxn9wxiHkyOFMAiSHCYfm1rRKWYRez2O0"})
 # What may be written into a world's key file. No `=`, `$`, quote, space or
 # newline can pass: in an env file any of them could add or bend a setting.
 ADMIN_CODE = re.compile(r"[A-Za-z0-9_-]{8,64}")
@@ -332,6 +339,8 @@ def refusal(
         return f"state is not one of {'/'.join(STATES)}"
     if not matches(IMAGE, order.get("image")):
         return "image is not from ghcr.io/numengames/ pinned to a sha- tag or a digest"
+    if "org" in order and not matches(SLUG, order.get("org")):
+        return "org is not lowercase letters, digits and hyphens"
     domain = order.get("domain")
     if not isinstance(domain, str) or not domain_allowed(domain.lower(), allowed):
         return f"domain is neither one label under {'/'.join(HOUSE_ZONES)} nor listed in {DOMAINS_FILE}"
@@ -360,6 +369,7 @@ def clean(order: dict) -> dict:
         "domain": order["domain"].lower(),
         "image": order["image"],
         "limits": {"memory": limits["memory"], "cpus": limits["cpus"], "maxUploadMb": limits["maxUploadMb"]},
+        **({"org": order["org"]} if "org" in order else {}),
     }
 
 
@@ -558,9 +568,13 @@ def engine_service(o: dict, home: Path) -> dict:
     """A Numinia Engine world's service: its own user, its keys from its key file, its folder at /mundo.
 
     The engine reads JWT_SECRET and ADMIN_CODE from the key file (its
-    MOTOR_SECRET and MOTOR_ADMIN fall back to them) and needs no other
-    setting: its image says its port. No ports here either: Caddy reaches it
-    on the machine's own network.
+    MOTOR_SECRET and MOTOR_ADMIN fall back to them) and needs no setting of
+    its own beyond the pass: its image says its port. No ports here either:
+    Caddy reaches it on the machine's own network. MOTOR_PASE_CLAVE and
+    MOTOR_PASE_MUNDO are numinia.com's world pass (H3b): without them the
+    engine ignores every pass and "Entrar" silently makes everyone a guest.
+    MOTOR_PASE_ORG follows only when the order names an organization — no
+    signed request sets `org` yet (see open-worlds/machine/README.md).
     """
     wid, limits = o["id"], o["limits"]
     return {
@@ -568,6 +582,11 @@ def engine_service(o: dict, home: Path) -> dict:
         "restart": "unless-stopped",
         "user": ENGINE_USER,
         "env_file": f"{home}/env/{wid}.env",
+        "environment": {
+            "MOTOR_PASE_CLAVE": WORLD_PASS_KEY,
+            "MOTOR_PASE_MUNDO": wid,
+            **({"MOTOR_PASE_ORG": o["org"]} if "org" in o else {}),
+        },
         "volumes": [f"{home}/data/{wid}:{ENGINE_FOLDER}"],
         "stop_grace_period": ENGINE_STOP_GRACE,
         "deploy": {"resources": {"limits": {"memory": limits["memory"], "cpus": limits["cpus"]}}},
