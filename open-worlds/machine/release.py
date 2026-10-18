@@ -36,8 +36,11 @@ from __future__ import annotations
 import argparse
 import contextlib
 import fcntl
+import base64
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -59,6 +62,11 @@ RELEASE_DIR = "release"
 STATE_FILE = "state.json"
 OVERRIDE_FILE = "fleet-release.json"
 CANARY_FILE = Path("/etc/fleet/canary")  # optional: the id of the world that updates first
+PROVENANCE_FILE = Path("/etc/fleet/provenance")  # optional: off | api | gh (the env FLEET_RELEASE_PROVENANCE wins)
+PROVENANCE_MODES = ("off", "api", "gh")
+ATTESTATION_URL = "https://api.github.com/repos/numengames/numinia-engine/attestations/"
+BUILD_REPOSITORY = "https://github.com/numengames/numinia-engine"
+BUILD_WORKFLOW = ".github/workflows/publicar-motor.yml"
 PRE_UPDATE_DIR = "preupdate"
 KEEP_SECONDS = 14 * 24 * 3600  # a copy made before an update stays this long
 MAX_BYTES = 64 * 1024
@@ -113,6 +121,95 @@ def fetch_release(opener=None) -> bytes:
     if len(data) > MAX_BYTES:
         raise OSError("release file too big")
     return data
+
+
+def provenance_mode(environ=None, path: Path = PROVENANCE_FILE) -> str:
+    """off (default) | api | gh. An unknown word is the STRICTEST mode that can run here, never off."""
+    environ = os.environ if environ is None else environ
+    word = environ.get("FLEET_RELEASE_PROVENANCE")
+    if word is None:
+        try:
+            word = path.read_text(encoding="utf-8")
+        except OSError:
+            word = "off"
+    word = word.strip().lower() or "off"
+    return word if word in PROVENANCE_MODES else "gh"
+
+
+def statement_ok(statement: object, target: dict) -> tuple[bool, str]:
+    """Does an in-toto statement say: THIS digest was built from THIS commit by the engine's publish workflow on main?"""
+    if not isinstance(statement, dict) or not isinstance(statement.get("predicate"), dict):
+        return False, "attestation is not a statement"
+    if not str(statement.get("predicateType", "")).startswith("https://slsa.dev/provenance/"):
+        return False, "attestation is not build provenance"
+    want = target["image"].split("@", 1)[1].split(":", 1)[1]
+    subjects = statement.get("subject")
+    if not any(isinstance(s, dict) and isinstance(s.get("digest"), dict) and s["digest"].get("sha256") == want
+               for s in (subjects if isinstance(subjects, list) else [])):
+        return False, "attestation is about another image"
+    build = statement["predicate"].get("buildDefinition")
+    build = build if isinstance(build, dict) else {}
+    external = build.get("externalParameters")
+    flow = external.get("workflow") if isinstance(external, dict) else None
+    if not isinstance(flow, dict) or flow.get("repository") != BUILD_REPOSITORY or flow.get("path") != BUILD_WORKFLOW \
+            or flow.get("ref") != "refs/heads/main":
+        return False, "not built by the engine's publish workflow on main"
+    sources = build.get("resolvedDependencies")
+    commits = {str(d["digest"].get("gitCommit", "")).lower() for d in (sources if isinstance(sources, list) else [])
+               if isinstance(d, dict) and isinstance(d.get("digest"), dict)}
+    if not any(c and (c.startswith(target["commit"]) or target["commit"].startswith(c)) for c in commits):
+        return False, "built from another commit than the release says"
+    return True, "ok"
+
+
+def fetch_attestations(digest: str, opener=None) -> bytes:
+    """GET the public attestation list of an image digest, anonymously (api.github.com, https only)."""
+    opener = opener or urllib.request.build_opener()
+    request = urllib.request.Request(ATTESTATION_URL + digest, headers={"User-Agent": "numinia-fleet-release",
+                                     "Accept": "application/vnd.github+json"})
+    with opener.open(request, timeout=20) as response:
+        data = response.read(8 * MAX_BYTES + 1)
+    if len(data) > 8 * MAX_BYTES:
+        raise OSError("attestation list too big")
+    return data
+
+
+def verify_api(target: dict, fetch=fetch_attestations) -> tuple[bool, str]:
+    """Mode `api`: the attestation GitHub stores for this digest names this commit and our publish workflow.
+    It checks the claims, not the signature (no sigstore on the machine); mode `gh` checks the signature too."""
+    digest = target["image"].split("@", 1)[1]
+    try:
+        listing = json.loads(fetch(digest))
+    except Exception:
+        return False, "attestation could not be fetched"
+    items = listing.get("attestations") if isinstance(listing, dict) else None
+    for item in items if isinstance(items, list) else []:
+        try:
+            statement = json.loads(base64.b64decode(item["bundle"]["dsseEnvelope"]["payload"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if statement_ok(statement, target)[0]:
+            return True, "ok"
+    return False, "no attestation for this image names this commit and the publish workflow"
+
+
+def verify_gh(target: dict, run=subprocess.run, which=shutil.which) -> tuple[bool, str]:
+    """Mode `gh`: `gh attestation verify` checks the sigstore signature, the repository and the workflow itself."""
+    if which("gh") is None:
+        return False, "gh is not installed here"
+    cmd = ["gh", "attestation", "verify", "oci://" + target["image"], "--repo", "numengames/numinia-engine",
+           "--signer-workflow", "numengames/numinia-engine/" + BUILD_WORKFLOW, "--source-ref", "refs/heads/main"]
+    try:
+        done = run(cmd, capture_output=True, timeout=120, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False, "gh attestation verify could not run"
+    return (True, "ok") if done.returncode == 0 else (False, "gh attestation verify refused this image")
+
+
+def verify_provenance(target: dict, mode: str, api=verify_api, gh=verify_gh) -> tuple[bool, str]:
+    if mode == "off":
+        return True, "provenance not checked"
+    return (gh if mode == "gh" else api)(target)
 
 
 def read_override(path: Path, signers: frozenset[str]) -> dict | None:
@@ -215,6 +312,8 @@ class Env:
         self.health = self._health  # (order, target) -> (ok, reason)
         self.busy = self._busy  # () -> set of world ids with another change under way
         self.canary = self._canary  # () -> id | None
+        self.provenance = verify_provenance  # (target, mode) -> (ok, reason); mode off never refuses
+        self.mode = provenance_mode  # () -> off | api | gh
 
     @property
     def dir(self) -> Path:
@@ -413,6 +512,24 @@ def run_pass(env: Env) -> dict:
     return result
 
 
+def check_provenance(env: Env, state: dict, latest: dict | None) -> dict | None:
+    """With a mode on, `latest` is believed only when its image has a build attestation. A refused one is as if it
+    was not published: nothing changes (a signed FleetRelease from an Oracle still works: a person decided that)."""
+    mode = env.mode()
+    state.pop("provenanceRefused", None)
+    if latest is None or mode == "off":
+        return latest
+    if state.get("provenanceOk") == {"image": latest["image"], "mode": mode}:
+        return latest  # already proven in this mode; no need to ask GitHub every five minutes
+    ok, why = env.provenance(latest, mode)
+    if ok:
+        state["provenanceOk"] = {"image": latest["image"], "mode": mode}
+        return latest
+    state["provenanceRefused"] = {"image": latest["image"], "mode": mode, "why": why}
+    env.log(f"provenance ({mode}) refused {latest['image']}: {why}; nothing changes")
+    return None
+
+
 def pass_once(env: Env) -> dict:
     """One pass. Returns what happened: {action, world(s), note}."""
     env.dir.mkdir(parents=True, exist_ok=True)
@@ -423,6 +540,7 @@ def pass_once(env: Env) -> dict:
         latest = parse_release(env.fetch())
     except Exception:
         env.log("the release file could not be fetched; nothing changes")
+    latest = check_provenance(env, state, latest)
     override = read_override(env.dir / OVERRIDE_FILE, signers)
     if override is not None and override["seq"] > state["seq"]:
         state["seq"] = override["seq"]
@@ -484,7 +602,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.dry_run:
             state = read_state(env)
-            target, why = choose_target(parse_release(env.fetch()), read_override(env.dir / OVERRIDE_FILE,
+            target, why = choose_target(check_provenance(env, {}, parse_release(env.fetch())), read_override(env.dir / OVERRIDE_FILE,
                                         R.read_signers(args.signers_file)), state["seq"])
             orders = R.read_orders(args.home / "orders")
             print(json.dumps({"target": target, "why": why, "plan": plan_rollout(orders, target, state, env.busy(), env.canary())}, indent=2))
