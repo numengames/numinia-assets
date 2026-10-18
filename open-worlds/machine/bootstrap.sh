@@ -14,6 +14,11 @@
 # later change to main reaches no machine until someone hands out its line.
 # Without FLEET_REF it installs main's newest commit, and says so: NOT pinned.
 #
+# RELEASE_URL (optional, the same way) is where the machine fetches the signed
+# release record: https://numinia.com/fleet/release.json unless given. It is
+# written to /etc/fleet/release-url only when that file is absent; an address
+# already there stays, unless RELEASE_URL is given, which replaces it.
+#
 # The first argument is the machine's alias. The second is the wallet of the
 # Oracle (or several, separated by commas) who may act on this machine from
 # the worlds room on numinia.com: each request is signed with that wallet and
@@ -47,6 +52,8 @@ main() {
   ALIAS="${1:-}"
   SIGNERS="${2:-}"
   FLEET_REF="${FLEET_REF:-}"
+  RELEASE_URL="${RELEASE_URL:-}"
+  DEFAULT_RELEASE_URL="https://numinia.com/fleet/release.json"
   BOOK_URL="https://github.com/numengames/numinia-assets.git"
   HOME_DIR="/srv/fleet"
   BOOK_DIR="$HOME_DIR/book"
@@ -63,6 +70,10 @@ main() {
   fi
   if [[ -n "$FLEET_REF" && ! "$FLEET_REF" =~ ^[0-9a-f]{40}$ ]]; then
     echo "FLEET_REF IS NOT A COMMIT: give the whole commit the worlds room shows (40 characters, 0-9 and a-f), or leave it out to install main" >&2
+    exit 2
+  fi
+  if [[ -n "$RELEASE_URL" && ! "$RELEASE_URL" =~ ^https?://[^[:space:]]+$ ]]; then
+    echo "RELEASE_URL IS NOT AN ADDRESS: give an http(s) address with no spaces, or leave it out to keep the machine's own" >&2
     exit 2
   fi
   if [[ "$(id -u)" -ne 0 ]]; then
@@ -245,6 +256,19 @@ main() {
   if [[ ! -s /etc/fleet/control-host ]]; then
     echo "$ALIAS.$CONTROL_ZONE" > /etc/fleet/control-host
   fi
+
+  echo "== where the machine fetches the signed release record"
+  # release.py asks this address for the signed FleetRelease (pause, pin, go
+  # back). Written only when the machine has none: a value already there stays,
+  # so a re-run never undoes what someone set by hand. RELEASE_URL, given on the
+  # line, replaces it on purpose. The record is checked against the Oracles
+  # below, so the address itself is no secret and no authority.
+  if [[ -n "$RELEASE_URL" ]]; then
+    echo "$RELEASE_URL" > /etc/fleet/release-url
+  elif [[ ! -e /etc/fleet/release-url ]]; then
+    echo "$DEFAULT_RELEASE_URL" > /etc/fleet/release-url
+  fi
+  chmod 644 /etc/fleet/release-url
 
   echo "== the Oracles who may act on this machine"
   if [[ -n "$SIGNERS" ]]; then

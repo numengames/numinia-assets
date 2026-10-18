@@ -74,6 +74,14 @@ an older recipe. A later change to `main` reaches no machine until someone
 hands out a line with its commit. Without `FLEET_REF` the bootstrap installs
 `main`'s newest commit and says so: *NOT pinned*.
 
+**Where the signed release is fetched.** The bootstrap writes
+`/etc/fleet/release-url` (`https://numinia.com/fleet/release.json`) only when
+the machine has none; a value already there is kept on a re-run. To set or
+change it, add `RELEASE_URL=<http(s) address>` next to `FLEET_REF` on the line
+(it replaces the file; an address that is not http(s) is refused). The record
+is verified against `/etc/fleet/signers`, so the address carries no authority.
+See *Kill switch* below.
+
 ## Bring up a world
 
 From the worlds room on numinia.com (LAP › Mundos › *+ Nuevo mundo*): its

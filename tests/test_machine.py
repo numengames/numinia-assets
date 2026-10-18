@@ -785,6 +785,47 @@ class ReconcileTests(unittest.TestCase):
         self.assertIn("sudo FLEET_REF=<commit> bash -s -- open-1 0xYourWallet", text)
         self.assertIn("NOT pinned", text)
 
+    def test_bootstrap_writes_the_release_url_only_when_there_is_none(self):
+        text = (MACHINE / "bootstrap.sh").read_text()
+        self.assertIn('DEFAULT_RELEASE_URL="https://numinia.com/fleet/release.json"', text)
+        self.assertIn('RELEASE_URL="${RELEASE_URL:-}"', text)
+        self.assertIn('elif [[ ! -e /etc/fleet/release-url ]]', text)
+        self.assertIn('echo "$DEFAULT_RELEASE_URL" > /etc/fleet/release-url', text)
+        self.assertIn('echo "$RELEASE_URL" > /etc/fleet/release-url', text)
+        self.assertIn("chmod 644 /etc/fleet/release-url", text)
+        self.assertLess(text.index("/etc/fleet/release-url"), text.index("== first run"))
+        # It is the file release.py reads.
+        self.assertIn('RELEASE_URL_FILE = Path("/etc/fleet/release-url")', (MACHINE / "release.py").read_text())
+
+    def test_bootstrap_release_url_step_behaves(self):
+        """Run the step's own lines in bash on a scratch folder: absent -> default, present -> kept, flag -> replaced."""
+        text = (MACHINE / "bootstrap.sh").read_text()
+        start = text.index('  if [[ -n "$RELEASE_URL" ]]; then\n    echo')
+        end = text.index("  chmod 644 /etc/fleet/release-url")
+        step = text[start:end]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "release-url"
+            step = step.replace("/etc/fleet/release-url", str(target))
+
+            def run(release_url=""):
+                script = 'DEFAULT_RELEASE_URL="https://numinia.com/fleet/release.json"\nRELEASE_URL="%s"\n%s' % (release_url, step)
+                subprocess.run(["bash", "-c", script], check=True)
+                return target.read_text().strip()
+
+            self.assertEqual(run(), "https://numinia.com/fleet/release.json")
+            target.write_text("https://example.org/mine.json\n")
+            self.assertEqual(run(), "https://example.org/mine.json")  # a re-run keeps it
+            self.assertEqual(run("https://example.org/other.json"), "https://example.org/other.json")  # the flag replaces it
+            self.assertEqual(run(), "https://example.org/other.json")
+
+    def test_bootstrap_refuses_a_release_url_that_is_not_an_address(self):
+        for value in ("file:///etc/passwd", "ftp://x/y", "numinia.com/fleet", "https://a b", "https://a;reboot b", "javascript:1"):
+            with self.subTest(value=value):
+                run = subprocess.run(["bash", str(MACHINE / "bootstrap.sh"), "open-1"], capture_output=True, text=True,
+                                     env={**os.environ, "RELEASE_URL": value})
+                self.assertEqual(run.returncode, 2)
+                self.assertIn("RELEASE_URL IS NOT AN ADDRESS", run.stderr)
+
     def test_bootstrap_refuses_a_ref_that_is_not_a_whole_commit(self):
         """Checked before anything else, so it fails the same as root or not, and touches nothing."""
         for ref in ("main", "abc1234", "A" * 40, "0" * 39, "0" * 41, "0" * 40 + "\n", "0" * 40 + ";reboot", " " + "0" * 40):
