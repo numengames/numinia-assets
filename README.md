@@ -6,6 +6,18 @@ The archive holds canonical knowledge and resource records. This repository
 holds the associated files and the notices that must travel with them.
 The sites consume both; neither maintains another editable master catalogue.
 
+## What is here
+
+| Path | Contents |
+| --- | --- |
+| `content/` | Admitted resource files, each with its own licence notice |
+| `open-worlds/` | The public worlds fleet's orders (`*.json`) and the machine recipe (`machine/`, AGPL-3.0-only) |
+| `tests/` | Licence-gate, intake and fleet tests (Python `unittest`) |
+| `LICENSES/`, `REUSE.toml` | Full licence texts and explicit per-file declarations |
+
+Also read [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
 ## Scope
 
 `content/` is the home for admitted images, audio, video, models, avatars and

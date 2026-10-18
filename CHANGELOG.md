@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Community health: `SECURITY.md` and `CODE_OF_CONDUCT.md` added (same contacts as
+  numinia-archive); `CONTRIBUTING.md` asks for English commit messages and PR titles;
+  `README.md` gains a map of the repository.
 - `open-worlds/machine/`: a machine runs the Numinia Engine beside Hyperfy,
   and moves a world to another build of its engine with one signature.
   - A machine told its worlds apart by nothing: every order ran Hyperfy's

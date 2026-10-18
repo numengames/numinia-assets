@@ -3,6 +3,14 @@
 Organisational rules live in
 [numinia-archive](https://github.com/numengames/numinia-archive/blob/main/AGENTS.md),
 including its transition regime. Changes here enter through reviewed PRs.
+Conduct is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md); report
+security issues privately as described in [SECURITY.md](SECURITY.md).
+
+## Language
+
+Commit messages and PR titles are written in English. Use a
+[Conventional Commits](https://www.conventionalcommits.org/) style prefix
+such as `feat(open-worlds/machine):`, `fix:` or `docs:`.
 
 ## Before importing a resource
 

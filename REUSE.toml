@@ -11,6 +11,7 @@ path = [
   "CONTRIBUTING.md",
   "CHANGELOG.md",
   "TRADEMARKS.md",
+  "SECURITY.md",
   "content/README.md",
   "open-worlds/README.md",
   "open-worlds/machine/README.md",
@@ -41,5 +42,11 @@ SPDX-License-Identifier = "CC0-1.0"
 # the one file is declared here by name.
 [[annotations]]
 path = ["tests/fleet_vectors.json"]
+SPDX-FileCopyrightText = "2026 Numen Games S.L."
+SPDX-License-Identifier = "CC0-1.0"
+
+# Community-health file, CC0 like the archive's copy.
+[[annotations]]
+path = ["CODE_OF_CONDUCT.md"]
 SPDX-FileCopyrightText = "2026 Numen Games S.L."
 SPDX-License-Identifier = "CC0-1.0"
