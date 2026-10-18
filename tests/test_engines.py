@@ -166,6 +166,23 @@ class Engines(unittest.TestCase):
         self.assertIsNotNone(R.refusal({**order(), "org": "Numen Games"}))
         self.assertIsNone(R.refusal({**order(), "org": "numen-games"}))
 
+    def test_people_cap_by_talla(self):
+        self.assertEqual(R.people_cap({"memory": "0.75g", "cpus": "0.25"}), 25)  # Pequeño
+        self.assertEqual(R.people_cap({"memory": "1.5g", "cpus": "0.5"}), 60)  # Mediano
+        self.assertEqual(R.people_cap({"memory": "2g", "cpus": "1"}), 120)  # Grande
+        self.assertIsNone(R.people_cap({"memory": "2g", "cpus": "1.5"}))  # today's one legacy tariff
+
+    def test_an_engine_world_of_each_talla_gets_its_motor_tope_personas(self):
+        for memory, cpus, cap in (("0.75g", "0.25", 25), ("1.5g", "0.5", 60), ("2g", "1", 120)):
+            with self.subTest(memory=memory, cpus=cpus, cap=cap):
+                o = {**order(), "limits": {"memory": memory, "cpus": cpus, "maxUploadMb": 50}}
+                service = json.loads(Home(self, [o], keys=["plaza"]).plan()["compose"])["services"]["plaza"]
+                self.assertEqual(service["environment"]["MOTOR_TOPE_PERSONAS"], str(cap))
+
+    def test_an_engine_world_of_no_known_talla_gets_no_motor_tope_personas(self):
+        service = json.loads(Home(self, [order()], keys=["plaza"]).plan()["compose"])["services"]["plaza"]
+        self.assertNotIn("MOTOR_TOPE_PERSONAS", service["environment"])
+
     def test_an_engine_worlds_site_keeps_metrics_and_sessions_private(self):
         h = Home(self, [order()], keys=["plaza"])
         site = ("plaza.numinia.com {\n\tencode zstd gzip\n\trespond /metrics* 404\n\trespond /sesiones* 404\n"
