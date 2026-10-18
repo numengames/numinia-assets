@@ -112,7 +112,7 @@ class OpenWorldsTests(unittest.TestCase):
         ]
         self.assertEqual(others, [])
         recipe = sorted(p.name for p in (FLEET / "machine").iterdir() if p.name != "__pycache__")
-        self.assertEqual(recipe, ["README.md", "bootstrap.sh", "fleetd.py", "reconcile.py", "release.py", "walletsig.py"])
+        self.assertEqual(recipe, ["README.md", "bootstrap.sh", "fleetd.py", "nightly.py", "reconcile.py", "release.py", "walletsig.py"])
 
     def check(self, order, name="example-world"):
         with tempfile.TemporaryDirectory(prefix="open-worlds-test-") as temp:
