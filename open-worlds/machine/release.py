@@ -23,7 +23,7 @@ by the bootstrap and never run from the clone. Each pass:
    once, the order changes through reconcile.update_world, the reconciler
    remakes that container only (the Caddyfile does not change, so Caddy is not
    reloaded), then the health check: container running, no restarts, and
-   /status reports the target commit. If it fails the world goes back to its
+   /status reports the target commit (`commitHash`). If it fails the world goes back to its
    previous image, the machine HALTS there and the digest is written down as
    bad. A different target (or a higher-seq record) lifts the halt.
 
@@ -366,9 +366,12 @@ class Env:
 
 
 def commit_matches(body: object, commit: str) -> tuple[bool, str]:
-    got = body.get("commit") if isinstance(body, dict) else None
-    if not isinstance(got, str) or not got:
-        return False, "/status has no commit"
+    # The engine answers `commitHash` (numinia-engine server.ts); `commit` is the fallback for other builds.
+    got = None
+    if isinstance(body, dict):
+        got = next((v for v in (body.get("commitHash"), body.get("commit")) if isinstance(v, str) and v), None)
+    if got is None:
+        return False, "/status has no commitHash"
     got = got.lower()
     if got.startswith(commit) or commit.startswith(got):
         return True, "ok"

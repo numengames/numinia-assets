@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `open-worlds/machine/release.py`: the post-update health check reads the engine's real `/status`
+  field, `commitHash` (`commit` stays as a fallback). Before, the first automatic update would
+  have failed the check, rolled back and halted.
 - `open-worlds/machine/release.py`: an optional provenance check (`FLEET_RELEASE_PROVENANCE`
   or `/etc/fleet/provenance`: `off` by default, `api`, `gh`) so a machine follows `latest`
   only when its image carries a build attestation from the engine's publish workflow.
