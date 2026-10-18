@@ -106,7 +106,17 @@ class Fleet(unittest.TestCase):
             return False, "no container"
         if image in self.bad_commit:
             return False, "/status runs 0000000"
-        return REL.commit_matches({"commit": COMMITS[image]}, COMMITS[image] if image != target["image"] else target["commit"])
+        return REL.commit_matches({"commitHash": COMMITS[image]}, COMMITS[image] if image != target["image"] else target["commit"])
+
+    def test_status_commit_field_is_the_engines_commitHash_with_commit_as_fallback(self):
+        ok = lambda body: REL.commit_matches(body, "bbbbbbb2")[0]
+        self.assertTrue(ok({"commitHash": "bbbbbbb2"}))
+        self.assertTrue(ok({"commitHash": "BBBBBBB2ffff"}))  # prefix both ways, any case
+        self.assertTrue(ok({"commit": "bbbbbbb"}))  # fallback for other builds
+        self.assertFalse(ok({"commitHash": "aaaaaaa1", "commit": "bbbbbbb2"}))  # commitHash wins
+        self.assertTrue(ok({"commitHash": "", "commit": "bbbbbbb2"}))
+        for body in ({}, {"commitHash": None}, {"commitHash": 5}, [], None, {"commitHash": "cccccc"}):
+            self.assertFalse(ok(body), body)
 
     def order(self, wid, image=OLD, state="running", **extra):
         order = {"id": wid, "state": state, "domain": f"{wid}.numinia.com", "image": image,
