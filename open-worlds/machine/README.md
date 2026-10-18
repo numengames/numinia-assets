@@ -74,6 +74,14 @@ an older recipe. A later change to `main` reaches no machine until someone
 hands out a line with its commit. Without `FLEET_REF` the bootstrap installs
 `main`'s newest commit and says so: *NOT pinned*.
 
+**Where the signed release is fetched.** The bootstrap writes
+`/etc/fleet/release-url` (`https://numinia.com/fleet/release.json`) only when
+the machine has none; a value already there is kept on a re-run. To set or
+change it, add `RELEASE_URL=<http(s) address>` next to `FLEET_REF` on the line
+(it replaces the file; an address that is not http(s) is refused). The record
+is verified against `/etc/fleet/signers`, so the address carries no authority.
+See *Kill switch* below.
+
 ## Bring up a world
 
 From the worlds room on numinia.com (LAP › Mundos › *+ Nuevo mundo*): its
@@ -459,7 +467,7 @@ Numinia Engine worlds follow the latest published engine by themselves; no Oracl
 - **Order**: stopped worlds change together (nothing restarts). Running worlds change **one per pass**, the canary first (`/etc/fleet/canary`, a world id; else the lowest id), then by id. Hyperfy worlds, pinned worlds (`pin` in the order) and worlds with another change under way (`busy`) are skipped.
 - **Per world**: a copy before (kept 14 days in `/srv/fleet/release/preupdate/`), `docker pull`, the order's image changes (`previousImage` is kept), the reconciler remakes only that container (the Caddyfile does not change: no Caddy reload), then health: container running without restarts and `/status` reporting the target commit (`commitHash`, as the engine answers it) within 90 s.
 - **Failure**: the world goes back to `previousImage`, the digest is written to `bad`, and the machine **halts** (`halted` in `/srv/fleet/release/state.json`) until a different digest is published. `updateError` stays in the order.
-- **Kill switch (optional)**: a signed `FleetRelease` placed at `/srv/fleet/release/fleet-release.json` (`{message, signature}`) from an Oracle in `/etc/fleet/signers`, with the highest `seq` seen, replaces the target: a digest pins the fleet there, an empty `image` pauses it. Without it the machine follows `latest`. How the record gets to the machine is not built yet.
+- **Kill switch (optional)**: a signed `FleetRelease` placed at `/srv/fleet/release/fleet-release.json` (`{message, signature}`) from an Oracle in `/etc/fleet/signers`, with the highest `seq` seen, replaces the target: a digest pins the fleet there, an empty `image` pauses it. Without it the machine follows `latest`. The record can also be **fetched**: set `FLEET_RELEASE_URL` (or put one line in `/etc/fleet/release-url`; unset = off, the local file only; production: `https://numinia.com/fleet/release.json`, which answers `{message, signature}`, an `ETag` per `seq`, 304 when unchanged and 404 before anything is published). Each pass the machine asks with `If-None-Match`, verifies the answer against its own `/etc/fleet/signers` exactly as for the local file, and writes it to `fleet-release.json` only if its `seq` is above every `seq` it has seen (anti-rollback). A network error, 404, 5xx, garbage, a record over 64 KiB, a stranger's signature or an old `seq` change nothing and never override the local state. Pause (empty `image`) and go-back (a higher `seq` naming an older digest) travel the same way; `--dry-run` does not fetch.
 - **Provenance (optional, OFF by default)**: with `FLEET_RELEASE_PROVENANCE` (or the one word in `/etc/fleet/provenance`) set to `api` or `gh`, `latest` is believed only if its image has a build attestation; a refused image is treated as not published (nothing changes, the reason is in `state.json` → `provenanceRefused` and the log). `api` fetches the public attestation of the digest from `api.github.com` (anonymous, no credential) and checks that it is SLSA provenance of THAT digest, built from THAT commit by `.github/workflows/publicar-motor.yml` on `main` of `numengames/numinia-engine`; it does **not** verify the sigstore signature. `gh` runs `gh attestation verify` (signature, repository, workflow, ref) and needs `gh` plus a `GH_TOKEN` on the machine; an unknown word counts as `gh`. A signed `FleetRelease` is not subject to the check (an Oracle decided). Turn it on only once releases come only from the workflow; a release published by hand has no attestation and would be refused.
 - `fleet-release --dry-run` prints the target and the plan and changes nothing.
 

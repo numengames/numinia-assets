@@ -5,6 +5,15 @@
 - `open-worlds/machine/release.py`: the post-update health check reads the engine's real `/status`
   field, `commitHash` (`commit` stays as a fallback). Before, the first automatic update would
   have failed the check, rolled back and halted.
+- `open-worlds/machine/release.py`: a machine can fetch the signed `FleetRelease` from a URL
+  (`FLEET_RELEASE_URL` or `/etc/fleet/release-url`; unset by default, so nothing changes until
+  it is set). The answer is verified against the machine's own `/etc/fleet/signers` like the
+  local file, a `seq` not above the highest seen is dropped, `ETag`/304, a 64 KiB cap and a
+  15 s timeout apply, and any failure leaves the local state as it was.
+- `open-worlds/machine/bootstrap.sh`: writes `/etc/fleet/release-url`
+  (`https://numinia.com/fleet/release.json`) only when the machine has none, so a value already
+  there is kept on a re-run. `RELEASE_URL=<http(s) address>` on the line replaces it on purpose;
+  anything that is not an http(s) address is refused before anything is touched.
 - `open-worlds/machine/release.py`: an optional provenance check (`FLEET_RELEASE_PROVENANCE`
   or `/etc/fleet/provenance`: `off` by default, `api`, `gh`) so a machine follows `latest`
   only when its image carries a build attestation from the engine's publish workflow.

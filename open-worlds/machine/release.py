@@ -11,7 +11,11 @@ by the bootstrap and never run from the clone. Each pass:
    https from that one address. The machine holds no GitHub credential. The
    image it names must come from ghcr.io/numengames/numinia-engine and be
    pinned by sha256 digest. Nothing else is believed.
-2. Optionally reads a signed FleetRelease (release/fleet-release.json). If an
+2. Optionally reads a signed FleetRelease (release/fleet-release.json), which
+   it first refreshes from a URL if one is set (env FLEET_RELEASE_URL or
+   /etc/fleet/release-url; ETag, 304, size and time capped; verified against
+   this machine's own signers; a seq not above the highest seen is dropped; any
+   failure leaves the local file untouched). If an
    Oracle of this machine signed it and its seq is the highest seen, it
    replaces the target: a digest pins the fleet there, an empty image PAUSES
    the fleet (the kill switch). No record means: follow latest.
@@ -44,6 +48,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
@@ -67,6 +72,9 @@ PROVENANCE_MODES = ("off", "api", "gh")
 ATTESTATION_URL = "https://api.github.com/repos/numengames/numinia-engine/attestations/"
 BUILD_REPOSITORY = "https://github.com/numengames/numinia-engine"
 BUILD_WORKFLOW = ".github/workflows/publicar-motor.yml"
+RELEASE_URL_FILE = Path("/etc/fleet/release-url")  # optional: where to fetch the signed FleetRelease (env FLEET_RELEASE_URL wins)
+ETAG_FILE = "fleet-release.etag"
+SIGNED_TIMEOUT = 15
 PRE_UPDATE_DIR = "preupdate"
 KEEP_SECONDS = 14 * 24 * 3600  # a copy made before an update stays this long
 MAX_BYTES = 64 * 1024
@@ -214,7 +222,11 @@ def verify_provenance(target: dict, mode: str, api=verify_api, gh=verify_gh) -> 
 
 def read_override(path: Path, signers: frozenset[str]) -> dict | None:
     """A signed FleetRelease from an Oracle of this machine: {seq, image, commit}, image '' meaning pause. Else None."""
-    raw = R.read_json(path, None)
+    return verify_override(R.read_json(path, None), signers)
+
+
+def verify_override(raw: object, signers: frozenset[str]) -> dict | None:
+    """The same check for a record already parsed, wherever it came from (the local file or the network)."""
     if not isinstance(raw, dict) or not isinstance(raw.get("message"), dict):
         return None
     message = raw["message"]
@@ -233,6 +245,87 @@ def read_override(path: Path, signers: frozenset[str]) -> dict | None:
     if image and not (isinstance(commit, str) and R.matches(COMMIT, commit.lower())):
         return None
     return {"seq": seq, "image": image, "commit": (commit or "").lower()}
+
+
+def release_url(environ=None, path: Path = RELEASE_URL_FILE) -> str | None:
+    """Where to fetch the signed FleetRelease: env FLEET_RELEASE_URL, else the one line of /etc/fleet/release-url.
+    Unset, empty or not http(s) = None = today's behaviour (only the local file)."""
+    environ = os.environ if environ is None else environ
+    value = environ.get("FLEET_RELEASE_URL")
+    if value is None:
+        try:
+            value = path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+    value = value.strip()
+    return value if re.fullmatch(r"https?://[^\s]+", value) else None
+
+
+def fetch_signed(url: str, etag: str | None = None, opener=None) -> tuple[bytes, str | None] | None:
+    """GET the signed record: (body, its ETag). None = 304 (unchanged). Raises on anything else that is not a small 200."""
+    class Guard(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            if not re.fullmatch(r"https?://[^\s]+", newurl):
+                raise OSError("redirect to something that is not http(s)")
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    opener = opener or urllib.request.build_opener(Guard)
+    headers = {"User-Agent": "numinia-fleet-release", "Accept": "application/json"}
+    if etag:
+        headers["If-None-Match"] = etag
+    try:
+        with opener.open(urllib.request.Request(url, headers=headers), timeout=SIGNED_TIMEOUT) as response:
+            if response.status != 200:
+                raise OSError(f"unexpected status {response.status}")
+            data = response.read(MAX_BYTES + 1)
+            new_etag = response.headers.get("ETag")
+    except urllib.error.HTTPError as err:
+        if err.code == 304:
+            return None
+        raise
+    if len(data) > MAX_BYTES:
+        raise OSError("signed record too big")
+    return data, (new_etag if isinstance(new_etag, str) and len(new_etag) <= 200 else None)
+
+
+def refresh_override(env: "Env", signers: frozenset[str], seen_seq: int) -> str:
+    """Fetch the signed record from the configured URL and, if it verifies exactly as the local file does and its seq
+    is above every seq this machine knows, write it where read_override reads it. Never raises, never lowers anything:
+    a network error, 404, garbage, a stranger's signature or an old seq leave the local file as it was."""
+    url = env.signed_url()
+    if url is None:
+        return "no url"
+    path = env.dir / OVERRIDE_FILE
+    etag_path = env.dir / ETAG_FILE
+    try:
+        local = read_override(path, signers)
+        etag = None
+        if local is not None:
+            try:
+                etag = etag_path.read_text(encoding="utf-8").strip() or None
+            except OSError:
+                etag = None
+        answer = env.fetch_signed(url, etag)
+        if answer is None:
+            return "unchanged"
+        body, new_etag = answer
+        raw = json.loads(body.decode("utf-8"))
+        got = verify_override(raw, signers)
+        if got is None:
+            env.log("the signed record from the network does not verify; ignored")
+            return "refused"
+        if got["seq"] <= max(seen_seq, local["seq"] if local else 0):
+            return "old"
+        # only the two fields that were signed are kept; the file then reads exactly as a hand-placed one
+        R.write_json(path, {"message": raw["message"], "signature": raw["signature"]})
+        if new_etag:
+            R.write_file(etag_path, new_etag + "\n", 0o644)
+        else:
+            etag_path.unlink(missing_ok=True)
+        return "stored"
+    except Exception as err:  # noqa: BLE001 — the network is never a reason to fail a pass
+        env.log(f"the signed record could not be fetched ({type(err).__name__}); nothing changes")
+        return "failed"
 
 
 def choose_target(latest: dict | None, override: dict | None, seen_seq: int) -> tuple[dict | None, str]:
@@ -306,6 +399,8 @@ class Env:
         self.sleep = time.sleep
         self.log = lambda line: print(line, file=sys.stderr)
         self.fetch = fetch_release  # () -> bytes
+        self.signed_url = release_url  # () -> url | None: where the signed FleetRelease is served (None: only the local file)
+        self.fetch_signed = fetch_signed  # (url, etag) -> (bytes, etag) | None (304), raises on failure
         self.pull = R.pull_image  # (image) -> None, raises on failure
         self.backup = self._backup  # (order) -> Path, raises on failure
         self.apply = self._apply  # () -> bool: the reconciler took the book
@@ -544,6 +639,7 @@ def pass_once(env: Env) -> dict:
     except Exception:
         env.log("the release file could not be fetched; nothing changes")
     latest = check_provenance(env, state, latest)
+    refresh_override(env, signers, state["seq"])
     override = read_override(env.dir / OVERRIDE_FILE, signers)
     if override is not None and override["seq"] > state["seq"]:
         state["seq"] = override["seq"]

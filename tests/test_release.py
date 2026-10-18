@@ -14,7 +14,10 @@ import json
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,6 +72,7 @@ class Fleet(unittest.TestCase):
         env.sleep = lambda s: setattr(self, "clock", self.clock + s)
         env.log = lambda line: self.calls.append(("log", line))
         env.fetch = self._fetch
+        env.signed_url = lambda: None  # no signed-record URL unless a test sets one
         env.pull = self._pull
         env.backup = self._backup
         env.apply = self._apply
@@ -497,3 +501,277 @@ class TestProvenanceInThePass(Fleet):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# The signed FleetRelease fetched from a URL
+# ---------------------------------------------------------------------------
+
+def _test_key():
+    from ecdsa import SECP256k1, SigningKey
+
+    key = SigningKey.from_secret_exponent(0x5EED5EED5EED, curve=SECP256k1)
+    point = key.get_verifying_key().to_string("raw")
+    return key, "0x" + W.keccak256(point)[12:].hex()
+
+
+KEY, KEY_ADDRESS = _test_key()
+
+
+def signed(seq, image="", commit="", key=KEY, **extra):
+    """A real EIP-712 signature by a throwaway key: {message, signature}."""
+    from ecdsa.util import sigencode_string_canonize
+
+    message = {"engine": "numinia-engine", "image": image, "commit": commit, "seq": seq, "issuedAt": 1_800_000_000}
+    digest = W.typed_digest("FleetRelease", message)
+    rs = key.sign_digest_deterministic(digest, sigencode=sigencode_string_canonize, hashfunc=__import__("hashlib").sha256)
+    address = "0x" + W.keccak256(key.get_verifying_key().to_string("raw"))[12:].hex()
+    for v in (27, 28):
+        candidate = "0x" + (rs + bytes([v])).hex()
+        if W.recover(digest, candidate) == address:
+            return {"message": message, "signature": candidate, **extra}
+    raise AssertionError("no recovery id")
+
+
+class Site:
+    """A local http.server standing in for numinia.com/fleet/release.json."""
+
+    def __init__(self):
+        self.status, self.body, self.etag, self.delay, self.location = 200, b"", None, 0.0, None
+        self.hits = []  # the If-None-Match header of every request (None when absent)
+        site = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                site.hits.append(self.headers.get("If-None-Match"))
+                time.sleep(site.delay)
+                try:
+                    if site.location:
+                        self.send_response(302)
+                        self.send_header("Location", site.location)
+                        self.end_headers()
+                    elif site.etag and self.headers.get("If-None-Match") == site.etag:
+                        self.send_response(304)
+                        self.send_header("ETag", site.etag)
+                        self.end_headers()
+                    else:
+                        self.send_response(site.status)
+                        if site.etag:
+                            self.send_header("ETag", site.etag)
+                        self.send_header("Content-Length", str(len(site.body)))
+                        self.end_headers()
+                        self.wfile.write(site.body)
+                except OSError:
+                    pass  # the client gave up (timeout test)
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/fleet/release.json"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def serve(self, record, seq=None):
+        self.status = 200
+        self.body = json.dumps(record).encode() if not isinstance(record, bytes) else record
+        self.etag = f'"{seq}"' if seq is not None else None
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class TestFetchSignedRelease(Fleet):
+    def setUp(self):
+        super().setUp()
+        self.site = Site()
+        self.addCleanup(self.site.close)
+        self.signers.write_text(KEY_ADDRESS + "\n")
+        self.env.signed_url = lambda: self.site.url
+        self.local = self.home / "release" / REL.OVERRIDE_FILE
+        self.order("a", NEW)
+
+    def stored(self):
+        return json.loads(self.local.read_text()) if self.local.exists() else None
+
+    def test_it_is_off_by_default(self):
+        self.env.signed_url = lambda: None
+        self.site.serve(signed(5), 5)
+        self.pass_()
+        self.assertEqual(self.site.hits, [])
+        self.assertFalse(self.local.exists())
+
+    def test_the_url_comes_from_the_environment_then_the_file_and_only_http(self):
+        f = self.home / "release-url"
+        self.assertIsNone(REL.release_url({}, f))
+        f.write_text("https://numinia.com/fleet/release.json\n")
+        self.assertEqual(REL.release_url({}, f), "https://numinia.com/fleet/release.json")
+        self.assertEqual(REL.release_url({"FLEET_RELEASE_URL": "http://127.0.0.1:1/x"}, f), "http://127.0.0.1:1/x")
+        self.assertIsNone(REL.release_url({"FLEET_RELEASE_URL": ""}, f))  # set but empty: off, the file does not win
+        for bad in ("ftp://x/y", "file:///etc/passwd", "numinia.com/x", "https://a b"):
+            f.write_text(bad)
+            self.assertIsNone(REL.release_url({}, f), bad)
+
+    def test_a_good_record_is_stored_where_the_local_file_is_read_and_a_pause_stops_the_fleet(self):
+        self.site.serve(signed(5, extra="dropped"), 5)
+        self.assertEqual(self.pass_()["action"], "none")
+        got = self.stored()
+        self.assertEqual(set(got), {"message", "signature"})  # only what was signed
+        self.assertEqual(REL.read_override(self.local, R.read_signers(self.signers))["seq"], 5)
+        self.assertEqual(self.state()["seq"], 5)
+        self.assertIsNone(self.state()["target"])  # paused: no target
+        self.assertEqual(self.image("a"), NEW)
+
+    def test_pause_holds_back_a_newer_latest_until_a_higher_seq_resumes(self):
+        self.site.serve(signed(5), 5)
+        self.file = release(NEWER, "ccccccc3")
+        self.assertEqual(self.pass_()["action"], "none")
+        self.assertEqual(self.image("a"), NEW)
+        self.site.serve(signed(6, NEWER, "ccccccc3"), 6)
+        self.assertEqual(self.pass_()["action"], "updated")
+        self.assertEqual(self.image("a"), NEWER)
+
+    def test_go_back_is_a_new_higher_seq_naming_the_old_digest(self):
+        self.site.serve(signed(2, OLD, "aaaaaaa1"), 2)
+        self.assertEqual(self.pass_()["action"], "updated")
+        self.assertEqual(self.image("a"), OLD)
+        self.assertEqual(self.state()["target"]["why"], "pinned by a signed record")
+
+    def test_a_seq_not_above_the_stored_one_never_replaces_it(self):
+        self.site.serve(signed(5), 5)
+        self.pass_()
+        before = self.local.read_bytes()
+        for seq in (4, 5, 1):
+            self.site.serve(signed(seq, OLD, "aaaaaaa1"), seq)
+            self.pass_()
+            self.assertEqual(self.local.read_bytes(), before, seq)
+        self.assertEqual(self.image("a"), NEW)  # still paused
+
+    def test_a_seq_not_above_the_highest_seen_is_dropped_even_without_a_local_file(self):
+        self.pass_()  # creates the state
+        state = self.state()
+        state["seq"] = 9
+        REL.write_state(self.env, state)
+        self.site.serve(signed(9, OLD, "aaaaaaa1"), 9)
+        self.pass_()
+        self.assertFalse(self.local.exists())
+        self.site.serve(signed(10, OLD, "aaaaaaa1"), 10)
+        self.pass_()
+        self.assertEqual(self.stored()["message"]["seq"], 10)
+
+    def test_it_sends_if_none_match_and_a_304_changes_nothing(self):
+        self.site.serve(signed(5), 5)
+        self.pass_()
+        self.assertEqual(self.site.hits, [None])
+        before = self.local.read_bytes()
+        self.pass_()
+        self.assertEqual(self.site.hits, [None, '"5"'])
+        self.assertEqual(self.local.read_bytes(), before)
+        self.assertEqual(self.state()["seq"], 5)
+
+    def test_without_a_local_copy_it_never_asks_for_a_304(self):
+        self.site.serve(signed(5), 5)
+        self.pass_()
+        self.local.unlink()
+        self.pass_()
+        self.assertEqual(self.site.hits, [None, None])
+        self.assertFalse(self.local.exists())  # seq 5 is not above the highest seen (5): not written back
+
+    def test_a_new_seq_gets_a_new_etag_and_is_fetched(self):
+        self.site.serve(signed(5), 5)
+        self.pass_()
+        self.site.serve(signed(6), 6)
+        self.pass_()
+        self.assertEqual(self.site.hits, [None, '"5"'])  # the old etag no longer matches: a full answer
+        self.assertEqual(self.stored()["message"]["seq"], 6)
+        self.pass_()
+        self.assertEqual(self.site.hits[-1], '"6"')
+
+    def _nothing_changes(self, setup, seq=5):
+        """With a good record already stored, whatever the site does leaves it, and the pass still follows it."""
+        self.site.serve(signed(seq), seq)
+        self.pass_()
+        before = self.local.read_bytes()
+        setup()
+        self.file = release(NEWER, "ccccccc3")
+        self.assertEqual(self.pass_()["action"], "none")  # still paused by the stored record
+        self.assertEqual(self.local.read_bytes(), before)
+        self.assertEqual(self.image("a"), NEW)
+
+    def test_404_is_a_no_op(self):
+        def go():
+            self.site.status, self.site.body, self.site.etag = 404, b'{"error":"no-release"}', None
+        self._nothing_changes(go)
+
+    def test_a_server_error_is_a_no_op(self):
+        def go():
+            self.site.status, self.site.body, self.site.etag = 502, b"", None
+        self._nothing_changes(go)
+
+    def test_garbage_is_a_no_op(self):
+        bodies = (b"<html>captive portal</html>", b"[]", b'{"message": 3}', b"\xff\xfe", b"null",
+                     json.dumps({"message": signed(9)["message"], "signature": "0x" + "1" * 130}).encode())
+        for n, body in enumerate(bodies):
+            with self.subTest(body=body[:30]):
+                self._nothing_changes(lambda: self.site.serve(body), seq=5 + n * 100)  # each round stores a higher good one
+
+    def test_a_record_signed_by_a_stranger_is_a_no_op(self):
+        from ecdsa import SECP256k1, SigningKey
+
+        stranger = SigningKey.from_secret_exponent(777, curve=SECP256k1)
+        # the signature holds, but its signer is not in this machine's /etc/fleet/signers
+        self._nothing_changes(lambda: self.site.serve(signed(50, key=stranger), 50))
+
+    def test_a_record_with_a_changed_message_is_a_no_op(self):
+        record = signed(6)
+        record["message"]["seq"] = 60  # the signature no longer matches
+        self._nothing_changes(lambda: self.site.serve(record, 60))
+
+    def test_a_body_over_the_cap_is_a_no_op(self):
+        self._nothing_changes(lambda: self.site.serve(signed(6, extra="x" * (REL.MAX_BYTES + 10)), 6))
+
+    def test_a_server_that_never_answers_is_given_up_on(self):
+        self.site.serve(signed(5), 5)
+        self.pass_()
+        self.assertEqual(REL.SIGNED_TIMEOUT, 15)
+        REL.SIGNED_TIMEOUT = 0.3
+        self.addCleanup(setattr, REL, "SIGNED_TIMEOUT", 15)
+        self.site.delay = 1.5
+        started = time.monotonic()
+        self.pass_()
+        self.assertLess(time.monotonic() - started, 1.2)
+        self.assertEqual(self.stored()["message"]["seq"], 5)
+
+    def test_a_dead_server_is_a_no_op(self):
+        self.site.serve(signed(5), 5)
+        self.pass_()
+        self.site.close()
+        self.pass_()
+        self.assertEqual(self.stored()["message"]["seq"], 5)
+        self.assertTrue(any("could not be fetched" in line for kind, *rest in self.calls if kind == "log" for line in rest))
+
+    def test_a_redirect_away_from_http_is_refused(self):
+        self._nothing_changes(lambda: setattr(self.site, "location", "file:///etc/passwd"))
+
+    def test_the_first_ever_failure_leaves_no_file_and_the_pass_follows_latest(self):
+        self.site.status, self.site.body = 404, b"{}"
+        self.assertEqual(self.pass_()["action"], "none")  # NEW is already the latest
+        self.assertFalse(self.local.exists())
+        self.file = release(NEWER, "ccccccc3")
+        self.assertEqual(self.pass_()["action"], "updated")
+        self.assertEqual(self.image("a"), NEWER)
+
+    def test_a_hand_placed_higher_record_is_not_overwritten_by_an_older_fetched_one(self):
+        (self.home / "release").mkdir(exist_ok=True)
+        R.write_json(self.local, signed(8))
+        self.site.serve(signed(7, OLD, "aaaaaaa1"), 7)
+        self.pass_()
+        self.assertEqual(self.stored()["message"]["seq"], 8)
+        self.assertEqual(self.image("a"), NEW)
+
+    def test_a_pass_with_an_unreadable_signers_file_trusts_nothing_fetched(self):
+        self.signers.write_text("")
+        self.site.serve(signed(5), 5)
+        self.pass_()
+        self.assertFalse(self.local.exists())
