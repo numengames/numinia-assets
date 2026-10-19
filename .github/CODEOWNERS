@@ -6,8 +6,11 @@
 # from Code Owners" in the branch ruleset, an organisation setting, not a
 # file in this tree: until it is on, the list below is advisory. Here the
 # sensitive paths are the licence map and the licence texts — a change to
-# either relicenses every file it covers — and the workflows.
+# either relicenses every file it covers — and the workflows. The fleet
+# machine's programs too: a merge under open-worlds/machine/ runs as root on
+# every machine by itself (recipe.py), so it needs an Oracle's approval.
 /LICENSE* @PabloFMM
+/open-worlds/machine/ @PabloFMM
 /LICENSES/ @PabloFMM
 /REUSE.toml @PabloFMM
 /.github/ @PabloFMM
