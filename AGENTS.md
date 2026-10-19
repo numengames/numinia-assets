@@ -19,8 +19,11 @@ not another constitution or canonical catalogue.
   client name ever goes here. `open-worlds/index.json` lists the orders
   still here and must match the folder (a test enforces it).
   `open-worlds/machine/` is the recipe (AGPL): the bootstrap installs the
-  programs, so a merge here changes no machine until its bootstrap is run
-  again. The machine holds no GitHub credential and makes each world's
+  programs once, and from then on each machine follows this folder on
+  `main` by itself (`recipe.py`: a canary at once, the others after a rest
+  of 2 h, only commits GitHub signed, back and halt on a failed health
+  check), so **a merge that touches `open-worlds/machine/` reaches every
+  machine**. The machine holds no GitHub credential and makes each world's
   keys itself; the only secret an Oracle sees is the machine's admin code,
   shown to a signed Oracle and never written here.
 - Local verification: `python -m reuse lint` and

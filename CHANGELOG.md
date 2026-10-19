@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `open-worlds/machine/recipe.py` and `fleet-recipe.timer` (every ten minutes):
+  each machine keeps its own programs on `main` by itself. A merge that touches
+  `open-worlds/machine/` is installed by the canary (`/etc/fleet/recipe-canary`)
+  at once and by the others after a 2 h rest (`/etc/fleet/recipe-soak`); only a
+  commit signed by GitHub's web-flow key (pinned, checked with `gpgv`) is taken;
+  the installed programs are copied first, the commit's own `bootstrap.sh` runs
+  with the alias alone, and a failed health check puts the copy back and halts
+  on that recipe. `/etc/fleet/recipe-pin` (`off` or a commit) freezes it. The
+  door shows it (`/fleet/v1/machine` → `recipeUpdate`). `bootstrap.sh` installs
+  it, adds `gpgv`, and checks its timer runs.
+
 - `open-worlds/machine/reconcile.py`: every Numinia Engine world's service now
   carries numinia.com's signed world pass settings (`MOTOR_PASE_CLAVE`,
   `MOTOR_PASE_MUNDO`, and `MOTOR_PASE_ORG` when the order names an organization),

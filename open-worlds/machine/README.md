@@ -20,7 +20,10 @@ moves with them.
 | `fleetd.py` | the door: takes an Oracle's signed request and a world's zip, shows the machine's public facts, hands out copies |
 | `reconcile.py` | every minute and on each request: checks the requests again, changes the book, makes the containers match, deletes, zips copies, brings worlds back from zips |
 | `walletsig.py` | who signed a request: EIP-712 typed data, recovered to a wallet address |
-| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py` | the tests, run by the depot's `python -m unittest` |
+| `release.py` | every five minutes: the Numinia Engine worlds follow the latest published engine (canary, one world a pass, rollback, halt) |
+| `nightly.py` | each night: a copy of every world, kept 14 days |
+| `recipe.py` | every ten minutes: the machine's own programs (this folder) follow `main` (canary, rest, GitHub's signature, rollback, halt) |
+| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py`, `test_release.py`, `test_nightly.py`, `test_recipe.py` | the tests, run by the depot's `python -m unittest` |
 
 ## Bring up a machine
 
@@ -35,13 +38,16 @@ moves with them.
    it is not.
 3. Run the line the worlds room shows under the machine (LAP › Mundos): it
    carries the machine's alias, your wallet (the address you sign in to
-   numinia.com with; several Oracles go separated by commas) and the commit
-   of this repository the room was built for:
+   numinia.com with; several Oracles go separated by commas) and installs
+   `main`:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/numengames/numinia-assets/<commit>/open-worlds/machine/bootstrap.sh \
-     | sudo FLEET_REF=<commit> bash -s -- open-1 0xYourWallet
+   curl -fsSL https://raw.githubusercontent.com/numengames/numinia-assets/main/open-worlds/machine/bootstrap.sh \
+     | sudo bash -s -- open-1 0xYourWallet
    ```
+
+   Pinning a commit by hand (`FLEET_REF=<commit>`) is still accepted; see
+   below.
 
    It installs Docker (from Docker's repository on Debian, from Ubuntu's own
    archive on Ubuntu; an existing Docker is kept) and `python3-ecdsa`, adds
@@ -64,15 +70,16 @@ moves with them.
 
 The programs are copied to `/usr/local/lib/fleet/` by the bootstrap and run
 from there, never from the clone. A request changes orders, not the code
-that obeys them. To update a machine, run its line again.
+that obeys them. A machine then updates its programs by itself from `main`
+(see *The recipe follows main* below): the line is run by hand once.
 
 **One commit, pinned.** `FLEET_REF` is a whole commit (40 hex characters):
 the bootstrap fetches exactly that one, installs nothing if what it got is
 another, and writes it to `/etc/fleet/recipe`; the door says it
-(`/fleet/v1/machine` → `recipe`), so the room can tell a machine that runs
-an older recipe. A later change to `main` reaches no machine until someone
-hands out a line with its commit. Without `FLEET_REF` the bootstrap installs
-`main`'s newest commit and says so: *NOT pinned*.
+(`/fleet/v1/machine` → `recipe`, and `recipeUpdate` for the updater's
+state, which is what the room shows). Without `FLEET_REF` the bootstrap installs `main`'s newest
+commit and says so: *NOT pinned*. Either way, from then on the machine keeps
+its recipe on `main` by itself (`recipe.py`).
 
 **Where the signed release is fetched.** The bootstrap writes
 `/etc/fleet/release-url` (`https://numinia.com/fleet/release.json`) only when
@@ -341,6 +348,8 @@ minute or two, is a machine that has stopped obeying.
 | `/srv/fleet/book/` | the clone of this repository, left on the commit the machine's line named: the recipe, and the orders adopted once |
 | `/etc/fleet/alias` | this machine's alias |
 | `/etc/fleet/recipe` | the commit the machine's programs were installed from |
+| `/etc/fleet/recipe-canary`, `recipe-pin`, `recipe-soak` | optional: this machine takes a new recipe first; `off` or a commit freezes it; minutes of rest before a non-canary takes one (2 h without it) |
+| `/srv/fleet/recipe/` | the recipe updater's `state.json` (the door shows it), its partial clone (`git/`), the copies of the programs before each install (`previous/`, root's alone) and the last install's output (`install.log`, root's alone) |
 | `/etc/fleet/signers` | the Oracles' wallets this machine obeys, one per line |
 | `/etc/fleet/control-host` | the machine's address for the console, e.g. `open-1.numinia.com` |
 | `/etc/fleet/codes/<id>` | each world's admin code, as its key file gives it (`root:fleetd`, mode 640: the door shows it to a signed Oracle) |
@@ -399,7 +408,7 @@ curl https://open-1.numinia.com/fleet/v1/worlds         # what the console sees
 | a signed request, intercepted | nothing more: it is good once, for one machine and one world, for fifteen minutes | anything else |
 | a download link | that copy, for a day | the world's keys (the copy's are fresh), anything else |
 | a world's admin code | admin of that world, from any browser, until an Oracle changes it with one signature | the other worlds (each has its own), the machine, its files, the other machines |
-| a merge on this repository's `main` | nothing on any machine by itself: a machine installs only the commit its line names (`FLEET_REF`) and says which (`recipe`) | the machines, until someone hands out and runs a line with that commit |
+| a merge on this repository's `main` that touches `open-worlds/machine/` | root on every machine, by design: the canary at once, the others after the rest (2 h). Only a commit GitHub itself signed (a pull request merged on github.com, which `main`'s protection makes go through review) is installed; a commit pushed from a laptop, even by an admin, is refused | a machine frozen with `/etc/fleet/recipe-pin` (`off`); a recipe that already failed its health check there |
 | the machine's SSH password, guessed | nothing, once the line has run with a key in: the SSH door takes keys only (`/etc/ssh/sshd_config.d/00-fleet-keys-only.conf`) | the machine. Before that, `ubuntu` with a guessed password is the whole machine, and the door keeps taking guesses |
 
 Log in to the machine with an SSH key, never a password (after the first
@@ -496,3 +505,57 @@ Numinia Engine worlds follow the latest published engine by themselves; no Oracl
 - **Kept 14 days**: older zips go, but the newest copy of a world is never deleted, and a world removed from the machine keeps its copies until they age out.
 - **Low disk**: a world is copied only if at least 2 GiB stay free after its folder's size; otherwise it is skipped and logged (`journalctl -u fleet-nightly`), and nothing else is deleted to make room. One world failing does not stop the others (the service then ends failed).
 - Result of the last pass: `/srv/fleet/nightly/state.json`. Different from the copy `release.py` makes before an update (`release/preupdate/`) and from the one a download makes (`copies/`, a day).
+
+## The recipe follows main (`recipe.py`)
+
+The machine's own programs (everything in this folder, the bootstrap
+included) follow `main` of this repository by themselves; nobody runs the
+line again. `fleet-recipe.timer` runs `/usr/local/sbin/fleet-recipe` every
+ten minutes (installed by the bootstrap, never run from the clone).
+
+- **What it reads**: `main`'s newest commit, anonymously over https from
+  github.com (`git`, a partial and shallow clone in `/srv/fleet/recipe/git`:
+  commits and folders, never the content's files; no credential, the user's
+  git config ignored, a two-minute cap per call, wiped above 64 MiB), and
+  the id of its `open-worlds/machine/` folder. The same id as the installed
+  recipe's (a merge that touched only content): noted, nothing installed.
+- **Who takes it, when**: the machine with `/etc/fleet/recipe-canary` (any
+  content) at once; every other one once that folder has been `main`'s for
+  a rest, counted from when THIS machine first saw it: 2 h, or the minutes
+  in `/etc/fleet/recipe-soak`. No coordination: a recipe that breaks the
+  canary and is reverted within the rest never reaches the others, and a
+  content merge does not restart the rest.
+- **Trust**: only a commit signed by GitHub's own web-flow key (pinned in
+  `recipe.py`, checked with `gpgv`): GitHub signs what it merges on
+  github.com, never a push. With `main` protected, that is: only what a
+  reviewed pull request merged.
+- **Install**: a copy of the installed programs, commands and `fleet*`
+  units (`/srv/fleet/recipe/previous/`, the last three), then that commit's
+  `bootstrap.sh` with the alias alone and `FLEET_REF` (the Oracles' wallets,
+  the release URL, the admin code, every world's code, Caddy and the worlds
+  stay as they are; its output in `/srv/fleet/recipe/install.log`), then
+  health: `/etc/fleet/recipe` names the commit, the door answers on its
+  socket with it, the reconciler runs (cleanly, if its last run was clean),
+  the door and every fleet timer are active, and the new `fleet-recipe
+  --check` starts. It waits while a reconcile, release or nightly run is
+  going.
+- **Failure**: the copy goes back (units the new recipe added are disabled
+  and removed), and the machine **halts** on that recipe (`halted` in
+  `/srv/fleet/recipe/state.json`, with the commit and the reason) and never
+  tries that folder again; a different recipe on `main` lifts the halt (to
+  try the same one again by hand: `sudo rm /srv/fleet/recipe/state.json`). A
+  bootstrap that stopped before it changed anything (no network for `apt`)
+  is tried again on the next passes, three times, then halts too.
+- **Stop switch**: `/etc/fleet/recipe-pin` holding `off` freezes the
+  machine on what it runs (GitHub is not even asked); a whole commit holds
+  it on that commit (installed with no rest; signed by GitHub all the
+  same). Anything else in the file also freezes.
+- **The door says it**: `GET /fleet/v1/machine` → `recipeUpdate` =
+  `{installed, upToDate, mainCommit, checkedAt, target, targetWhy, restUntil,
+  canary, pin, halted, haltedCommit, haltedReason, refused, lastPass}`;
+  commits and short words only. `fleet-recipe --check` prints the same
+  switches on the machine; `journalctl -u fleet-recipe` tells each pass.
+- **If GitHub changes its web-flow key** (it did on 2024-01-16), every
+  machine refuses the next recipe (`refused`: "signed by a key that is not
+  GitHub's web-flow key") until the new key is in `recipe.py` and the line is
+  run once by hand.
