@@ -38,13 +38,16 @@ moves with them.
    it is not.
 3. Run the line the worlds room shows under the machine (LAP › Mundos): it
    carries the machine's alias, your wallet (the address you sign in to
-   numinia.com with; several Oracles go separated by commas) and the commit
-   of this repository the room was built for:
+   numinia.com with; several Oracles go separated by commas) and installs
+   `main`:
 
    ```sh
-   curl -fsSL https://raw.githubusercontent.com/numengames/numinia-assets/<commit>/open-worlds/machine/bootstrap.sh \
-     | sudo FLEET_REF=<commit> bash -s -- open-1 0xYourWallet
+   curl -fsSL https://raw.githubusercontent.com/numengames/numinia-assets/main/open-worlds/machine/bootstrap.sh \
+     | sudo bash -s -- open-1 0xYourWallet
    ```
+
+   Pinning a commit by hand (`FLEET_REF=<commit>`) is still accepted; see
+   below.
 
    It installs Docker (from Docker's repository on Debian, from Ubuntu's own
    archive on Ubuntu; an existing Docker is kept) and `python3-ecdsa`, adds
@@ -73,8 +76,8 @@ that obeys them. A machine then updates its programs by itself from `main`
 **One commit, pinned.** `FLEET_REF` is a whole commit (40 hex characters):
 the bootstrap fetches exactly that one, installs nothing if what it got is
 another, and writes it to `/etc/fleet/recipe`; the door says it
-(`/fleet/v1/machine` → `recipe`), so the room can tell a machine that runs
-an older recipe. Without `FLEET_REF` the bootstrap installs `main`'s newest
+(`/fleet/v1/machine` → `recipe`, and `recipeUpdate` for the updater's
+state, which is what the room shows). Without `FLEET_REF` the bootstrap installs `main`'s newest
 commit and says so: *NOT pinned*. Either way, from then on the machine keeps
 its recipe on `main` by itself (`recipe.py`).
 
