@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `.github/CODEOWNERS`: `open-worlds/machine/` is an Oracle's path. Since each
+  machine installs `main`'s recipe by itself, a merge there is root on every
+  machine; with the ruleset's code-owner review on, it needs @PabloFMM's ok.
+
 - `open-worlds/machine/recipe.py` and `fleet-recipe.timer` (every ten minutes):
   each machine keeps its own programs on `main` by itself. A merge that touches
   `open-worlds/machine/` is installed by the canary (`/etc/fleet/recipe-canary`)
