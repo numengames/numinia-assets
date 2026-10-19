@@ -31,7 +31,8 @@ What it does, and nothing more:
   inbox. Another zip is refused and the slot kept, so the browser can send
   it again without a new signature.
 - GET /fleet/v1/machine, /worlds, /log — public facts: the machine, the
-  commit of the recipe it installed, and whether its reconciler keeps up
+  commit of the recipe it installed (and what its recipe updater is
+  doing: `recipeUpdate`), and whether its reconciler keeps up
   (when it last ran, how it ended, how many requests wait and since when),
   whether it takes zips and up to what size, which engines it runs and
   that it takes updates, its worlds and their phase (an import shows its
@@ -253,6 +254,7 @@ class Door:
             # PinWorld (hold a world on a build, or let it follow the fleet again).
             "listens": {"pin": True},
             "release": self.release(),
+            "recipeUpdate": self.recipe_update(),
             "at": R.utc(self.clock()),
         }
 
@@ -272,6 +274,47 @@ class Door:
             "commit": commit[:40] if isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{7,40}", commit) else None,
             "halted": stop is not None,
             "haltedReason": str(stop.get("reason"))[:200] if stop and stop.get("reason") else None,
+            "lastPass": ({"at": last["at"][:32], "action": str(last.get("action"))[:40]}
+                         if isinstance(last, dict) and isinstance(last.get("at"), str) else None),
+        }
+
+    def recipe_update(self) -> dict:
+        """What the recipe updater (recipe.py) is doing: the recipe it aims at, whether it rests, stopped or is frozen.
+
+        Read from its state file; every field is None/False when it never ran. Commits and short words only.
+        """
+        raw = R.read_json(self.home / "recipe" / "state.json", {})
+        raw = raw if isinstance(raw, dict) else {}
+
+        def commit(value: object) -> str | None:
+            return value if isinstance(value, str) and R.matches(RECIPE, value) else None
+
+        def when(value: object) -> str | None:
+            return value[:32] if isinstance(value, str) and value else None
+
+        target, checked = raw.get("target"), raw.get("checked")
+        target = target if isinstance(target, dict) else {}
+        checked = checked if isinstance(checked, dict) else {}
+        halted = raw.get("halted") if isinstance(raw.get("halted"), dict) else None
+        refused = raw.get("refused") if isinstance(raw.get("refused"), dict) else None
+        last = raw.get("lastPass")
+        pin = raw.get("pin")
+        why = target.get("why")
+        return {
+            "installed": commit(raw.get("installed")),
+            "upToDate": raw["upToDate"] if isinstance(raw.get("upToDate"), bool) else None,
+            "mainCommit": commit(checked.get("commit")),
+            "checkedAt": when(checked.get("at")),
+            "target": commit(target.get("commit")),
+            "targetWhy": why if why in ("canary", "rested", "pinned", "resting") else None,
+            "restUntil": when(target.get("restUntil")),
+            "canary": raw.get("canary") is True,
+            "pin": pin if pin == "off" or commit(pin) else None,
+            "halted": halted is not None,
+            "haltedCommit": commit(halted.get("commit")) if halted else None,
+            "haltedReason": str(halted.get("reason"))[:200] if halted and halted.get("reason") else None,
+            "refused": ({"commit": commit(refused.get("commit")), "why": str(refused.get("why"))[:200]}
+                        if refused else None),
             "lastPass": ({"at": last["at"][:32], "action": str(last.get("action"))[:40]}
                          if isinstance(last, dict) and isinstance(last.get("at"), str) else None),
         }

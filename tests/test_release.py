@@ -374,7 +374,7 @@ class TestBootstrapWiring(unittest.TestCase):
     text = (MACHINE / "bootstrap.sh").read_text()
 
     def test_installed_not_run_from_the_clone(self):
-        self.assertIn("for program in reconcile.py walletsig.py fleetd.py release.py nightly.py; do", self.text)
+        self.assertIn("for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py; do", self.text)
         self.assertIn("wrapper fleet-release release.py", self.text)
         self.assertIn("ExecStart=/usr/local/sbin/fleet-release", self.text)
         self.assertNotIn("python3 $BOOK_DIR", self.text)

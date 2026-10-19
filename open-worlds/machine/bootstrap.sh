@@ -10,9 +10,12 @@
 #     | sudo FLEET_REF=<commit> bash -s -- open-1 0xYourWallet
 #
 # FLEET_REF pins the recipe: the programs are installed from exactly that
-# commit (its 40 hex characters), the one this script was fetched from, so a
-# later change to main reaches no machine until someone hands out its line.
+# commit (its 40 hex characters), the one this script was fetched from.
 # Without FLEET_REF it installs main's newest commit, and says so: NOT pinned.
+# After that the machine keeps its recipe on main by itself (recipe.py,
+# fleet-recipe.timer): a canary at once, the others after a rest, a commit
+# signed by GitHub only, back to the old programs and a halt if the new ones
+# fail. /etc/fleet/recipe-pin (`off` or a commit) freezes it.
 #
 # RELEASE_URL (optional, the same way) is where the machine fetches the signed
 # release record: https://numinia.com/fleet/release.json unless given. It is
@@ -37,7 +40,8 @@
 # that the machine obeys. Nothing here needs a GitHub credential.
 #
 # The programs are INSTALLED to /usr/local/lib/fleet from this same commit and
-# run from there, never from the clone. To update them, run the line again.
+# run from there, never from the clone. fleet-recipe.timer runs this script
+# again, with the alias alone and FLEET_REF set, when main's recipe changes.
 #
 # Re-running it is safe; every step checks before it acts.
 #
@@ -97,8 +101,9 @@ main() {
     rm -f /etc/apt/sources.list.d/docker.list
   fi
   apt-get update -q
-  # python3-ecdsa checks the Oracles' signatures (the door and the reconciler).
-  apt-get install -y -q ca-certificates curl git python3 python3-ecdsa ufw unattended-upgrades sqlite3 zip
+  # python3-ecdsa checks the Oracles' signatures (the door and the reconciler);
+  # gpgv checks GitHub's signature on a new recipe (recipe.py).
+  apt-get install -y -q ca-certificates curl git gpgv python3 python3-ecdsa ufw unattended-upgrades sqlite3 zip
 
   echo "== docker"
   if ! command -v docker >/dev/null; then
@@ -209,7 +214,7 @@ main() {
   if [[ -n "$FLEET_REF" ]]; then
     RECIPE_SAID="$RECIPE (pinned)"
   else
-    RECIPE_SAID="$RECIPE (main, NOT pinned: use the line the worlds room shows)"
+    RECIPE_SAID="$RECIPE (main, NOT pinned; from now on the machine follows main by itself)"
   fi
   echo "== recipe: $RECIPE_SAID"
 
@@ -231,15 +236,17 @@ main() {
   # A machine set up by an earlier version runs its reconciler every minute:
   # pause it while the programs change, so it never runs half-installed code
   # against a book not yet adopted. The end of this script starts it again.
+  # fleet-recipe.timer is not paused: this script may be running under it.
   systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer 2>/dev/null || true
   install -d -m 0755 "$LIB_DIR"
-  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py; do
+  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py; do
     install -m 0644 "$BOOK_DIR/open-worlds/machine/$program" "$LIB_DIR/$program"
   done
   wrapper fleet-reconcile reconcile.py
   wrapper fleetd fleetd.py
   wrapper fleet-release release.py
   wrapper fleet-nightly nightly.py
+  wrapper fleet-recipe recipe.py
   # Which commit the programs came from: the door shows it (/fleet/v1/machine
   # `recipe`), and the worlds room says when a machine runs an older one.
   mkdir -p /etc/fleet
@@ -378,6 +385,29 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+  cat > /etc/systemd/system/fleet-recipe.service <<EOF
+[Unit]
+Description=Fleet recipe updater: this machine's programs follow main of numinia-assets (canary, rest, rollback, halt)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/fleet-recipe
+TimeoutStartSec=45min
+EOF
+  cat > /etc/systemd/system/fleet-recipe.timer <<EOF
+[Unit]
+Description=Look for a new fleet recipe on main every ten minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=10min
+RandomizedDelaySec=2min
+
+[Install]
+WantedBy=timers.target
+EOF
   cat > /etc/systemd/system/fleetd.service <<EOF
 [Unit]
 Description=Fleet door: Oracles' signed requests in, public facts and copies out
@@ -418,7 +448,7 @@ EOF
   if ! /usr/local/sbin/fleet-reconcile; then
     echo "the first run did not finish; the timer tries again every minute (journalctl -u fleet-reconcile -n 20)" >&2
   fi
-  systemctl enable --now fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer
+  systemctl enable --now fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-recipe.timer
 
   ORACLES="$(grep -c '^0x' /etc/fleet/signers || true)"
   cat <<EOF
@@ -433,7 +463,7 @@ Done. This machine is "$ALIAS".
   what is running:   docker compose -f $HOME_DIR/run/docker-compose.yml ps
   the reconciler:    journalctl -u fleet-reconcile -n 20
   the door:          journalctl -u fleetd -n 20
-  update it:         run the line the worlds room shows again (the clone's copy is never executed)
+  its updates:       by itself from main (journalctl -u fleet-recipe -n 20); freeze: echo off > /etc/fleet/recipe-pin
 
 Each world has its own admin code: the worlds room shows it, and changes it, on
 that world's card; type /admin <code> in that world's chat. A world made before
@@ -445,7 +475,7 @@ EOF
   # The units this script paused or started must be running again, or no
   # request signed in the worlds room will ever be done here.
   local unit stopped=""
-  for unit in fleetd.service fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer; do
+  for unit in fleetd.service fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-recipe.timer; do
     if ! systemctl is-active --quiet "$unit"; then
       stopped="$stopped $unit"
     fi
