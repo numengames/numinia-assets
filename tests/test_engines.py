@@ -179,6 +179,26 @@ class Engines(unittest.TestCase):
                 service = json.loads(Home(self, [o], keys=["plaza"]).plan()["compose"])["services"]["plaza"]
                 self.assertEqual(service["environment"]["MOTOR_TOPE_PERSONAS"], str(cap))
 
+    def test_fit_cpus_never_asks_more_than_the_machine_has(self):
+        self.assertEqual(R.fit_cpus("3", host=2), "2")
+        self.assertEqual(R.fit_cpus("2", host=2), "2")
+        self.assertEqual(R.fit_cpus("1.5", host=2), "1.5")
+        self.assertEqual(R.fit_cpus("0.25", host=1), "0.25")
+        with mock.patch.object(R.os, "cpu_count", return_value=None):
+            self.assertEqual(R.fit_cpus("3"), "1")
+
+    def test_a_world_asking_more_cpus_than_the_machine_has_runs_at_the_machine_size(self):
+        # Docker refuses a cpus tope over the machine's count, and one refused
+        # service stops `docker compose up` for every world in the book.
+        big = {**order(), "limits": {"memory": "4g", "cpus": "3", "maxUploadMb": 100}}
+        small = {**order(wid="vic", image=HYPERFY), "limits": {"memory": "4g", "cpus": "3", "maxUploadMb": 100}}
+        with mock.patch.object(R.os, "cpu_count", return_value=2):
+            services = json.loads(Home(self, [big, small], keys=["plaza", "vic"]).plan()["compose"])["services"]
+            tool = R.engine_tool(ENGINE, "copia", {"memory": "4g", "cpus": "3"})
+        self.assertEqual(services["plaza"]["deploy"]["resources"]["limits"], {"memory": "4g", "cpus": "2"})
+        self.assertEqual(services["vic"]["deploy"]["resources"]["limits"], {"memory": "4g", "cpus": "2"})
+        self.assertEqual(tool[tool.index("--cpus") + 1], "2")
+
     def test_an_engine_world_of_no_known_talla_gets_no_motor_tope_personas(self):
         service = json.loads(Home(self, [order()], keys=["plaza"]).plan()["compose"])["services"]["plaza"]
         self.assertNotIn("MOTOR_TOPE_PERSONAS", service["environment"])
