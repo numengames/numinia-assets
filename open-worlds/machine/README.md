@@ -22,8 +22,9 @@ moves with them.
 | `walletsig.py` | who signed a request: EIP-712 typed data, recovered to a wallet address |
 | `release.py` | every five minutes: the Numinia Engine worlds follow the latest published engine (canary, one world a pass, rollback, halt) |
 | `nightly.py` | each night: a copy of every world, kept 14 days |
+| `condiciones.py` | by hand: turns a world's conditions-of-entry door on or off (`fleet-condiciones <world> on\|off\|status\|restart`) |
 | `recipe.py` | every ten minutes: the machine's own programs (this folder) follow `main` (canary, rest, GitHub's signature, rollback, halt) |
-| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py`, `test_release.py`, `test_nightly.py`, `test_recipe.py` | the tests, run by the depot's `python -m unittest` |
+| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py`, `test_release.py`, `test_nightly.py`, `test_recipe.py`, `test_condiciones.py` | the tests, run by the depot's `python -m unittest` |
 
 ## Bring up a machine
 
@@ -505,6 +506,78 @@ Numinia Engine worlds follow the latest published engine by themselves; no Oracl
 - **Kept 14 days**: older zips go, but the newest copy of a world is never deleted, and a world removed from the machine keeps its copies until they age out.
 - **Low disk**: a world is copied only if at least 2 GiB stay free after its folder's size; otherwise it is skipped and logged (`journalctl -u fleet-nightly`), and nothing else is deleted to make room. One world failing does not stop the others (the service then ends failed).
 - Result of the last pass: `/srv/fleet/nightly/state.json`. Different from the copy `release.py` makes before an update (`release/preupdate/`) and from the one a download makes (`copies/`, a day).
+
+## The conditions door, by hand (`condiciones.py`)
+
+A Numinia Engine world can ask every visitor to accept its conditions of entry
+before they move, speak or build (the engine's *puerta*). The door is **off**
+by default and is read **once, when the world starts**: it is on when the
+world's `aventura/condiciones.json` says `"puerta": true`, or when its container
+has `MOTOR_CONDICIONES_PUERTA=si` (which wins over the file). `fleet-condiciones`
+(`/usr/local/sbin/fleet-condiciones`, installed by the bootstrap and kept by the
+recipe updater like the other commands; never run from the clone) puts that file
+in, takes it out and says where a world stands. It needs `sudo`: the folder is
+the engine user's (10001).
+
+It works in two steps on purpose. **`on` and `off` only change a file** (the
+world keeps running as it was, nobody notices); **`restart` is the step that cuts
+service**, for that one container only, and it waits for `healthy` and for the
+engine's own log line to say which state the door started in.
+
+```sh
+sudo fleet-condiciones alchemiststower status                  # read only: file, container, last [condiciones] log line
+sudo fleet-condiciones alchemiststower on --dry-run            # the plan; it does read the source
+sudo fleet-condiciones alchemiststower on                      # step 1: place the file (nothing restarts)
+sudo fleet-condiciones alchemiststower status                  # look: file there, puerta true; the running world still OFF
+sudo fleet-condiciones alchemiststower restart                 # step 2: docker restart run-alchemiststower-1, checked
+sudo fleet-condiciones alchemiststower off                     # undo, step 1: put the file back as it was
+sudo fleet-condiciones alchemiststower restart                 # undo, step 2
+```
+
+Expected output of `on` (after it, the file is in place and the world has not changed):
+
+```text
+source: https://raw.githubusercontent.com/numengames/numinia-engine/1b04bd1d…/aventuras/condiciones-prueba/condiciones.json — valid, puerta true, casa 1.0 (6) → comunidad 1.0 (5), sha256 c7facdd23c65…
+write /srv/fleet/data/alchemiststower/aventura/condiciones.json (there is no condiciones.json now)
+write /srv/fleet/data/alchemiststower/aventura/condiciones.json.puesta: there was none before
+check: /srv/fleet/data/alchemiststower/aventura/condiciones.json is in place and says "puerta": true (casa 1.0 (6) → comunidad 1.0 (5)).
+=> The file is in place, but the running world has NOT changed: it reads it only when it starts. Check it with `sudo fleet-condiciones alchemiststower status`, and when you are ready to cut service for this one world: `sudo fleet-condiciones alchemiststower restart`.
+```
+
+Expected output of `restart` (the last line is the sentence; the exit code is 0 only when it is true):
+
+```text
+this will restart ONE container, run-alchemiststower-1 (docker restart; never the compose file); its visitors are disconnected for a moment.
+after it the door should be ON: the file says "puerta": true.
+log: [condiciones] puerta ENCENDIDA: nadie se mueve, habla ni construye hasta aceptar las normas obligatorias
+log: [condiciones] del mundo: casa 1.0 (6) → comunidad 1.0 (5)
+=> Done: run-alchemiststower-1 restarted, is healthy, and its door is ON (the file says "puerta": true).
+```
+
+What it keeps to:
+
+- **Only a world that exists here.** `<world>` must be a folder of `/srv/fleet/data/`, a service of the same name in the generated `/srv/fleet/run/docker-compose.yml` running the Numinia Engine; anything else is refused (exit 3) before a file is touched. The compose file is read, never written, and **no key file is ever printed** (`/srv/fleet/env/<world>.env` is read only to see whether it sets `MOTOR_CONDICIONES_PUERTA`, and only that answer is shown).
+- **The source is checked before it is placed.** The default is the engine's test file at one pinned commit (`ENGINE_COMMIT` in `condiciones.py`) and its SHA-256; its texts are placeholders, not for real visitors. `--source /absolute/path.json` or `--source https://…` takes another one. It must parse, be a `condiciones@1` document with layers, and say `"puerta": true`; a failed download, bad JSON or a file that would not turn the door on stops the run with the world untouched (exit 4).
+- **Nothing the world had is lost.** An existing `condiciones.json` is copied to `condiciones.json.antes` first and `condiciones.json.puesta` notes what was placed; `off` puts the original back (the `.antes` copy stays), and deletes the file only if there was none before. A file edited meanwhile is kept aside (`.antes-<time>`, `.quitado-<time>`), never overwritten. A file nobody recorded as placed here and with no `.antes` is left alone unless `off --force`, which moves it aside, not deletes it.
+- **A world can plant links in its own folder**, so a link where `aventura/` or one of these files should be is refused (exit 5); files are written under a new name and moved into place whole, owned by 10001. A world whose `aventura/` does not exist yet (never started) is refused too: making it could stop the engine from seeding its default adventure.
+- **`status` only reads**: the file, `puerta` in it, the container's state and health, the last `[condiciones]` lines of its log, and whether they agree. Exit 0 = the running world matches the file; 7 = it does not (restart pending, unhealthy, no door line in the log).
+- **`--dry-run`** prints the plan (`on`, `off`, `restart`) and changes nothing.
+- Messages are in English like the machine's other programs; the engine's own log lines stay in Spanish.
+
+| Exit | Means |
+|---|---|
+| 0 | done / consistent |
+| 1 | not root, or an unexpected error on disk |
+| 2 | wrong usage |
+| 3 | not a world of this machine (or not a Numinia Engine world, or no container) |
+| 4 | the source is unusable (download, JSON, not asking for the door) |
+| 5 | the world's files are not as expected (no `aventura/`, a link, nothing to restore from) |
+| 6 | `docker restart` failed |
+| 7 | the world is not (yet) as the file says: unhealthy, no door line, or started in the other state |
+
+The file lives in the world's own folder, so it survives a restart, an engine
+update (`release.py`) and a recreated container. It is not part of the world's
+order, so it is not rebuilt if the world is deleted and made again.
 
 ## The recipe follows main (`recipe.py`)
 

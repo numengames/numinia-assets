@@ -239,7 +239,7 @@ main() {
   # fleet-recipe.timer is not paused: this script may be running under it.
   systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer 2>/dev/null || true
   install -d -m 0755 "$LIB_DIR"
-  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py; do
+  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py condiciones.py; do
     install -m 0644 "$BOOK_DIR/open-worlds/machine/$program" "$LIB_DIR/$program"
   done
   wrapper fleet-reconcile reconcile.py
@@ -247,6 +247,7 @@ main() {
   wrapper fleet-release release.py
   wrapper fleet-nightly nightly.py
   wrapper fleet-recipe recipe.py
+  wrapper fleet-condiciones condiciones.py
   # Which commit the programs came from: the door shows it (/fleet/v1/machine
   # `recipe`), and the worlds room says when a machine runs an older one.
   mkdir -p /etc/fleet
