@@ -239,6 +239,20 @@ TALLAS = (
 )
 
 
+def fit_cpus(cpus: str, host: int | None = None) -> str:
+    """An order's cpus tope as Docker will take it on this machine: never more than the machine has.
+
+    Docker refuses a container whose cpus tope is over the machine's own count
+    ("range of CPUs is from 0.01 to 2.00"), and one refused service stops
+    `docker compose up` for every world in the book: no world starts, stops,
+    updates or is deleted until that order changes. So a tope larger than the
+    machine runs at the machine's size, and the order itself keeps what was
+    asked (a bigger machine would give it all).
+    """
+    host = (os.cpu_count() or 1) if host is None else host
+    return str(host) if float(cpus) > host else cpus
+
+
 def people_cap(limits: dict) -> int | None:
     """The people cap an order's talla (its memory and cpus tope) sets; None for a talla not in TALLAS yet."""
     for memory, cpus, cap in TALLAS:
@@ -578,7 +592,7 @@ def compose_dict(running: list[dict], home: Path) -> dict:
             "env_file": f"{home}/env/{wid}.env",
             "environment": engine_environment(f"https://{domain}", f"wss://{domain}", limits["maxUploadMb"]),
             "volumes": [f"{home}/data/{wid}:/app/world"],
-            "deploy": {"resources": {"limits": {"memory": limits["memory"], "cpus": limits["cpus"]}}},
+            "deploy": {"resources": {"limits": {"memory": limits["memory"], "cpus": fit_cpus(limits["cpus"])}}},
         }
     return {"services": services}
 
@@ -615,7 +629,7 @@ def engine_service(o: dict, home: Path) -> dict:
         },
         "volumes": [f"{home}/data/{wid}:{ENGINE_FOLDER}"],
         "stop_grace_period": ENGINE_STOP_GRACE,
-        "deploy": {"resources": {"limits": {"memory": limits["memory"], "cpus": limits["cpus"]}}},
+        "deploy": {"resources": {"limits": {"memory": limits["memory"], "cpus": fit_cpus(limits["cpus"])}}},
     }
 
 
@@ -1771,7 +1785,7 @@ def engine_tool(image: str, tool: str, limits: dict, mount: str | None = None, s
     if not matches(MEMORY, limits.get("memory")) or not matches(CPUS, limits.get("cpus")):
         raise ValueError("limits are not plain")
     cmd = ["docker", "run", "--rm", "--network", "none", "--user", ENGINE_USER, "--cap-drop", "ALL",
-           "--security-opt", "no-new-privileges", "--memory", limits["memory"], "--cpus", limits["cpus"]]
+           "--security-opt", "no-new-privileges", "--memory", limits["memory"], "--cpus", fit_cpus(limits["cpus"])]
     if stdin:
         cmd.append("-i")
     if mount is not None:
