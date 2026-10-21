@@ -33,7 +33,7 @@ C = load("condiciones")
 
 ENGINE = "ghcr.io/numengames/numinia-engine@sha256:" + "a" * 64
 HYPERFY = "ghcr.io/numengames/numinia-hyperfy2:sha-abc"
-SECRET = "s3cr3t-jwt-value-must-never-be-printed"
+CANARY = "canary-value-must-never-be-printed"
 T0 = 1_800_000_000.0
 
 ON_DOC = {
@@ -126,7 +126,7 @@ class Base(unittest.TestCase):
         self.aventura.mkdir(parents=True)
         (self.home / "run").mkdir()
         (self.home / "env").mkdir()
-        (self.home / "env" / f"{self.wid}.env").write_text(f"JWT_SECRET={SECRET}\nADMIN_CODE=abcd1234\n")
+        (self.home / "env" / f"{self.wid}.env").write_text(f"JWT_SECRET={CANARY}\nADMIN_CODE=abcd1234\n")
         self.services = {"caddy": {"image": "caddy:2"}, self.wid: {"image": ENGINE, "environment": {"MOTOR_PASE_MUNDO": self.wid}}}
         self.write_compose()
         self.docker = FakeDocker(self.home)
@@ -518,7 +518,7 @@ class Status(Base):
         self.assertIn("after it the door should be OFF", self.go(self.wid, "restart", "--dry-run")[1])
 
     def test_the_key_file_can_set_it_too_and_off_warns_when_it_would_still_be_on(self):
-        (self.home / "env" / f"{self.wid}.env").write_text(f"JWT_SECRET={SECRET}\nexport MOTOR_CONDICIONES_PUERTA = \"si\"\n")
+        (self.home / "env" / f"{self.wid}.env").write_text(f"JWT_SECRET={CANARY}\nexport MOTOR_CONDICIONES_PUERTA = \"si\"\n")
         self.assertIn("= si (wins over the file)", self.go(self.wid, "status")[1])
         code, said = self.go(self.wid, "off")
         self.assertEqual(code, 0)
@@ -617,10 +617,10 @@ class Secrets(Base):
     def test_the_key_file_is_never_printed(self):
         for argv in (("on", "--source", str(self.source)), ("status",), ("restart", "--dry-run"), ("restart",), ("off",), ("off", "--dry-run")):
             code, said = self.go(self.wid, *argv)
-            self.assertNotIn(SECRET, said)
+            self.assertNotIn(CANARY, said)
             self.assertNotIn("abcd1234", said)
             self.assertNotIn("JWT_SECRET", said)
-        self.assertNotIn(SECRET, json.dumps(self.docker.calls))
+        self.assertNotIn(CANARY, json.dumps(self.docker.calls))
 
 
 class Installed(unittest.TestCase):
