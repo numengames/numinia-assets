@@ -269,6 +269,7 @@ ADMIN_CODE = re.compile(r"[A-Za-z0-9_-]{8,64}")
 ADMIN_CODE_LINE = re.compile(r"[ \t]*(?:export[ \t]+)?ADMIN_CODE[ \t]*(?:=.*)?")
 JWT = re.compile(r"[0-9a-f]{64}")
 NONCE = re.compile(r"[0-9a-f]{32}")  # a request's number: 128 random bits, chosen by the browser
+NONCE_ZIP = re.compile(r"[0-9a-f]{32}\.zip")  # staging/<nonce>.zip: the zip a version's duplicate is making
 COPY_ID = re.compile(r"[0-9a-f]{32}")  # a copy's number: 128 random bits, chosen by the door
 ADDRESS = re.compile(r"0x[0-9a-f]{40}")
 SHA256 = re.compile(r"[0-9a-f]{64}")  # a zip's fingerprint, as the browser computed and the Oracle signed it
@@ -291,7 +292,7 @@ FIELD_RULES = {
 }
 # The requests about one of a world's versions, and the one that brings a zip in as a version.
 VERSION_REQUESTS = ("DuplicateVersion", "PublishVersion", "DeleteVersion", "DownloadVersion")
-NOT_YET = VERSION_REQUESTS + ("ImportVersion",)  # all but DeleteVersion are refused until their own stories land
+NOT_YET = VERSION_REQUESTS + ("ImportVersion",)  # all but DeleteVersion and DuplicateVersion are refused until their own stories land
 
 
 def matches(pattern: re.Pattern[str], value: object) -> bool:
@@ -1317,6 +1318,8 @@ def answer(home: Path, entry: dict, state: str, rule: str | None = None, now: fl
               "rule": rule, "at": utc(now)}
     if entry.get("version") is not None:
         result["version"] = entry["version"]
+    if entry.get("made") is not None:
+        result["made"] = entry["made"]  # a DuplicateVersion's new version: the slot that appeared
     if detail is not None:
         result["entry"] = detail
     write_json(home / "requests" / f"{entry['nonce']}.json", result)
@@ -1361,7 +1364,9 @@ def take_requests(
     has started its new build (finish_updates). A delete waits in
     run/purge.json until its container is gone; a download waits in
     run/copy-queue.json. A DeleteVersion removes one unpublished version at
-    once (versions.delete_version); the other requests about versions are
+    once (versions.delete_version); a DuplicateVersion copies one into a new
+    version before the next request (versions.duplicate_version; its result
+    names the new version as `made`); the other requests about versions are
     refused as `not-yet` until their own code lands. Returns the entries
     taken, for the summary.
     """
@@ -1398,6 +1403,9 @@ def take_requests(
             elif entry["type"] == "DeleteVersion":
                 import versions  # here, not at the top: versions imports this file
                 rule = versions.delete_version(home, orders, entry, message)
+            elif entry["type"] == "DuplicateVersion":
+                import versions  # here, not at the top: versions imports this file
+                rule = versions.duplicate_version(home, orders, entry, message, now)
             elif entry["type"] in NOT_YET:
                 rule = "not-yet"  # signed and well formed, but this machine cannot do it yet
             else:
@@ -2025,6 +2033,8 @@ def clear_imports(home: Path, orders: Path, now: float) -> None:
     for path in sorted(staging.iterdir()) if staging.is_dir() else []:
         if matches(NONCE, path.name) and path.is_dir() and not path.is_symlink():
             shutil.rmtree(path, ignore_errors=True)
+        elif matches(NONCE_ZIP, path.name) and (path.is_symlink() or path.is_file()):
+            path.unlink(missing_ok=True)  # the zip a Numinia Engine duplicate was making (versions.copy_engine)
 
 
 def prune_uploads(home: Path, now: float | None = None) -> list[str]:

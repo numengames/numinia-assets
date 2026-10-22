@@ -34,10 +34,15 @@ so neither waits for the other at load.
 
 from __future__ import annotations
 
+import errno
 import os
 import re
 import shutil
+import sqlite3
 import stat
+import subprocess
+import time
+import zipfile
 from pathlib import Path
 
 import reconcile as R
@@ -48,6 +53,7 @@ VERSION = R.VERSION
 ORIGIN = re.compile(r"created|zip|copy:v[1-9][0-9]{0,3}")
 META_MAX = 64 * 1024  # a world's versions file is read whole only below this
 FIRST = "v1"  # the one version every world has
+NOT_WRITTEN = "the version could not be written here"  # a duplicate that failed for no rule of its own
 
 
 def number(vid: str) -> int:
@@ -285,6 +291,166 @@ def delete_version(home: Path, orders: Path, entry: dict, message: dict) -> str 
     except OSError:
         return "versions-unwritable"
     return None
+
+
+def copy_files(source: Path, target: Path) -> None:
+    """A Hyperfy world's files, into an empty folder: the database by SQLite's backup, the rest linked or copied.
+
+    Only what an import keeps (R.WORLD_FILES, R.WORLD_FOLDERS): `db.sqlite`
+    goes through the online backup (the world may be writing to it), so the
+    `-wal`, `-shm` and `-journal` files are never copied; `storage.json` is
+    copied; every regular file under `assets/` and `collections/` is
+    hardlinked (those are named by their hash and never rewritten), or
+    copied where the disk will not link (`EXDEV`, `EPERM`, `EMLINK`). A
+    link is never followed and never copied, whatever it points at.
+    """
+    database = source / R.ENGINE_DB
+    if database.is_symlink() or not database.is_file():
+        raise OSError("the world has no database here")
+    R.snapshot_sqlite(database, target / R.ENGINE_DB)
+    for name in sorted(R.WORLD_FILES - {R.ENGINE_DB}):
+        plain = source / name
+        if plain.is_file() and not plain.is_symlink():
+            shutil.copy2(plain, target / name, follow_symlinks=False)
+    for folder in (name.rstrip("/") for name in R.WORLD_FOLDERS):
+        top = source / folder
+        if top.is_symlink() or not top.is_dir():
+            continue
+        for here, dirs, names in os.walk(top, followlinks=False):
+            dirs[:] = sorted(name for name in dirs if not os.path.islink(os.path.join(here, name)))
+            where = target / Path(here).relative_to(source)
+            where.mkdir(parents=True, exist_ok=True)
+            for name in sorted(names):
+                found = os.path.join(here, name)
+                if not stat.S_ISREG(os.lstat(found).st_mode):
+                    continue
+                try:
+                    os.link(found, where / name, follow_symlinks=False)
+                except OSError as error:
+                    if error.errno not in (errno.EXDEV, errno.EPERM, errno.EMLINK):
+                        raise
+                    shutil.copy2(found, where / name, follow_symlinks=False)
+
+
+def copy_engine(source: Path, target: Path, order: dict, zipped: Path) -> None:
+    """A Numinia Engine world's folder copied by the engine itself: `copia` into a zip, then `comprobar` + `importar`.
+
+    The world's own image runs `copia` on the SOURCE folder, read-only
+    (exactly as a download does, R.build_engine_copy); its zip comes out on
+    stdout into `zipped`, a file only this run can open. The same zip is
+    then handed back through the import's own path (R.engine_import) into
+    the empty `target`. The engine writes each snapshot whole, so the
+    source may be live. Raises R.Refused (`engine-refused`, or the plain
+    rule the tools could not run) or OSError.
+    """
+    fd = os.open(zipped, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w+b") as out:
+        try:
+            done = R.run_tool(R.engine_tool(order["image"], "copia", order["limits"], f"{source}:{R.ENGINE_FOLDER}:ro"),
+                              stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.PIPE, timeout=R.TOOL_SECONDS)
+        except subprocess.TimeoutExpired:
+            raise R.Refused("engine-refused", f"copia: it took longer than {R.TOOL_SECONDS} s") from None
+        out.flush()
+        if done.returncode == 1:
+            raise R.Refused("engine-refused", R.tool_line(done))
+        if done.returncode != 0:
+            raise R.Refused("the engine's tools could not run here")
+        if not zipfile.is_zipfile(out):
+            raise R.Refused("engine-refused", "copia: its copy is not a zip")
+        R.engine_import(out, target, order["image"], order["limits"])
+
+
+def duplicate_version(home: Path, orders: Path, entry: dict, message: dict, now: float | None = None,
+                      sleep=None) -> str | None:
+    """A signed DuplicateVersion: copy one version into a new one, unpublished; the broken rule, or None when it is there.
+
+    Rules, in this order: `missing` (no order for the world),
+    `versions-unreadable` (its metadata cannot be trusted), `no-version`
+    (the world has no such version), `full` (it already keeps
+    MAX_VERSIONS, or has used every name), `no-room` (the disk must keep
+    R.RESERVE free after the source's size; twice that for a Numinia
+    Engine world, whose zip and folder both exist for a while; also when
+    the disk fills mid-way), `engine-refused` (the engine's own tools said
+    no). Anything else that fails is the plain NOT_WRITTEN.
+
+    The copy is made in a root-only `staging/<nonce>/` (a Numinia Engine
+    world's zip beside it, `staging/<nonce>.zip`) and only at the end
+    renamed to `versions/<id>/<vid>`; the metadata is written last, with the
+    new version, so a version that is listed always has its whole data
+    and a failure names nothing a version. The new name is `next`, never
+    given before; it goes in `entry["made"]` for the request's result. A
+    world that had no versions file gets one, its implicit v1 kept. The
+    world may be running: a Hyperfy world saves on a timer, so a running
+    published source is given its save pause first (`sleep`, time.sleep
+    unless a test puts another in its place). No file of the source is
+    changed or removed (SQLite may fold a leftover `-wal` into its database
+    when it opens it, as a download's copy does).
+    """
+    wid, source = entry["world"], message["version"]
+    order = R.read_order(orders / f"{wid}.json")
+    if order is None:
+        return "missing"
+    meta = read_versions(home, order)
+    if meta is None:
+        return "versions-unreadable"
+    if source not in meta["versions"]:
+        return "no-version"
+    if len(meta["versions"]) >= MAX_VERSIONS:
+        return "full"
+    vid = new_vid(meta)
+    if vid is None:
+        return "full"
+    engine = R.runs_engine(order)
+    staging = home / "staging"
+    stage = staging / entry["nonce"]
+    zipped = staging / f"{entry['nonce']}.zip"
+    try:
+        here = folder_of(home, wid, meta, source)
+        if here.is_symlink() or not here.is_dir():
+            return NOT_WRITTEN
+        if not staging.is_dir():
+            staging.mkdir(mode=0o700, parents=True)  # bootstrap.sh makes it; made here the same way if missing
+        size = measure(here)
+        if shutil.disk_usage(staging).free < size * (2 if engine else 1) + R.RESERVE:
+            return "no-room"
+        if not engine and source == meta["published"] and order.get("state") == "running":
+            (time.sleep if sleep is None else sleep)(R.save_pause(R.SAVE_INTERVAL))  # the engine saves on a timer; let the next save land
+        os.mkdir(stage, 0o700)
+        if engine:
+            copy_engine(here, stage, order, zipped)
+        else:
+            copy_files(here, stage)
+        os.chmod(stage, 0o700 if engine else 0o755)  # as settle_import leaves a world's folder
+        mine = ensure_dirs(home, wid)
+        if os.path.lexists(mine / vid) and not remove_folder(home, wid, vid):
+            return NOT_WRITTEN  # an unlisted leftover under the new name, and it would not go
+        os.rename(stage, mine / vid)
+        fresh = not os.path.lexists(meta_path(home, wid))
+        if fresh and source == FIRST:
+            meta["versions"][FIRST]["bytes"] = size  # the implicit v1 is written now; its size is known
+        meta["versions"][vid] = {
+            "createdAt": R.utc(now),
+            "createdBy": entry["by"],
+            "origin": f"copy:{source}",
+            "bytes": measure(mine / vid),
+        }
+        try:
+            write_versions(home, wid, meta)
+        except (OSError, ValueError):
+            remove_folder(home, wid, vid)  # listed nowhere, so it goes
+            return "versions-unwritable"
+        entry["made"] = vid
+        return None
+    except R.Refused as refused:
+        return refused.rule
+    except (OSError, ValueError, sqlite3.Error) as error:
+        full = isinstance(error, OSError) and error.errno == errno.ENOSPC
+        return "no-room" if full else NOT_WRITTEN
+    finally:
+        if stage.is_dir() and not stage.is_symlink():
+            shutil.rmtree(stage, ignore_errors=True)
+        if zipped.is_symlink() or zipped.is_file():
+            zipped.unlink(missing_ok=True)
 
 
 def purge_versions(home: Path, wid: str) -> None:
