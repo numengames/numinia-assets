@@ -9,7 +9,7 @@ import reconcile as R, fleetd as F
 
 root = Path(os.environ["DOOR_ROOT"]); port = os.environ["DOOR_PORT"]
 home = root / "srv"; etc = root / "etc"; sock = root / "fleetd.sock"
-for d in ("inbox", "requests", "uploads", "orders", "run", "staging", "data", "env"):
+for d in ("inbox", "requests", "uploads", "orders", "run", "staging", "data", "env", "copies", "versions"):
     (home / d).mkdir(parents=True, exist_ok=True)
 (etc / "codes").mkdir(parents=True, exist_ok=True); (root / "state").mkdir(exist_ok=True)
 if not (etc / "signers").exists(): (etc / "signers").write_text("")
