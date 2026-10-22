@@ -454,6 +454,185 @@ def duplicate_version(home: Path, orders: Path, entry: dict, message: dict, now:
             zipped.unlink(missing_ok=True)
 
 
+def copy_source(home: Path, order: dict, vid: str) -> tuple[str | None, Path | None]:
+    """The folder a copy of one version is made from: (None, the folder), or (the rule it breaks, None).
+
+    Rules: `versions-unreadable` (the world's metadata cannot be trusted),
+    `no-version` (the world has no such version), `not-a-folder` (the
+    version is listed but its folder is not a real one). The published
+    version is the world's own folder; any other waits in versions/<id>/.
+    """
+    meta = read_versions(home, order)
+    if meta is None:
+        return "versions-unreadable", None
+    if vid not in meta["versions"]:
+        return "no-version", None
+    here = folder_of(home, order["id"], meta, vid)
+    if here.is_symlink() or not here.is_dir():
+        return "not-a-folder", None
+    return None, here
+
+
+def download_version(home: Path, orders: Path, entry: dict, message: dict) -> str | None:
+    """A signed DownloadVersion: check it can be made; the broken rule, or None when it may be queued.
+
+    Rules, in this order: `missing` (no order for the world),
+    `versions-unreadable`, `no-version`, `not-a-folder` (copy_source). Nothing
+    is written: take_requests queues the copy as it queues a DownloadWorld,
+    its job naming the version, and make_copies builds it from the version's
+    own folder (the existing builders, so the engines' rules stay theirs).
+    The save wait is the published version's alone, of a running Hyperfy
+    world (R.copies_wait): an unpublished folder is written by nobody. The
+    folder is looked for again when the copy is built, in case the world
+    was switched or the version deleted in between.
+    """
+    order = R.read_order(orders / f"{entry['world']}.json")
+    if order is None:
+        return "missing"
+    return copy_source(home, order, message["version"])[0]
+
+
+def import_replace(meta: dict, replace: str) -> str | None:
+    """The rule an ImportVersion's `replace` breaks for a world with these versions; None when it holds.
+
+    A world with room keeps `replace` empty (`no-version` when it names
+    one). A world with every place used must name the unpublished version
+    to take the place of: empty is `full`, the published one `published`,
+    one it does not have `no-version`.
+    """
+    if len(meta["versions"]) < MAX_VERSIONS:
+        return None if replace == "" else "no-version"
+    if replace == "":
+        return "full"
+    if replace == meta["published"]:
+        return "published"
+    return None if replace in meta["versions"] else "no-version"
+
+
+def import_version(home: Path, orders: Path, entry: dict, message: dict, raw: dict,
+                   now: float | None = None) -> tuple[str | None, str | None]:
+    """A signed ImportVersion: a zip becomes a new, unpublished version of an existing world; (rule, entry) or (None, None).
+
+    Rules, in this order: `missing` (no order for the world; the zip goes
+    with the request), `versions-unreadable`, the `replace` rules
+    (import_replace), `full` (every name used), `unknown-engine`,
+    `zip-too-big`, `fingerprint` (the zip is not the one the Oracle signed),
+    then the import's own, those of an ImportWorld for the world's OWN
+    engine (R.stage_import): the zip's rules, `engine-refused`, `no-room`.
+    A zip made for the other engine fails that engine's rules. Anything
+    else that fails is the plain NOT_WRITTEN.
+
+    The upload is unpacked into a root-only `staging/<nonce>/` and checked
+    whole; only then is it renamed to `versions/<id>/<new vid>`, and the
+    metadata written last, with the new version (`origin: zip`) and without
+    the one it replaced. The replaced version's folder goes after that, so
+    whatever fails before the metadata is written leaves the old version and
+    the metadata as they were, and a version that is listed always has its
+    data. The new name is `next`, never given before; it is `entry["made"]`,
+    and the replaced one (or "") is `entry["version"]`, for the request's
+    result. A world that had no versions file gets one, its implicit v1
+    kept. The world keeps running the whole time: its plan, its folder and
+    its container are not touched. run/import.json names the world while
+    this runs, with `type: "ImportVersion"` and the vid it will make, for
+    the door to show and for clear_imports to judge a run that died.
+    """
+    wid, nonce, replace = entry["world"], entry["nonce"], message["replace"]
+    entry["version"] = replace
+    order = R.read_order(orders / f"{wid}.json")
+    if order is None:
+        return "missing", None
+    meta = read_versions(home, order)
+    if meta is None:
+        return "versions-unreadable", None
+    rule = import_replace(meta, replace)
+    vid = new_vid(meta) if rule is None else None
+    if rule is None and vid is None:
+        rule = "full"
+    if rule is None and R.engine_of(order.get("image")) is None:
+        rule = "unknown-engine"
+    if rule is None and message["zipBytes"] > R.ZIP_MAX:
+        rule = "zip-too-big"
+    if rule is None and raw.get("zip") != f"{nonce}.zip":
+        rule = "fingerprint"
+    if rule is not None:
+        return rule, None
+    engine = R.runs_engine(order)
+    staging = home / "staging"
+    stage = staging / nonce
+    placed = committed = False
+    try:
+        if not staging.is_dir():
+            staging.mkdir(mode=0o700, parents=True)  # bootstrap.sh makes it; made here the same way if missing
+        R.write_json(home / "run" / R.IMPORTING,
+                     {wid: {"nonce": nonce, "by": entry["by"], "type": "ImportVersion", "made": vid,
+                            "message": message}})
+        R.answer(home, entry, "working", None, now)
+        R.stage_import(home, nonce, message, order["image"], order["limits"], stage)
+        os.chmod(stage, 0o700 if engine else 0o755)  # as settle_import leaves a world's folder
+        mine = ensure_dirs(home, wid)
+        if os.path.lexists(mine / vid) and not remove_folder(home, wid, vid):
+            return NOT_WRITTEN, None  # an unlisted leftover under the new name, and it would not go
+        os.rename(stage, mine / vid)
+        placed = True
+        if not os.path.lexists(meta_path(home, wid)):
+            meta["versions"][FIRST]["bytes"] = measure(home / "data" / wid)  # the implicit v1 is written now
+        meta["versions"].pop(replace, None)
+        meta["versions"][vid] = {
+            "createdAt": R.utc(now),
+            "createdBy": entry["by"],
+            "origin": "zip",
+            "bytes": measure(mine / vid),
+        }
+        try:
+            write_versions(home, wid, meta)
+        except (OSError, ValueError):
+            return "versions-unwritable", None
+        committed = True
+        entry["made"] = vid
+        if replace and not remove_folder(home, wid, replace):
+            print(f"{wid}: the replaced version's folder could not be removed; it is no longer listed",
+                  file=sys.stderr)
+        return None, None
+    except R.Refused as refused:
+        return refused.rule, refused.entry
+    except (OSError, ValueError, sqlite3.Error) as error:
+        full = isinstance(error, OSError) and error.errno == errno.ENOSPC
+        return ("no-room" if full else NOT_WRITTEN), None
+    finally:
+        if stage.is_dir() and not stage.is_symlink():
+            shutil.rmtree(stage, ignore_errors=True)
+        if placed and not committed:
+            remove_folder(home, wid, vid)  # listed nowhere, so it goes
+
+
+def clear_import(home: Path, orders: Path, entry: dict, job: dict, now: float | None = None) -> None:
+    """Answer an ImportVersion whose run died (R.clear_imports): done if its version is listed, failed otherwise.
+
+    The metadata is the import's last step, so a version that is listed
+    has its whole data and one that is not never will: any folder the run
+    left under the name it was to make goes, and so does the folder of the
+    version it replaced when the metadata already dropped it. `entry` is
+    the request's, `job` its marker in run/import.json.
+    """
+    wid, made, message = entry["world"], job.get("made"), job.get("message")
+    entry["type"] = "ImportVersion"
+    replace = message.get("replace") if isinstance(message, dict) else None
+    if replace == "" or R.matches(R.VERSION, replace):
+        entry["version"] = replace
+    order = R.read_order(orders / f"{wid}.json")
+    meta = read_versions(home, order) if order is not None else None
+    listed = meta is not None and R.matches(R.VERSION, made) and made in meta["versions"]
+    if listed:
+        entry["made"] = made
+        R.answer(home, entry, "done", None, now)
+        if replace and replace not in meta["versions"]:
+            remove_folder(home, wid, replace)
+    else:
+        R.answer(home, entry, "failed", "the run stopped in the middle of the import", now)
+        if meta is not None and R.matches(R.VERSION, made):
+            remove_folder(home, wid, made)
+
+
 def folder_ino(path: Path) -> int | None:
     """The inode of a real folder at `path`; None when there is nothing there; -1 when there is a link or a file.
 

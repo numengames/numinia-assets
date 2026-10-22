@@ -459,15 +459,6 @@ class Rules(unittest.TestCase):
         self.assertFalse((m.home / "versions" / "plaza" / "v2").exists())
         self.assertEqual(m.meta()["next"], 4)
 
-    def test_other_requests_about_versions_are_still_not_yet(self):
-        m = rig(self)
-        for kind in ("DownloadVersion", "ImportVersion"):
-            msg = TV.message(kind)
-            m.drop(kind, msg, copy=TV.COPY if kind == "DownloadVersion" else None)
-            m.take()
-            self.assertEqual(m.result(msg["nonce"])["rule"], "not-yet")
-        self.assertFalse((m.home / "versions").exists())
-
     def test_a_result_that_names_no_new_version_has_no_made(self):
         m = rig(self)
         m.write_meta(TV.two())

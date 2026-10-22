@@ -676,26 +676,6 @@ class Requests(unittest.TestCase):
         self.assertNotIn("version", m.result(bad["nonce"]))
         self.assertEqual(m.result(bad["nonce"])["rule"], "version does not have its shape")
 
-    def test_the_other_new_types_are_refused_until_their_stories_land(self):
-        m = Machine(self)
-        m.put_world()
-        m.write_meta(two())
-        folder = m.put_version("v2")
-        for kind in ("DownloadVersion", "ImportVersion"):
-            msg = message(kind)
-            m.drop(kind, msg, copy=COPY if kind == "DownloadVersion" else None)
-            m.take()
-            with self.subTest(kind=kind):
-                result = m.result(msg["nonce"])
-                self.assertEqual((result["state"], result["rule"], result["type"]), ("failed", "not-yet", kind))
-                self.assertEqual(m.log()[-1]["rule"], "not-yet")
-        # None of them fell into the generic path of the book: nothing changed anywhere.
-        self.assertEqual(json.loads((m.orders / "plaza.json").read_text())["state"], "running")
-        self.assertTrue(folder.is_dir())
-        self.assertEqual(list(m.meta()["versions"]), ["v1", "v2"])
-        self.assertEqual(list((m.home / "copies").iterdir()), [])
-        self.assertFalse((m.home / "run" / "copy-queue.json").exists())
-
     def test_the_programs_load_in_any_order(self):
         for name in ("release", "nightly", "versions", "reconcile"):
             with self.subTest(program=name):

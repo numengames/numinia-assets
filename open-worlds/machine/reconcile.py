@@ -181,6 +181,7 @@ WORLD_FILES = frozenset({ENGINE_DB, "storage.json"})
 WORLD_FOLDERS = ("assets/", "collections/")
 ENGINE_TABLES = ("config", "users", "blueprints", "entities")
 IMPORTING = "import.json"  # run/: the world being unpacked right now, for the door to show
+IMPORTS = ("ImportWorld", "ImportVersion")  # the requests that bring a zip: its upload slot, its marker in IMPORTING
 UPDATING = "updating.json"  # run/: the worlds moved to a new build, until Docker has started it
 SWITCHING = "switching.json"  # run/: the worlds whose published version is being switched, until the folders have moved
 
@@ -294,7 +295,6 @@ FIELD_RULES = {
 }
 # The requests about one of a world's versions, and the one that brings a zip in as a version.
 VERSION_REQUESTS = ("DuplicateVersion", "PublishVersion", "DeleteVersion", "DownloadVersion")
-NOT_YET = ("DownloadVersion", "ImportVersion")  # refused `not-yet` until their own stories land
 
 
 def matches(pattern: re.Pattern[str], value: object) -> bool:
@@ -1414,9 +1414,14 @@ def take_requests(
     names the new version as `made`). A PublishVersion is checked and written
     to the journal run/switching.json (versions.publish_version) and answered
     `working`; finish_switches ends it once the world's container is gone.
+    A DownloadVersion is checked at once (versions.download_version) and then
+    waits in run/copy-queue.json like a DownloadWorld, its job naming the
+    version. An ImportVersion is unpacked here, whole, before the next
+    request, into a new unpublished version (versions.import_version; its
+    result names the version it replaced as `version`, "" for none, and the
+    new one as `made`); the live world is not touched.
     Every other request about a world the journal names (bar the records of
-    a shown code) is refused `busy`. The requests about versions not built yet
-    are refused as `not-yet`. Returns the entries taken, for the summary.
+    a shown code) is refused `busy`. Returns the entries taken, for the summary.
     """
     now = time.time() if now is None else now
     inbox = home / "inbox"
@@ -1459,30 +1464,37 @@ def take_requests(
             elif entry["type"] == "PublishVersion":
                 import versions  # here, not at the top: versions imports this file
                 rule = versions.publish_version(home, orders, entry, message)
-            elif entry["type"] in NOT_YET:
-                rule = "not-yet"  # signed and well formed, but this machine cannot do it yet
+            elif entry["type"] == "DownloadVersion":
+                import versions  # here, not at the top: versions imports this file
+                rule = versions.download_version(home, orders, entry, message)
+            elif entry["type"] == "ImportVersion":
+                import versions  # here, not at the top: versions imports this file
+                rule, detail = versions.import_version(home, orders, entry, message, raw, now)
             else:
                 rule = change_book(entry, message, orders, alias, allowed, control_host, now, deleting)
                 if rule is None and admin_code is not None:
                     rule = key_world(home, orders, codes_dir, entry, admin_code)
-        if entry["type"] == "ImportWorld":
+        if entry["type"] in IMPORTS:
             # Its zip goes, whatever happened: taken, refused or never checked.
             forget_upload(home, entry["nonce"])
         if rule is not None:
             print(f"refuse one request: {rule}", file=sys.stderr)
             answer(home, entry, "failed", rule, now, detail)
-            if entry["type"] == "ImportWorld":
+            if entry["type"] in IMPORTS:
                 (home / "run" / IMPORTING).unlink(missing_ok=True)
             continue
         taken.append(entry)
         if entry["type"] == "DeleteWorld":
             purge[entry["world"]] = {"nonce": entry["nonce"], "by": entry["by"], "domain": message["domain"]}
             answer(home, entry, "working", None, now)
-        elif entry["type"] == "DownloadWorld":
-            queue.append({"copy": entry["copy"], "world": entry["world"], "nonce": entry["nonce"], "by": entry["by"]})
-            write_json(home / "copies" / f"{entry['copy']}.json",
-                       {"copy": entry["copy"], "world": entry["world"], "state": "preparing", "at": utc(now)},
-                       mode=0o640, group=door_gid())
+        elif entry["type"] in ("DownloadWorld", "DownloadVersion"):
+            job = {"copy": entry["copy"], "world": entry["world"], "nonce": entry["nonce"], "by": entry["by"]}
+            record = {"copy": entry["copy"], "world": entry["world"], "state": "preparing", "at": utc(now)}
+            if entry["type"] == "DownloadVersion":
+                # The job names the version it copies; the record the door serves says so too.
+                job["version"] = record["version"] = entry["version"]
+            queue.append(job)
+            write_json(home / "copies" / f"{entry['copy']}.json", record, mode=0o640, group=door_gid())
             answer(home, entry, "working", None, now)
         elif entry["type"] == "PublishVersion":
             # Done once the folders have moved and the world is back (finish_switches); until then the door says switching.
@@ -1497,7 +1509,7 @@ def take_requests(
             answer(home, entry, "working", None, now)
         else:
             answer(home, entry, "done", None, now)
-            if entry["type"] == "ImportWorld":
+            if entry["type"] in IMPORTS:
                 # Shown as being unpacked until its answer is written.
                 (home / "run" / IMPORTING).unlink(missing_ok=True)
     if purge:
@@ -1975,6 +1987,41 @@ def settle_import(home: Path, orders: Path, codes_dir: Path, staged: Path, order
         raise
 
 
+def stage_import(home: Path, nonce: str, message: dict, image: str, limits: dict, target: Path) -> None:
+    """Check an uploaded zip and unpack it into `target`, a new folder in staging/: the world's data, whole and checked.
+
+    What an ImportWorld and an ImportVersion share, for the engine `image`
+    runs. The zip becomes the machine's own copy, which must be the signed
+    one (take_zip: fingerprint); its index must keep every rule
+    (check_entries, and inspect_zip for a Hyperfy world) — nothing is
+    written outside the upload folder until then; the disk must keep its
+    reserve after the declared total (no-room). A Hyperfy world is unpacked
+    (unpack) and its database checked (check_database); a Numinia Engine
+    world is handed to its image's own tools (engine_import). The upload
+    goes as soon as the machine has its own copy. Raises Refused, OSError or
+    ValueError; the caller removes `target`, which may be half written.
+    """
+    staging = home / "staging"
+    engine = engine_of(image)
+    with take_zip(home / "uploads" / f"{nonce}.zip", message["zipBytes"], message["zipSha256"], staging) as copy:
+        forget_upload(home, nonce)  # from here on only the machine's own copy is read
+        with open_zip(copy) as zipped:
+            if engine == NUMINIA_ENGINE:
+                # The rules every zip keeps; the engine's own come next, from its image.
+                plan = {"bytes": check_entries(zipped.infolist())}
+            else:
+                plan = inspect_zip(zipped)
+            if shutil.disk_usage(staging).free < plan["bytes"] + RESERVE:
+                raise Refused("no-room")
+            os.mkdir(target, 0o700)
+            if engine != NUMINIA_ENGINE:
+                unpack(zipped, plan, target)
+        if engine == NUMINIA_ENGINE:
+            engine_import(copy, target, image, limits)
+    if engine != NUMINIA_ENGINE:
+        check_database(target / ENGINE_DB)
+
+
 def import_world(
     home: Path,
     orders: Path,
@@ -2033,23 +2080,7 @@ def import_world(
             staging.mkdir(mode=0o700, parents=True)  # bootstrap.sh makes it; made here the same way if missing
         write_json(home / "run" / IMPORTING, {wid: {"nonce": nonce, "by": entry["by"], "message": message}})
         answer(home, entry, "working", None, now)
-        with take_zip(home / "uploads" / f"{nonce}.zip", message["zipBytes"], message["zipSha256"], staging) as copy:
-            forget_upload(home, nonce)  # from here on only the machine's own copy is read
-            with open_zip(copy) as zipped:
-                if engine == NUMINIA_ENGINE:
-                    # The rules every zip keeps; the engine's own come next, from its image.
-                    plan = {"bytes": check_entries(zipped.infolist())}
-                else:
-                    plan = inspect_zip(zipped)
-                if shutil.disk_usage(staging).free < plan["bytes"] + RESERVE:
-                    raise Refused("no-room")
-                os.mkdir(target, 0o700)
-                if engine != NUMINIA_ENGINE:
-                    unpack(zipped, plan, target)
-            if engine == NUMINIA_ENGINE:
-                engine_import(copy, target, message["image"], order["limits"])
-        if engine != NUMINIA_ENGINE:
-            check_database(target / ENGINE_DB)
+        stage_import(home, nonce, message, message["image"], order["limits"], target)
         settle_import(home, orders, codes_dir, target, order, admin_code)
     except Refused as refused:
         return refused.rule, refused.entry
@@ -2068,7 +2099,8 @@ def clear_imports(home: Path, orders: Path, now: float) -> None:
     Runs never overlap (systemd starts one at a time), so a world still
     marked as being unpacked, or a staging folder, at the start of a run is
     a leftover. Its request gets its answer: done if its order was written
-    (the last step), failed otherwise.
+    (the last step), failed otherwise. An ImportVersion's marker says so
+    (`type`) and it is judged by its own last step (versions.clear_import).
     """
     marker = home / "run" / IMPORTING
     raw = read_json(marker, {})
@@ -2079,7 +2111,10 @@ def clear_imports(home: Path, orders: Path, now: float) -> None:
         if isinstance(result, dict) and result.get("state") in ("done", "failed"):
             continue
         entry = {"nonce": job["nonce"], "type": "ImportWorld", "world": wid, "by": job.get("by")}
-        if read_order(orders / f"{wid}.json") is not None:
+        if job.get("type") == "ImportVersion":
+            import versions  # here, not at the top: versions imports this file
+            versions.clear_import(home, orders, entry, job, now)
+        elif read_order(orders / f"{wid}.json") is not None:
             answer(home, entry, "done", None, now)
         else:
             answer(home, entry, "failed", "the run stopped in the middle of the import", now)
@@ -2246,19 +2281,29 @@ world's chat. This copy's keys are new; they are not the published world's.
 """
 
 
-def build_copy(home: Path, order: dict, copy_id: str, alias: str, now: float | None = None) -> dict:
+def copy_name(wid: str, version: str | None, now: float) -> str:
+    """The file a copy is downloaded as: <id>-<UTC stamp>.zip, and <id>-<vid>-<UTC stamp>.zip for one version."""
+    stamp = time.strftime("%Y%m%d-%H%M", time.gmtime(now))
+    return f"{wid}-{stamp}.zip" if version is None else f"{wid}-{version}-{stamp}.zip"
+
+
+def build_copy(home: Path, order: dict, copy_id: str, alias: str, now: float | None = None,
+               folder: Path | None = None, version: str | None = None) -> dict:
     """Zip a world whole — its folder, a compose file, fresh keys, a manifest, a guide — and say so.
 
     The Alchemists' Tower's copy, on one machine: everything needed to run
     the world anywhere, with keys of its own, and the fingerprint of each file.
+    `folder` and `version` make it the copy of one version: that version's
+    folder (the world's own, data/<id>, when none is given) and a file named
+    for it; the manifest and the copy's record say which version it is.
     """
     now = time.time() if now is None else now
     wid = order["id"]
-    data = home / "data" / wid
+    data = home / "data" / wid if folder is None else folder
     copies = home / "copies"
     copies.mkdir(parents=True, exist_ok=True)
     part = copies / f".{copy_id}.zip.part"
-    filename = f"{wid}-{time.strftime('%Y%m%d-%H%M', time.gmtime(now))}.zip"
+    filename = copy_name(wid, version, now)
     files = []
 
     def add(zipped: zipfile.ZipFile, source: Path, name: str) -> None:
@@ -2297,12 +2342,19 @@ def build_copy(home: Path, order: dict, copy_id: str, alias: str, now: float | N
             "copiedAt": utc(now),
             "files": files,
         }
+        if version is not None:
+            manifest["version"] = version
         zipped.writestr("world.json", json.dumps(manifest, indent=2) + "\n")
-    return finish_copy(home, wid, copy_id, part, filename, now)
+    return finish_copy(home, wid, copy_id, part, filename, now, version)
 
 
-def finish_copy(home: Path, wid: str, copy_id: str, part: Path, filename: str, now: float) -> dict:
-    """A copy's zip moved into place, readable by the door's group alone, and its state: ready."""
+def finish_copy(home: Path, wid: str, copy_id: str, part: Path, filename: str, now: float,
+                version: str | None = None) -> dict:
+    """A copy's zip moved into place, readable by the door's group alone, and its state: ready.
+
+    The record of a version's copy also says which version (`version`); a
+    world's has no such field.
+    """
     copies = home / "copies"
     final = copies / f"{copy_id}.zip"
     os.chmod(part, 0o640)
@@ -2321,22 +2373,26 @@ def finish_copy(home: Path, wid: str, copy_id: str, part: Path, filename: str, n
         "madeAt": int(now),
         "expiresAt": utc(now + COPY_SECONDS),
     }
+    if version is not None:
+        status["version"] = version
     write_json(copies / f"{copy_id}.json", status, mode=0o640, group=group)
     return status
 
 
-def build_engine_copy(home: Path, order: dict, copy_id: str, now: float | None = None) -> dict:
+def build_engine_copy(home: Path, order: dict, copy_id: str, now: float | None = None,
+                      folder: Path | None = None, version: str | None = None) -> dict:
     """A Numinia Engine world's zip, made by the engine itself (`copia`): the machine never re-implements its rules.
 
     The world's own image runs with no network and the world's folder
     read-only; its zip — the world, its adventure and environment, how to run
     it at home, never its keys — comes out on stdout, straight into the
     copy's part file. The engine writes each snapshot whole, so this works
-    with the world running or stopped.
+    with the world running or stopped. `folder` and `version` make it the
+    copy of one version, as for build_copy; the folder is read-only either way.
     """
     now = time.time() if now is None else now
     wid = order["id"]
-    data = home / "data" / wid
+    data = home / "data" / wid if folder is None else folder
     copies = home / "copies"
     copies.mkdir(parents=True, exist_ok=True)
     part = copies / f".{copy_id}.zip.part"
@@ -2354,7 +2410,7 @@ def build_engine_copy(home: Path, order: dict, copy_id: str, now: float | None =
     except BaseException:
         part.unlink(missing_ok=True)
         raise
-    return finish_copy(home, wid, copy_id, part, f"{wid}-{time.strftime('%Y%m%d-%H%M', time.gmtime(now))}.zip", now)
+    return finish_copy(home, wid, copy_id, part, copy_name(wid, version, now), now, version)
 
 
 def made_at(status: object) -> int | None:
@@ -2362,13 +2418,19 @@ def made_at(status: object) -> int | None:
     return made if isinstance(made, int) and not isinstance(made, bool) else None
 
 
-def fresh_copy(home: Path, wid: str, now: float) -> dict | None:
-    """A ready copy of this world young enough to hand out again, if there is one."""
+def fresh_copy(home: Path, wid: str, now: float, version: str | None = None) -> dict | None:
+    """A ready copy of this world (of this version of it, when one is asked) young enough to hand out again, if there is one.
+
+    A world's copy and a version's never stand in for each other: the record
+    of a version's copy names it, a world's does not.
+    """
     best = None
     for path in (home / "copies").glob("*.json"):
         status = read_json(path, {})
         made = made_at(status)
         if made is None or status.get("world") != wid or status.get("state") != "ready":
+            continue
+        if status.get("version") != version:
             continue
         if now - made <= FRESH_COPY_SECONDS and (home / "copies" / f"{path.stem}.zip").is_file():
             if best is None or made > best[0]:
@@ -2387,8 +2449,16 @@ def copies_wait(home: Path, orders: Path) -> int:
         wid = job.get("world") if isinstance(job, dict) else None
         order = read_order(orders / f"{wid}.json") if matches(SLUG, wid) else None
         # The Numinia Engine's own copy needs no wait: it writes each snapshot whole.
-        if order is not None and order.get("state") == "running" and not runs_engine(order):
-            return save_pause(SAVE_INTERVAL)
+        if order is None or order.get("state") != "running" or runs_engine(order):
+            continue
+        # A version nobody writes (every one but the published) needs none either.
+        version = job.get("version")
+        if version is not None:
+            import versions  # here, not at the top: versions imports this file
+            meta = versions.read_versions(home, order)
+            if meta is None or version != meta["published"]:
+                continue
+        return save_pause(SAVE_INTERVAL)
     return 0
 
 
@@ -2410,23 +2480,35 @@ def make_copies(home: Path, orders: Path, alias: str, now: float | None = None) 
     for job in queue if isinstance(queue, list) else []:
         if not isinstance(job, dict) or not matches(COPY_ID, job.get("copy")) or not matches(NONCE, job.get("nonce")):
             continue
-        entry = {"nonce": job["nonce"], "type": "DownloadWorld", "world": job.get("world"), "by": job.get("by")}
+        version = job.get("version")  # a DownloadVersion's job names its version; a DownloadWorld's has none
+        if version is not None and not matches(VERSION, version):
+            continue
+        entry = {"nonce": job["nonce"], "type": "DownloadWorld" if version is None else "DownloadVersion",
+                 "world": job.get("world"), "by": job.get("by")}
         order = read_order(orders / f"{job.get('world')}.json") if matches(SLUG, job.get("world")) else None
         failed = {"copy": job["copy"], "world": entry["world"], "state": "failed", "at": utc(now)}
+        folder = rule = None
+        if version is not None:
+            entry["version"] = failed["version"] = version
         if order is None:
+            rule = "no world with this name on this machine" if version is None else "missing"
+        elif version is not None:
+            import versions  # here, not at the top: versions imports this file
+            rule, folder = versions.copy_source(home, order, version)
+        if rule is not None:
             write_json(home / "copies" / f"{job['copy']}.json", failed, mode=0o640, group=group)
-            answer(home, entry, "failed", "no world with this name on this machine", now)
+            answer(home, entry, "failed", rule, now)
             continue
-        again = fresh_copy(home, order["id"], now)
+        again = fresh_copy(home, order["id"], now, version)
         try:
             if again is not None:
                 os.link(home / "copies" / f"{again['copy']}.zip", home / "copies" / f"{job['copy']}.zip")
                 write_json(home / "copies" / f"{job['copy']}.json", {**again, "copy": job["copy"]},
                            mode=0o640, group=group)
             elif runs_engine(order):
-                build_engine_copy(home, order, job["copy"], now)
+                build_engine_copy(home, order, job["copy"], now, folder, version)
             else:
-                build_copy(home, order, job["copy"], alias, now)
+                build_copy(home, order, job["copy"], alias, now, folder, version)
         except (OSError, sqlite3.Error, zipfile.BadZipFile, ValueError, subprocess.SubprocessError) as error:
             print(f"the copy of {order['id']} failed ({type(error).__name__})", file=sys.stderr)
             write_json(home / "copies" / f"{job['copy']}.json", failed, mode=0o640, group=group)
