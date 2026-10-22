@@ -232,6 +232,11 @@ main() {
   chmod 755 "$HOME_DIR/sock"
   chown root:fleetd "$HOME_DIR/copies"
   chmod 750 "$HOME_DIR/copies"
+  # A world's other versions wait in versions/<id>/<vid> (root's alone, 700);
+  # the door reads only the small versions/<id>.json files beside them.
+  mkdir -p "$HOME_DIR/versions"
+  chown root:fleetd "$HOME_DIR/versions"
+  chmod 750 "$HOME_DIR/versions"
 
   echo "== the programs, installed once"
   # A machine set up by an earlier version runs its reconciler every minute:
@@ -240,7 +245,7 @@ main() {
   # fleet-recipe.timer is not paused: this script may be running under it.
   systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer 2>/dev/null || true
   install -d -m 0755 "$LIB_DIR"
-  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py condiciones.py signers.py; do
+  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py condiciones.py signers.py versions.py; do
     install -m 0644 "$BOOK_DIR/open-worlds/machine/$program" "$LIB_DIR/$program"
   done
   wrapper fleet-reconcile reconcile.py

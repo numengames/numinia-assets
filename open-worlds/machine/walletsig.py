@@ -107,6 +107,49 @@ ACTIONS: dict[str, tuple[tuple[str, str], ...]] = {
         ("nonce", "string"),
         ("expires", "uint256"),
     ),
+    # A world keeps up to two versions; one is published. Each of these names
+    # the world and one of its versions (v1, v2, …). New types, never new
+    # fields on old ones, so every older digest stays what it was.
+    "DuplicateVersion": (
+        ("machine", "string"),
+        ("world", "string"),
+        ("version", "string"),
+        ("nonce", "string"),
+        ("expires", "uint256"),
+    ),
+    "PublishVersion": (
+        ("machine", "string"),
+        ("world", "string"),
+        ("version", "string"),
+        ("nonce", "string"),
+        ("expires", "uint256"),
+    ),
+    "DeleteVersion": (
+        ("machine", "string"),
+        ("world", "string"),
+        ("version", "string"),
+        ("nonce", "string"),
+        ("expires", "uint256"),
+    ),
+    "DownloadVersion": (
+        ("machine", "string"),
+        ("world", "string"),
+        ("version", "string"),
+        ("nonce", "string"),
+        ("expires", "uint256"),
+    ),
+    # A zip taken as a new version of an existing world: the zip's exact size
+    # and SHA-256, and the unpublished version it replaces ("" when the world
+    # has one version). The engine, limits and address are the world's own.
+    "ImportVersion": (
+        ("machine", "string"),
+        ("world", "string"),
+        ("zipBytes", "uint256"),
+        ("zipSha256", "string"),
+        ("replace", "string"),
+        ("nonce", "string"),
+        ("expires", "uint256"),
+    ),
 }
 
 SIGNATURE = re.compile(r"0x[0-9a-fA-F]{130}")

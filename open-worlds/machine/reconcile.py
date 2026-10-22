@@ -272,6 +272,7 @@ NONCE = re.compile(r"[0-9a-f]{32}")  # a request's number: 128 random bits, chos
 COPY_ID = re.compile(r"[0-9a-f]{32}")  # a copy's number: 128 random bits, chosen by the door
 ADDRESS = re.compile(r"0x[0-9a-f]{40}")
 SHA256 = re.compile(r"[0-9a-f]{64}")  # a zip's fingerprint, as the browser computed and the Oracle signed it
+VERSION = re.compile(r"v[1-9][0-9]{0,3}")  # a world's version: v1, v2, … never reused within a world
 # A name inside a zip that starts with a drive (C:, c:\…): a Windows path, never a world's.
 DRIVE = re.compile(r"[A-Za-z]:.*", re.DOTALL)
 # The shape every string field of a signed request must have.
@@ -285,7 +286,12 @@ FIELD_RULES = {
     "cpus": CPUS,
     "nonce": NONCE,
     "zipSha256": SHA256,
+    "version": VERSION,
+    "replace": VERSION,  # an ImportVersion may also leave it empty: request_problem
 }
+# The requests about one of a world's versions, and the one that brings a zip in as a version.
+VERSION_REQUESTS = ("DuplicateVersion", "PublishVersion", "DeleteVersion", "DownloadVersion")
+NOT_YET = VERSION_REQUESTS + ("ImportVersion",)  # all but DeleteVersion are refused until their own stories land
 
 
 def matches(pattern: re.Pattern[str], value: object) -> bool:
@@ -1045,7 +1051,11 @@ def request_problem(kind: object, message: object) -> str | None:
         return "message does not have exactly the fields of its type"
     for name, kind_of in fields:
         value = message[name]
-        if kind == "PinWorld" and name == "image":
+        if kind == "ImportVersion" and name == "replace":
+            # Empty when the world has one version; else the unpublished one it takes the place of.
+            if value != "" and not matches(VERSION, value):
+                return "replace is neither empty nor a version"
+        elif kind == "PinWorld" and name == "image":
             # The same rail as an update (the house registry, one build: a sha- tag or a digest);
             # an empty image releases the pin.
             if value != "" and not matches(IMAGE, value):
@@ -1085,6 +1095,8 @@ def check_request(
         "by": None,
         "copy": None,
     }
+    if kind in VERSION_REQUESTS and matches(VERSION, message.get("version")):
+        entry["version"] = message["version"]
     problem = request_problem(kind, message)
     if problem:
         return entry, None, problem
@@ -1092,7 +1104,7 @@ def check_request(
         return entry, None, "the request names another machine"
     # An import reaches the inbox only once its zip has arrived, which may
     # be up to a slot's hour after the door took it: it has that hour more.
-    late = GRACE + (SLOT_SECONDS if kind == "ImportWorld" else 0)
+    late = GRACE + (SLOT_SECONDS if kind in ("ImportWorld", "ImportVersion") else 0)
     if message["expires"] < now - late:
         return entry, None, "the request expired"
     signer = walletsig.signer_of(kind, message, raw.get("signature"))
@@ -1101,7 +1113,7 @@ def check_request(
     if signer not in signers:
         return entry, None, "the signer is not an Oracle of this machine"
     entry["by"] = signer
-    if kind == "DownloadWorld":
+    if kind in ("DownloadWorld", "DownloadVersion"):
         if not matches(COPY_ID, raw.get("copy")):
             return entry, None, "no copy number"
         entry["copy"] = raw["copy"]
@@ -1303,6 +1315,8 @@ def answer(home: Path, entry: dict, state: str, rule: str | None = None, now: fl
     """
     result = {"request": entry["nonce"], "type": entry["type"], "world": entry["world"], "state": state,
               "rule": rule, "at": utc(now)}
+    if entry.get("version") is not None:
+        result["version"] = entry["version"]
     if detail is not None:
         result["entry"] = detail
     write_json(home / "requests" / f"{entry['nonce']}.json", result)
@@ -1346,7 +1360,10 @@ def take_requests(
     (update_world); a running world's waits in run/updating.json until Docker
     has started its new build (finish_updates). A delete waits in
     run/purge.json until its container is gone; a download waits in
-    run/copy-queue.json. Returns the entries taken, for the summary.
+    run/copy-queue.json. A DeleteVersion removes one unpublished version at
+    once (versions.delete_version); the other requests about versions are
+    refused as `not-yet` until their own code lands. Returns the entries
+    taken, for the summary.
     """
     now = time.time() if now is None else now
     inbox = home / "inbox"
@@ -1378,6 +1395,11 @@ def take_requests(
                 rule = update_world(entry, message, orders, now, pull)
             elif entry["type"] == "PinWorld":
                 rule = pin_world(entry, message, orders, now, pull)
+            elif entry["type"] == "DeleteVersion":
+                import versions  # here, not at the top: versions imports this file
+                rule = versions.delete_version(home, orders, entry, message)
+            elif entry["type"] in NOT_YET:
+                rule = "not-yet"  # signed and well formed, but this machine cannot do it yet
             else:
                 rule = change_book(entry, message, orders, alias, allowed, control_host, now, deleting)
                 if rule is None and admin_code is not None:
@@ -2051,7 +2073,7 @@ def prune_uploads(home: Path, now: float | None = None) -> list[str]:
 
 
 def purge_world(home: Path, wid: str, *, codes_dir: Path) -> None:
-    """Remove a world's folder, keys, code and copies. Only for a world with no order and no container."""
+    """Remove a world's folder, every version, keys, code and copies. Only for a world with no order and no container."""
     if not matches(SLUG, wid):
         raise ValueError("not a world id")
     data_root = home / "data"
@@ -2060,6 +2082,8 @@ def purge_world(home: Path, wid: str, *, codes_dir: Path) -> None:
         folder.unlink()
     elif folder.is_dir() and folder.resolve().parent == data_root.resolve():
         shutil.rmtree(folder)
+    import versions  # here, not at the top: versions imports this file
+    versions.purge_versions(home, wid)
     (home / "env" / f"{wid}.env").unlink(missing_ok=True)
     (codes_dir / wid).unlink(missing_ok=True)
     for status_path in (home / "copies").glob("*.json"):
