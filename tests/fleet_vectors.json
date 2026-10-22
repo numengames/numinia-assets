@@ -284,6 +284,20 @@
         "name": "expires",
         "type": "uint256"
       }
+    ],
+    "FleetSigners": [
+      {
+        "name": "signers",
+        "type": "string"
+      },
+      {
+        "name": "seq",
+        "type": "uint256"
+      },
+      {
+        "name": "issuedAt",
+        "type": "uint256"
+      }
     ]
   },
   "vectors": [
@@ -460,6 +474,17 @@
       "digest": "0xd6390dd7bd98b75943878cf7f3cac790a5ca9da764d1333e7437efe1f82474bf",
       "signature": "0x164b1d58700f11dc155547aefe08d3e9de61de8e5b078a9ffe812c65dae599954f94d96600f11a048e25f191b5ef2f303a17070f4bf52ce8d3a0322b8274e4451c",
       "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+    },
+    {
+      "type": "FleetSigners",
+      "message": {
+        "signers": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1,0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2,0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+        "seq": 1893456000,
+        "issuedAt": 1893456000
+      },
+      "digest": "0x9e6e3e77e9b6e4fb6e7496b64d805054ce65f1fdea959768535f4c3dfaf631bd",
+      "signature": "0x90d1cce697d61ec624a5463375e276dbb02a6857c3f59e81c9cd95c910cc16e6064ae321c5bc1288ba514ac7224b668c755341ca5f693ff0f23a694c1bbff5131b",
+      "signer": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a"
     }
   ],
   "stranger": {
@@ -490,5 +515,71 @@
       "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       "hex": "0x3c3800defb6a25a70a2737e0716eeb5d270559ad3cad8f6abddac58802d7158e"
     }
-  ]
+  ],
+  "fleetSigners": {
+    "$comment": "The house's signed list of Oracles and Archons (GET /fleet/signers.json), made with viem 2.x signTypedData by a fixed TEST key that is public on purpose and holds nothing: its address is the house in tests, never a real wallet. `wire` is the JSON the endpoint answers ({message:{signers:[…],seq,issuedAt},signature}); `signed` is what the wallet signs (signers joined with \",\"). `main` is the list; `fewer` is a newer list that drops the 3rd wallet; `older` is a validly signed list with a lower seq (replay).",
+    "privateKey": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "signer": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",
+    "records": {
+      "main": {
+        "wire": {
+          "message": {
+            "signers": [
+              "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+              "0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+              "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+            ],
+            "seq": 1893456000,
+            "issuedAt": 1893456000
+          },
+          "signature": "0x90d1cce697d61ec624a5463375e276dbb02a6857c3f59e81c9cd95c910cc16e6064ae321c5bc1288ba514ac7224b668c755341ca5f693ff0f23a694c1bbff5131b"
+        },
+        "signed": {
+          "signers": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1,0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2,0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+          "seq": 1893456000,
+          "issuedAt": 1893456000
+        },
+        "digest": "0x9e6e3e77e9b6e4fb6e7496b64d805054ce65f1fdea959768535f4c3dfaf631bd"
+      },
+      "fewer": {
+        "wire": {
+          "message": {
+            "signers": [
+              "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+              "0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+            ],
+            "seq": 1893456600,
+            "issuedAt": 1893456600
+          },
+          "signature": "0x332a0d67da522cabd3446936b9d6bbdb47edfd0b62271b5acca805e50bfbfa2702649f225c1875802476a56b7c21370530dc899b502ff3607dba572d15631ca91b"
+        },
+        "signed": {
+          "signers": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1,0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+          "seq": 1893456600,
+          "issuedAt": 1893456600
+        },
+        "digest": "0x857eeb81b86b7317b5caf17dfe9a59901ed8b0cd87dfa4c0978c8cb4e3245ff5"
+      },
+      "older": {
+        "wire": {
+          "message": {
+            "signers": [
+              "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+              "0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+              "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+            ],
+            "seq": 1893455000,
+            "issuedAt": 1893455000
+          },
+          "signature": "0xe443903856b211b0cf25f4c41c35d782891219e2961305c029c8797cf5802c463b561bb3393b5d8e41a5a9a0549ce5bbbf9ded959382b2e0c6cfef3345d2f8321c"
+        },
+        "signed": {
+          "signers": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1,0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2,0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+          "seq": 1893455000,
+          "issuedAt": 1893455000
+        },
+        "digest": "0x5c6d282f28024ebc11d2a6d22b69817de3ae17bdd783dd061e94cecc48bdde8f"
+      }
+    }
+  }
 }

@@ -90,6 +90,14 @@ ACTIONS: dict[str, tuple[tuple[str, str], ...]] = {
         ("seq", "uint256"),
         ("issuedAt", "uint256"),
     ),
+    # The house's list of Oracles and Archons every machine follows: the wallets
+    # (lowercase, sorted, unique, joined with ","), `seq` (= issuedAt) only grows.
+    # Signed by the house's one wallet (signers.HOUSE_SIGNER), not by an Oracle.
+    "FleetSigners": (
+        ("signers", "string"),
+        ("seq", "uint256"),
+        ("issuedAt", "uint256"),
+    ),
     # One world held on a build; an empty image releases it. UpdateWorld plus why.
     "PinWorld": (
         ("machine", "string"),

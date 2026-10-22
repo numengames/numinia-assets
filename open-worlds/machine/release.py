@@ -685,6 +685,17 @@ def pass_once(env: Env) -> dict:
     return result
 
 
+def refresh_house_signers(signers_file: Path) -> None:
+    """Take the house's signed list of Oracles and Archons (signers.py) before the pass reads the signers.
+    Imported here, not at the top, and never allowed to raise: the engine's update must not depend on it."""
+    try:
+        import signers
+
+        signers.refresh(signers_file)
+    except Exception as err:  # noqa: BLE001 — a missing or broken signers.py costs only the list
+        print(f"the house's signers list was not refreshed ({type(err).__name__})", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Move this machine's Numinia Engine worlds to the latest published engine.")
     ap.add_argument("--home", type=Path, default=R.HOME)
@@ -706,6 +717,7 @@ def main(argv: list[str] | None = None) -> int:
             orders = R.read_orders(args.home / "orders")
             print(json.dumps({"target": target, "why": why, "plan": plan_rollout(orders, target, state, env.busy(), env.canary())}, indent=2))
             return 0
+        refresh_house_signers(args.signers_file)  # before the pass reads the signers; even a halted machine takes it
         result = run_pass(env)
     print(json.dumps({k: v for k, v in result.items() if k != "plan"}))
     return 1 if result["action"] in ("rolled-back", "halted") else 0
