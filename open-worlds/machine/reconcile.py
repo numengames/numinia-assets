@@ -120,6 +120,7 @@ ADMIN_CODE_FILE = Path("/etc/fleet/admin-code")
 # 640): written here, read by the door to show it to a signed Oracle.
 CODES_DIR = Path("/etc/fleet/codes")
 SIGNERS_FILE = Path("/etc/fleet/signers")  # the Oracles' wallets this machine obeys, one per line
+HOUSE_FILE_NAME = "signers.house"  # beside SIGNERS_FILE: the wallets of the house's signed list (signers.py)
 CONTROL_HOST_FILE = Path("/etc/fleet/control-host")  # the door's address, e.g. open-1.numinia.com
 DOOR_GROUP = "fleetd"  # the door's group: it reads copies and results, never writes the book
 # Seconds between two saves of a world's objects (what is placed, moved or
@@ -328,16 +329,28 @@ def read_allowed_domains(path: Path = DOMAINS_FILE) -> set[str]:
     return allowed
 
 
-def read_signers(path: Path = SIGNERS_FILE) -> frozenset[str]:
-    """The Oracles' wallets this machine obeys: lowercase 0x addresses, one per line; anything else is ignored."""
+def read_wallets(path: Path) -> set[str]:
+    """The lowercase 0x addresses of one file, one per line; `#` starts a comment and anything else is ignored."""
     if not path.is_file():
-        return frozenset()
+        return set()
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, ValueError):
+        return set()
     found = set()
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in lines:
         entry = line.split("#", 1)[0].strip().lower()
         if matches(ADDRESS, entry):
             found.add(entry)
-    return frozenset(found)
+    return found
+
+
+def read_signers(path: Path = SIGNERS_FILE, house: Path | None = None) -> frozenset[str]:
+    """The wallets this machine obeys: the union of the wallets put there by hand (`path`) and the house's signed
+    list (`house`, by default `signers.house` beside `path`, written by signers.py). Each file may be missing or
+    broken without costing the other's wallets."""
+    house = path.with_name(HOUSE_FILE_NAME) if house is None else house
+    return frozenset(read_wallets(path) | read_wallets(house))
 
 
 def read_control_host(path: Path = CONTROL_HOST_FILE) -> str | None:
@@ -1016,12 +1029,16 @@ def sync_codes(home: Path, codes_dir: Path) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+# Signed records the machine fetches by itself: they are never requests to the door or the inbox.
+RECORDS = ("FleetRelease", "FleetSigners")
+
+
 def request_problem(kind: object, message: object) -> str | None:
     """Which rule a request's typed message breaks; None when its shape is right.
 
     The door and this file share it: a request is the same thing to both.
     """
-    if kind not in walletsig.ACTIONS:
+    if kind not in walletsig.ACTIONS or kind in RECORDS:
         return "type is not a request this machine knows"
     fields = walletsig.ACTIONS[kind]
     if not isinstance(message, dict) or set(message) != {name for name, _ in fields}:

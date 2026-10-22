@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `open-worlds/machine/signers.py`: every machine follows the house's signed list of
+  Oracles and Archons (`https://numinia.com/fleet/signers.json`, EIP-712 `FleetSigners`),
+  so a new Oracle is obeyed on every machine without touching any of them. It runs inside
+  `release.py`'s five-minute pass, so it reaches installed machines with the recipe update
+  and no hand; the bootstrap installs the program and writes `/etc/fleet/signers-url` only
+  when absent. Believed only from `HOUSE_SIGNER` (**empty: off** until the house wallet is
+  set); 1 to 200 wallets, `seq` above the last taken, `issuedAt` at most 24 h old and 5 min
+  ahead; a bad, empty or old answer never strips a machine. Stored in `/etc/fleet/signers.house`;
+  `read_signers` now returns the union with `/etc/fleet/signers` (hand-added wallets stay).
+  `FleetRelease` and `FleetSigners` are never taken as door requests. Shared vectors:
+  `tests/fleet_vectors.json` (`fleetSigners`).
+
 - `.github/CODEOWNERS`: `open-worlds/machine/` is an Oracle's path. Since each
   machine installs `main`'s recipe by itself, a merge there is root on every
   machine; with the ruleset's code-owner review on, it needs @PabloFMM's ok.

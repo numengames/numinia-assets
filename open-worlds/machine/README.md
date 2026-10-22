@@ -21,10 +21,11 @@ moves with them.
 | `reconcile.py` | every minute and on each request: checks the requests again, changes the book, makes the containers match, deletes, zips copies, brings worlds back from zips |
 | `walletsig.py` | who signed a request: EIP-712 typed data, recovered to a wallet address |
 | `release.py` | every five minutes: the Numinia Engine worlds follow the latest published engine (canary, one world a pass, rollback, halt) |
+| `signers.py` | inside that same five-minute pass: takes the house's signed list of Oracles and Archons (`/etc/fleet/signers.house`) |
 | `nightly.py` | each night: a copy of every world, kept 14 days |
 | `condiciones.py` | by hand: turns a world's conditions-of-entry door on or off (`fleet-condiciones <world> on\|off\|status\|restart`) |
 | `recipe.py` | every ten minutes: the machine's own programs (this folder) follow `main` (canary, rest, GitHub's signature, rollback, halt) |
-| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py`, `test_release.py`, `test_nightly.py`, `test_recipe.py`, `test_condiciones.py` | the tests, run by the depot's `python -m unittest` |
+| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py`, `test_release.py`, `test_nightly.py`, `test_signers.py`, `test_recipe.py`, `test_condiciones.py` | the tests, run by the depot's `python -m unittest` |
 
 ## Bring up a machine
 
@@ -351,7 +352,9 @@ minute or two, is a machine that has stopped obeying.
 | `/etc/fleet/recipe` | the commit the machine's programs were installed from |
 | `/etc/fleet/recipe-canary`, `recipe-pin`, `recipe-soak` | optional: this machine takes a new recipe first; `off` or a commit freezes it; minutes of rest before a non-canary takes one (2 h without it) |
 | `/srv/fleet/recipe/` | the recipe updater's `state.json` (the door shows it), its partial clone (`git/`), the copies of the programs before each install (`previous/`, root's alone) and the last install's output (`install.log`, root's alone) |
-| `/etc/fleet/signers` | the Oracles' wallets this machine obeys, one per line |
+| `/etc/fleet/signers` | the Oracles' wallets this machine obeys, one per line (put there by hand; the machine never rewrites it) |
+| `/etc/fleet/signers.house` | the wallets of the house's signed list of Oracles and Archons, with its `seq` in a comment (written by `signers.py`; do not edit). The machine obeys the union of both files |
+| `/etc/fleet/signers-url` | where `signers.py` fetches that list (`https://numinia.com/fleet/signers.json`; the bootstrap writes it only when there is none) |
 | `/etc/fleet/control-host` | the machine's address for the console, e.g. `open-1.numinia.com` |
 | `/etc/fleet/codes/<id>` | each world's admin code, as its key file gives it (`root:fleetd`, mode 640: the door shows it to a signed Oracle) |
 | `/etc/fleet/admin-code` | the machine's old shared code: the worlds keyed before each had its own keep it until it is changed, and an adopted order gets it (`root:fleetd`, mode 640) |
@@ -454,8 +457,10 @@ paid, not forgotten.
   copy. A world that dies without warning (a crash, a reboot, no memory
   left) still loses up to 10 seconds. What pays it: the engine saving when
   it is told to stop (`SIGTERM`), in its own repository.
-- **The Oracles are listed by hand.** Adding or removing one is a re-run of
-  the bootstrap line with the new list. What pays it: owners by wallet in
+- **The Oracles are listed by hand, plus the house's list.** A wallet put
+  in `/etc/fleet/signers` is added or removed by re-running the bootstrap line;
+  the house's own list of Oracles and Archons (below) needs no hand once the
+  house wallet is set in `signers.py`. What pays the rest: owners by wallet in
   the order, and a signed request that changes the list.
 - **A download link is the key to its copy.** Whoever holds it can download
   that copy for a day, like a pre-signed link. What pays it, if needed: a
@@ -495,6 +500,39 @@ Numinia Engine worlds follow the latest published engine by themselves; no Oracl
 ### What the door says about updates and pins
 
 `GET /fleet/v1/machine` carries two optional fields (a room that does not know them ignores them): `listens: {pin: true}` (this door takes a `PinWorld`) and `release` = `{target, commit, halted, haltedReason, lastPass: {at, action}}`, read from `release/state.json`. `GET /fleet/v1/worlds` adds `pin: {image, reason, at}` and `updateError` to a world only when it has them. `PinWorld` takes the same rails as `UpdateWorld` (house registry, Oracle signer, nonce, expires, one change at a time: `busy`, `engine-mismatch`); pinning also moves the world to that build.
+
+## The house's list of Oracles and Archons (`signers.py`)
+
+Every machine obeys the wallets in `/etc/fleet/signers`, which someone typed when
+the bootstrap line was run. On top of those it follows one list the house
+publishes and signs, so a new Oracle or Archon is obeyed everywhere without
+touching any machine (the customers' machines too, in the alpha).
+
+- **Where it runs**: inside the five-minute pass of `release.py` (`fleet-release.timer`,
+  already on every machine), before the pass reads the signers, even when the
+  engine updates are halted. A machine gets `signers.py` and `/etc/fleet/signers-url`
+  with the recipe update (`recipe.py` runs the new commit's bootstrap): nothing by hand,
+  no new timer. A failure of `signers.py` is printed and never stops an engine update.
+- **What it fetches**: `GET https://numinia.com/fleet/signers.json` →
+  `{"message": {"signers": ["0x…", …], "seq": N, "issuedAt": N}, "signature": "0x…"}`
+  (the address is in `/etc/fleet/signers-url`, or the env `FLEET_SIGNERS_URL`; it
+  carries no authority). The signature is EIP-712 `FleetSigners`
+  (`signers` = the wallets joined with `,`, `seq`, `issuedAt`; same domain as every
+  other record), checked with `walletsig.py`.
+- **Whom it believes**: only the one wallet `HOUSE_SIGNER` in `signers.py`. It is
+  **empty today: the feature is off** and the pass does nothing (no request is made)
+  until a reviewed change sets it.
+- **What it accepts**: 1 to 200 wallets (`0x` + 40 lowercase hex, sorted, unique, exactly as
+  signed); a `seq` above the last one this machine took (the record's own `seq` is kept
+  in the file); an `issuedAt` at most 24 hours old and at most 5 minutes ahead.
+- **What it never does**: leave a machine without signers. An empty, broken, unsigned,
+  stale, old, future or foreign answer, or a network error, changes nothing and the
+  previous list stays. It writes `/etc/fleet/signers.house` whole and atomically, and
+  never touches `/etc/fleet/signers`.
+- **What the machine obeys**: the union of both files (`reconcile.read_signers`). A wallet the
+  house drops stops being obeyed at the next accepted list; a wallet added by hand stays.
+- `fleet-release --dry-run` does not fetch. `python3 /usr/local/lib/fleet/signers.py`
+  takes the list now and prints `off`, `stored`, `refused` or `failed`.
 
 ## Nightly copy (`nightly.py`)
 

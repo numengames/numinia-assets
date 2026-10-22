@@ -58,6 +58,7 @@ main() {
   FLEET_REF="${FLEET_REF:-}"
   RELEASE_URL="${RELEASE_URL:-}"
   DEFAULT_RELEASE_URL="https://numinia.com/fleet/release.json"
+  DEFAULT_SIGNERS_URL="https://numinia.com/fleet/signers.json"
   BOOK_URL="https://github.com/numengames/numinia-assets.git"
   HOME_DIR="/srv/fleet"
   BOOK_DIR="$HOME_DIR/book"
@@ -239,7 +240,7 @@ main() {
   # fleet-recipe.timer is not paused: this script may be running under it.
   systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer 2>/dev/null || true
   install -d -m 0755 "$LIB_DIR"
-  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py condiciones.py; do
+  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py condiciones.py signers.py; do
     install -m 0644 "$BOOK_DIR/open-worlds/machine/$program" "$LIB_DIR/$program"
   done
   wrapper fleet-reconcile reconcile.py
@@ -277,6 +278,15 @@ main() {
     echo "$DEFAULT_RELEASE_URL" > /etc/fleet/release-url
   fi
   chmod 644 /etc/fleet/release-url
+
+  echo "== where the machine fetches the house's signed list of Oracles and Archons"
+  # signers.py (inside release.py's five-minute pass) asks this address for the list the
+  # house signs; only HOUSE_SIGNER in signers.py can sign it, so the address carries no
+  # authority. Written only when the machine has none: a value already there stays.
+  if [[ ! -e /etc/fleet/signers-url ]]; then
+    echo "$DEFAULT_SIGNERS_URL" > /etc/fleet/signers-url
+  fi
+  chmod 644 /etc/fleet/signers-url
 
   echo "== the Oracles who may act on this machine"
   if [[ -n "$SIGNERS" ]]; then
