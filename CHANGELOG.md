@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- `open-worlds/machine/versions.py` and five new signed requests: a world keeps up to
+  **two versions** and an Oracle chooses which one is published. `data/<id>/` stays the
+  published version (no mount moves); the other waits in `versions/<id>/<vid>/`, with a
+  `versions/<id>.json` beside it. `DuplicateVersion` (Numinia Engine by its own
+  `copia`/`comprobar`/`importar`, Hyperfy by SQLite backup and hardlinks, after a disk
+  check), `DeleteVersion`, `DownloadVersion` (any version, named `<id>-<vid>-…zip`),
+  `ImportVersion` (a zip as a new version through the existing upload slot, checked by
+  the world's own engine, the live world untouched) and `PublishVersion` (one signature:
+  the world goes down for seconds, its folders are swapped by inode under the journal
+  `run/switching.json`, recovered the same way after a crash, and it comes back as its
+  order says; every other change of it is `busy` meanwhile). `/fleet/v1/machine` adds
+  `versions.max`; `/fleet/v1/worlds` adds each world's `versions`, `versionComing` and the
+  phase `switching`. New types, never new fields: every older digest is unchanged.
+  `tests/fleet_vectors.json` is regenerated with viem (two fresh throwaway keys, six new
+  vectors, the old messages kept); the room copies it whole. `tests/e2e/versions_e2e.mjs`
+  walks the five requests through the real door and the real reconciler.
+
 - `open-worlds/machine/signers.py`: every machine follows the house's signed list of
   Oracles and Archons (`https://numinia.com/fleet/signers.json`, EIP-712 `FleetSigners`),
   so a new Oracle is obeyed on every machine without touching any of them. It runs inside

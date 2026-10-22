@@ -4,8 +4,8 @@
 """The fleet machine's recipe updater: the machine's own programs follow main, by themselves.
 
 release.py keeps the WORLDS on the latest engine; this keeps the MACHINE'S
-PROGRAMS (fleetd, reconcile, release, nightly, condiciones, this file and bootstrap.sh
-itself: everything under open-worlds/machine/) on main of
+PROGRAMS (fleetd, reconcile, release, nightly, condiciones, signers, versions, this file and
+bootstrap.sh itself: everything under open-worlds/machine/) on main of
 numengames/numinia-assets, so a merge reaches every machine without anyone
 running the bootstrap line by hand again.
 

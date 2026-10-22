@@ -298,6 +298,124 @@
         "name": "issuedAt",
         "type": "uint256"
       }
+    ],
+    "DuplicateVersion": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "type": "string"
+      },
+      {
+        "name": "version",
+        "type": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
+    ],
+    "PublishVersion": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "type": "string"
+      },
+      {
+        "name": "version",
+        "type": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
+    ],
+    "DeleteVersion": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "type": "string"
+      },
+      {
+        "name": "version",
+        "type": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
+    ],
+    "DownloadVersion": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "type": "string"
+      },
+      {
+        "name": "version",
+        "type": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
+    ],
+    "ImportVersion": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "type": "string"
+      },
+      {
+        "name": "zipBytes",
+        "type": "uint256"
+      },
+      {
+        "name": "zipSha256",
+        "type": "string"
+      },
+      {
+        "name": "replace",
+        "type": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
     ]
   },
   "vectors": [
@@ -315,8 +433,8 @@
         "expires": 1893456000
       },
       "digest": "0x6390352cb3395b9e08c31daaec3288413a5800cef65a6569164809637382ca1d",
-      "signature": "0x37a165953f6b87bc28ba743d7879144fcecefb92a9903b4fa43d9acaac0d0ae9711aee8521a99bb3fb190cce5a8fdee1cded04bbd1f6fbb726f402b61a91fa241c",
-      "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+      "signature": "0x8e81f2a7364dee0d091e7abc35118d1354511c4eba13ba5c462a0513a8dab9f1132dc59469c7bd8512a2b637df76c7fe18a0652ee0156655b8d50abb973492721c",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
     },
     {
       "type": "DeleteWorld",
@@ -328,8 +446,8 @@
         "expires": 1893456000
       },
       "digest": "0x4a05422e004fb6b333ed98bbc3d487bdbd231f0ebbf1e6d12516123f4f890a67",
-      "signature": "0x6caafe34361cd9905842d3d0a4e6473eaf7a2d4a332780256067c2fdc2d0d41e05226ee88a38104f9cd2868beecb9c5857ecbf6c2f9a56e13755d3214e46379e1b",
-      "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+      "signature": "0xb3d87a45c3d0a9daeebf6dd371bab188af2b6ba7973ef9a8c5388f043c27cbb77ec3ae6a8b17db359944274a6fa074763ffc4adfa839c8088414cf80d6ecd6151c",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
     },
     {
       "type": "StopWorld",
@@ -340,8 +458,8 @@
         "expires": 1893456000
       },
       "digest": "0xcce8832bb8c525e8a94356bd6e02d9d3e39d4fa88b0d9cf49eff9e7eaf8965d1",
-      "signature": "0x673f6a0420ea47557cd08c1724d633c64aa4011ec0e52d803770f9729372000f68daf3304277c131270d00bcd66ba3091fe7944b309441c08f2a503f410f61281b",
-      "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+      "signature": "0x19d23b378fa15e385925cd9edb65aaa566f9ea80fc17d4d7259297112bb3ebb4044b9d72ec9a6fd4d4fba11225234874e4a39f6f2bfe891ca506b95dce1222c21b",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
     },
     {
       "type": "StartWorld",
@@ -352,8 +470,8 @@
         "expires": 1893456000
       },
       "digest": "0xd84f2ea0aea5ef8176282fb8b08b92dfdc169109ed22205f2271d8c372d82a26",
-      "signature": "0x4b33ba0ee3b151f58189f57a747f6f9be907d1f2fa4ac758c3de3af6ee700f447ab2e4abdc69280cdd909103c4847042e173583f85d44dce41c289559d99f4ab1b",
-      "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+      "signature": "0xeaf29def4737dcdf71558942aa3833332c721c2c14187cf03f132d60048d859255e714ca4e4988a8ab9e9d5e13e8429fe46fae736951b6f1b0ffbcf01b21d7e31b",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
     },
     {
       "type": "DownloadWorld",
@@ -364,8 +482,8 @@
         "expires": 1893456000
       },
       "digest": "0xe03580fe93dd2192b20cd5fe6cba48e25020390d9e46e608440cfd5ec2651a27",
-      "signature": "0x90c9a1edb0b83038df2ec991be166a0cae37bc52ad556c869eef169a259adda571b32aeb68844b04bf1f2dc1a474b708b12651677253d1c4aafad4b5d58a59331b",
-      "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+      "signature": "0x1458a90d559606d9e618e438f37211cb744afe47d587d0a5ab76dd5df47079884f55630ae1a8375b3dfbf468a3893aa23fae3e3d29f28786b95eb21cbb6384b81b",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
     },
     {
       "type": "ShowAdminCode",
@@ -375,8 +493,8 @@
         "expires": 1893456000
       },
       "digest": "0x026533a50e419d03f37105c6f319572c0500f9b65237935ac8670b8dd46ecfe9",
-      "signature": "0x0b1b5f1375168666ab023eb2cb2e04468ab2ebb0953797c83d2642c0fc06daaf0ccac54e5447f362829be5a08ba5b77073a24bd6f9db6e08f81ef3e8e9dce7e11c",
-      "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+      "signature": "0x766a663b546915ad1bb0c312f64822f06d9e447a28044cd3f8c7eb874e2b4ff57e06a8a5626320d972b71de6084244483ecd741d8b9aab15df9f2edc3433d5701c",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
     },
     {
       "type": "ShowWorldCode",
@@ -387,8 +505,8 @@
         "expires": 1893456000
       },
       "digest": "0xf69173093218a76e67036e4059ad590d73a16d98de0532caf0ab55464aae3dfd",
-      "signature": "0x163474e6a8d1c784b2153f7ff12dc53246a6cd872b627c495bde22a4a842d2707e24e50ef2c32ab6b8a9c770ff4e3beab16cd175a520833f4d95805f5ecac4f21b",
-      "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+      "signature": "0xe0917e1b9cf3c126348b326d8415fb10dd9b6448ceaff3c87d6e56ed87efa1bd282ac71b48aa2793582b7f5cbeded0a7dfeab7f46d1ccbbcfa271ae2fd73492f1b",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
     },
     {
       "type": "RotateWorldCode",
@@ -399,8 +517,8 @@
         "expires": 1893456000
       },
       "digest": "0x167365fbf09a8fbe0cd684c20bce0ea5e0ceb682a44775f09ebd45137ba1ed82",
-      "signature": "0xd0c78ff0b65a9f5d634bf86de4687ff1429f03b685939730ef7f2036464383ca693d26faf502d4d2e88977850ae4710aebd4e0a0a65da9e559c3bb2938c2d3691c",
-      "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+      "signature": "0x08ec95bb5468967a14d9f5a9ff97a64a4a38e529b7e9a903fd6608be00ee7c321511c6b9b39a65ca8a9373ee37697bac01c82c72e09e390197d2c0c4c82b98311b",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
     },
     {
       "type": "ImportWorld",
@@ -418,8 +536,8 @@
         "expires": 1893456000
       },
       "digest": "0x772dc4f6286f22eca4f7eb4bcfc2d0211b060fb1417a9a19415feed1a4999ebe",
-      "signature": "0x7e07c9dcd7b8c344200ebc7abf30bd9f7da4f9f8426cd951d5129ec34c3354a87bf1044ad0c5951be01cd66064eb9c0481e27d2b9d1eb8da1d6abae89c0d89631b",
-      "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+      "signature": "0x11dc74caf7aec391ff3a5144fe4ecd79e1cec6be5c21799d572dfc3fcb7ddb6a5a5d51c578b178bed1a3708074c74ff8c94c5bc8ba97cd2a57aae01ebf0a8e331b",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
     },
     {
       "type": "UpdateWorld",
@@ -431,8 +549,8 @@
         "expires": 1893456000
       },
       "digest": "0x43cabdd5396fb9a42e85e9f001424dad6c43c5a282f9a1e075c700b9736ab598",
-      "signature": "0x3b7c12feb755920eb8d43a17d073392ad82e1ecd37a1d806f1b69c2cb6a68ec74a0915321127fefd348218cdebc5e93e314504aa1978c9556cace9a8b92a0ce71c",
-      "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+      "signature": "0xa4ed8d364b4a19309f32941aaa23b0a12621a43607aebce6c5477836fb02f7ed469e362d13de2945b1330e91ca82e112efc294aa420836caeeb41ad07b87c8881b",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
     },
     {
       "type": "FleetRelease",
@@ -444,8 +562,8 @@
         "issuedAt": 1893456000
       },
       "digest": "0xb577c6cc0d0fc62c3974dd3686d9e7c2e69f810d62a66625f851dd5a1c3f436b",
-      "signature": "0xcfd95263c120fb1127c676243d30e13e6d8df25b724e518a687e690d04d536f969bebfcbfef9d896f7b96cae36498be4be0f9d6c3c5e55ca22347f33b190c46e1b",
-      "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+      "signature": "0x83bb4f31766f2243d4c9048a2ccf4546d311b683b18383321fa1affb7be64a0e795b93b93b3d15200e11cfb4a202bdada5ef04205c6a3747619f620cf024467e1c",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
     },
     {
       "type": "PinWorld",
@@ -458,8 +576,8 @@
         "expires": 1893456000
       },
       "digest": "0xf22c718fb4699360f01d365ae9a4c4dc67a4b54a33a6bea2194aed7a814806a8",
-      "signature": "0x604a419977a8fbd9d4264f8ff84c3783fcd72e63c0438a1847e222e6a841436057422d54c48572b78163fa856ebbac4474d11c8efd193528f81235e58d0038be1c",
-      "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+      "signature": "0xc36bef64bbd0b3e2e534f99029e1f5567d9a983eea5c1cf656a1a5fa3d532bdf3246320b22cb4349b6adc548c6dee2681d77582e51e6c8d6ce6be94186321bb31c",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
     },
     {
       "type": "PinWorld",
@@ -472,8 +590,90 @@
         "expires": 1893456000
       },
       "digest": "0xd6390dd7bd98b75943878cf7f3cac790a5ca9da764d1333e7437efe1f82474bf",
-      "signature": "0x164b1d58700f11dc155547aefe08d3e9de61de8e5b078a9ffe812c65dae599954f94d96600f11a048e25f191b5ef2f303a17070f4bf52ce8d3a0322b8274e4451c",
-      "signer": "0xf688e4d5f07e5d0b80d83f201e13cf42d721b489"
+      "signature": "0xbe20d225bf7b4a0f9d637b63fd8eafa885ecf405b37a52cfc891e99dd71fa8d42f328d3151a4c484eaa7f6e3861f29b4feef5cc83cac336804fb2c6201a5dc751c",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+    },
+    {
+      "type": "DuplicateVersion",
+      "message": {
+        "machine": "open-1",
+        "world": "plaza",
+        "expires": 1893456000,
+        "version": "v1",
+        "nonce": "b123456789abcdef0123456789abcdef"
+      },
+      "digest": "0x6473616a81ee5856ef76101f8debc65cfec203cf805abd20c2ac8eb8ca9baf7c",
+      "signature": "0x0d9bbde47cc68369f0c127d05945142551cab3a2759f93230f7c61fc390a9c0e64c556a893c28f82f6a4bd1f21afb39b5704b51ed3f13c408388f1ccdb875ffc1c",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+    },
+    {
+      "type": "PublishVersion",
+      "message": {
+        "machine": "open-1",
+        "world": "plaza",
+        "expires": 1893456000,
+        "version": "v2",
+        "nonce": "c123456789abcdef0123456789abcdef"
+      },
+      "digest": "0xfd1c1f252b40286e286d753b9e0009a067faf09872f97a0838002e57b610e6ab",
+      "signature": "0x61ec633880b8db0303c4eeafc4f87cd0d4c5b1528f4bf5178e20ed45bbf575f70a80a59d7841c275d83e62f4a75cf00d702aa5332057c56be958da357effc9ea1c",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+    },
+    {
+      "type": "DeleteVersion",
+      "message": {
+        "machine": "open-1",
+        "world": "plaza",
+        "expires": 1893456000,
+        "version": "v2",
+        "nonce": "d123456789abcdef0123456789abcdef"
+      },
+      "digest": "0x55359456e26dd74c0cb22b05d6d09494c6a91c11aa27b8c1428fe3d580c4d6c2",
+      "signature": "0x3cb51bcae56bf608e4f142a36c5caf1bf125da13e00f0a8a374ead374ec0888e4e875b50243aa8a2023c6c5cb3ed322a0b791d0ec5b576dfef9202a5f25a1a5e1b",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+    },
+    {
+      "type": "DownloadVersion",
+      "message": {
+        "machine": "open-1",
+        "world": "plaza",
+        "expires": 1893456000,
+        "version": "v1",
+        "nonce": "e123456789abcdef0123456789abcdef"
+      },
+      "digest": "0x9888f432d732e8f387134c340f101ef54617bd9c3dc34c5cc3a589161d101f3d",
+      "signature": "0x05973fbf29984b10aca1b1002dcc3964c199b7c5291b727c87654208a94436122f5d101896797d092aa70d31208b494174e643b66cfc6453027549ef48a024e31c",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+    },
+    {
+      "type": "ImportVersion",
+      "message": {
+        "machine": "open-1",
+        "world": "plaza",
+        "zipBytes": 2896,
+        "zipSha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+        "replace": "",
+        "nonce": "f123456789abcdef0123456789abcdef",
+        "expires": 1893456000
+      },
+      "digest": "0xdaed6cee11f52b3e439b09500d772a9daaed999c506cfed1597dc31cc48b24bc",
+      "signature": "0x23b8f65b7adb89749b2b59ca69f29da20b0a02b7599546fb975c10d45efcf87475a9a4c640a40eae8a4f4f1852e323d29934e96ba509335a4d15d74593ea13401c",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+    },
+    {
+      "type": "ImportVersion",
+      "message": {
+        "machine": "open-1",
+        "world": "plaza",
+        "zipBytes": 50331648,
+        "zipSha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        "replace": "v2",
+        "nonce": "0a23456789abcdef0123456789abcdef",
+        "expires": 1893456000
+      },
+      "digest": "0xc3e639a81190c9f90d4d7d04e705473ce61d8b45c2c3e9fd2556b4da189f1171",
+      "signature": "0xc8aea1aed891841338ba21d1cd60e015e51b97f96e8070537a99492de8fa365f638458f54de155980340a2c68c3a3dde24e1bbc29f04ab117de9181f9bdfea5a1b",
+      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
     },
     {
       "type": "FleetSigners",
@@ -495,8 +695,8 @@
       "nonce": "2123456789abcdef0123456789abcdef",
       "expires": 1893456000
     },
-    "signature": "0x66890d42dd4578c060169ed144d005d349ccebc169a08536b1612f8b941e446b3f3223b3f65a53bc62ad95977f87e3ead9779e94c7afb85cb0e5cc22a1b78dff1c",
-    "signer": "0x6be737acfd99e343797611a8d7365919ea575e9a"
+    "signature": "0x80106580ce7005d1ba2dc50341c5416dda5fc9b033257650dee49b1ea4828d666ae90abef934798d22b6bed34e01a9578fcee7fb862b126266b1a1d7b8ebb5be1c",
+    "signer": "0xfe10a3f6a57fb674186895913553b44e9ec74063"
   },
   "keccak": [
     {

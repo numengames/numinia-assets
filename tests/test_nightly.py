@@ -215,6 +215,26 @@ class TestIdempotent(Nightly):
         self.assertEqual(out["worlds"]["ghost"], "skipped: no folder")
         self.assertEqual(len(self.zips("a")), 1)
 
+    def test_only_the_published_folder_is_copied_and_versions_and_the_switching_journal_are_left_alone(self):
+        self.world("a", files={"assets/x.glb": b"model"})
+        other = self.home / "versions" / "a" / "v2"
+        other.mkdir(parents=True)
+        (other / "db.sqlite").write_bytes(b"the unpublished one")
+        (self.home / "versions" / "a.json").write_text("{}")
+        (self.home / "orders" / "b.json").write_text(json.dumps(
+            {"id": "b", "domain": "b.example.org", "image": "ghcr.io/numengames/numinia-engine@sha256:" + "a" * 64}))
+        (self.home / "run").mkdir()
+        # b is between the two renames of a publication: its data/ is not there for a moment.
+        (self.home / "run" / "switching.json").write_text(json.dumps({"b": {"nonce": "n" * 32, "from": "v1", "to": "v2"}}))
+        out = self.pass_()
+        (name,) = self.zips("a")
+        with zipfile.ZipFile(self.home / "nightly" / "a" / name) as z:
+            self.assertEqual(set(z.namelist()), {"world/db.sqlite", "world/assets/x.glb", "order.json", "world.json"})
+            self.assertNotIn(b"the unpublished one", z.read("world/db.sqlite"))
+        self.assertEqual(out["worlds"]["b"], "skipped: no folder")
+        self.assertEqual(self.zips("b"), [])
+        self.assertEqual(sorted(os.listdir(self.home / "versions")), ["a", "a.json"])  # not touched
+
 
 class TestRetention(Nightly):
     def test_copies_are_kept_14_days_and_older_ones_go(self):
@@ -328,7 +348,7 @@ class TestBootstrapWiring(unittest.TestCase):
     text = (MACHINE / "bootstrap.sh").read_text()
 
     def test_installed_not_run_from_the_clone(self):
-        self.assertIn("nightly.py recipe.py condiciones.py signers.py; do", self.text)
+        self.assertIn("nightly.py recipe.py condiciones.py signers.py versions.py; do", self.text)
         self.assertIn("wrapper fleet-nightly nightly.py", self.text)
         self.assertIn("ExecStart=/usr/local/sbin/fleet-nightly", self.text)
 

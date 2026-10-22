@@ -15,6 +15,7 @@ import hashlib
 import http.client
 import importlib.util
 import io
+import itertools
 import json
 import os
 import socket
@@ -856,6 +857,517 @@ class OverHTTP(unittest.TestCase):
         self.assertEqual(names, [f"{nonce}.json"])
         self.assertEqual(self.rig.slot(nonce)["bytes"], 0)
         self.assertEqual(list((self.rig.home / "inbox").iterdir()), [])
+
+
+CLIENTS = itertools.count(1)
+VERSION_KINDS = ("DuplicateVersion", "PublishVersion", "DeleteVersion", "DownloadVersion", "ImportVersion")
+OLD_CHANGES = ("StopWorld", "StartWorld", "UpdateWorld", "PinWorld", "RotateWorldCode", "DeleteWorld", "DownloadWorld")
+ZIP = Z.make_zip([("world/db.sqlite", Z.db_bytes())])
+
+
+class Versions(unittest.TestCase):
+    """A world's versions at the door: the five requests, what they hold off, what the door shows of them.
+
+    The version requests are signed by the rig's throwaway Oracle (the shared
+    viem vectors for them come with the room's story); the older ones are the
+    vectors, signed by the Oracle they always were.
+    """
+
+    def rig(self, **over):
+        rig = Rig(self, **over)
+        rig.put_world()
+        return rig
+
+    def message(self, rig, kind, world="plaza", **over):
+        if kind == "ImportVersion":
+            fields = {"zipBytes": len(ZIP), "zipSha256": hashlib.sha256(ZIP).hexdigest(), "replace": ""}
+        else:
+            fields = {"version": "v2"}
+        return {"machine": "open-1", "world": world, **fields, "nonce": os.urandom(16).hex(),
+                "expires": rig.now + 600, **over}
+
+    def send(self, rig, kind, **over):
+        """A version request signed by the rig's Oracle, from its own address: (status, reply, message)."""
+        message = self.message(rig, kind, **over)
+        signed = json.dumps({"type": kind, "message": message, "signature": rig.oracle.sign(kind, message)}).encode()
+        n = next(CLIENTS)
+        status, reply = rig.accept(signed, f"198.51.{n // 250}.{n % 250}")
+        return status, reply, message
+
+    def old(self, rig, kind):
+        """An older request (the shared vector, for plaza): (status, reply)."""
+        n = next(CLIENTS)
+        return rig.accept(body(kind), f"198.51.{n // 250}.{n % 250}")
+
+    def attempt(self, rig, kind):
+        return self.old(rig, kind)[:2] if kind in OLD_CHANGES else self.send(rig, kind)[:2]
+
+    def meta(self, rig, wid="plaza", published="v1", versions=("v1",), following=None):
+        """A world's versions file, as story 2 writes it (without the fleetd group, which a test cannot give)."""
+        listed = {vid: {"createdAt": f"2026-10-2{n}T10:00:00Z", "createdBy": ORACLE.lower(), "origin":
+                        "created" if n == 1 else "zip", "bytes": 1000 * n}
+                  for n, vid in enumerate(versions, 1)}
+        found = {"world": wid, "published": published, "next": following or max(int(vid[1:]) for vid in versions) + 1,
+                 "versions": listed}
+        self.assertTrue(D.V.valid(wid, found))
+        (rig.home / "versions").mkdir(exist_ok=True)
+        (rig.home / "versions" / f"{wid}.json").write_text(json.dumps(found), encoding="utf-8")
+
+    def journal(self, rig, wid="plaza", **more):
+        job = {"nonce": "d" * 32, "by": ORACLE, "from": "v1", "to": "v2", "inoData": 11, "inoTo": 12, **more}
+        (rig.home / "run" / "switching.json").write_text(json.dumps({wid: job}))
+
+    def marker(self, rig, wid="plaza", kind="ImportVersion", **over):
+        message = self.message(rig, kind, world=wid, **over)
+        job = {"nonce": message["nonce"], "by": ORACLE, "type": "ImportVersion", "made": "v3", "message": message}
+        (rig.home / "run" / R.IMPORTING).write_text(json.dumps({wid: job}))
+        return message
+
+    # --- the five requests are taken ---------------------------------------------------------
+
+    def test_the_five_version_requests_are_taken_and_dropped_for_the_reconciler(self):
+        for kind in ("DuplicateVersion", "PublishVersion", "DeleteVersion", "DownloadVersion"):
+            with self.subTest(kind=kind):
+                rig = self.rig()
+                status, reply, message = self.send(rig, kind)
+                self.assertEqual(status, 202, reply)
+                self.assertEqual(set(reply), {"request", "copy"} if kind == "DownloadVersion" else {"request"})
+                [dropped] = rig.dropped()
+                self.assertEqual((dropped["type"], dropped["message"], dropped["signer"]),
+                                 (kind, message, rig.oracle.address))
+                self.assertEqual(dropped["receivedAt"], R.utc(NOW))
+                self.assertEqual(rig.door.request(message["nonce"]), {"request": message["nonce"], "state": "pending"})
+                self.assertIn(f"accepted {kind} plaza from", rig.err)
+                self.assertNotIn("adminCode", dropped)
+                if kind == "DownloadVersion":
+                    self.assertRegex(reply["copy"], r"\A[0-9a-f]{32}\Z")
+                    self.assertEqual(dropped["copy"], reply["copy"])
+                    self.assertEqual(rig.door.copy(reply["copy"]), {"copy": reply["copy"], "state": "preparing"})
+                    self.assertIsNone(rig.door.copy_file(reply["copy"]))
+
+    def test_a_version_import_opens_a_slot_like_a_world_import_and_takes_its_zip(self):
+        rig = self.rig()
+        status, reply, message = self.send(rig, "ImportVersion")
+        nonce = message["nonce"]
+        self.assertEqual((status, reply), (202, {"request": nonce, "upload": f"uploads/{nonce}"}))
+        self.assertEqual(rig.dropped(), [])
+        slot = rig.slot(nonce)
+        self.assertEqual((slot["type"], slot["message"], slot["bytes"], slot["expiresAt"]),
+                         ("ImportVersion", message, 0, R.utc(NOW + R.SLOT_SECONDS)))
+        self.assertEqual((rig.home / "uploads" / f"{nonce}.json").stat().st_mode & 0o777, 0o640)
+        self.assertEqual(rig.door.request(nonce), {"request": nonce, "state": "uploading", "bytes": 0, "of": len(ZIP)})
+        # Not the zip signed: the slot stays for the right one; the right one becomes the request.
+        self.assertEqual(rig.put(nonce, bytes(reversed(ZIP))), (400, {"error": "fingerprint"}))
+        self.assertEqual(rig.put(nonce, ZIP[:-5], length=str(len(ZIP))), (400, {"error": "cut"}))
+        self.assertEqual(rig.put(nonce, ZIP), (202, {"request": nonce}))
+        self.assertIsNone(rig.slot(nonce))
+        [dropped] = rig.dropped()
+        self.assertEqual((dropped["type"], dropped["message"], dropped["zip"], dropped["bytes"]),
+                         ("ImportVersion", message, f"{nonce}.zip", len(ZIP)))
+        self.assertEqual((rig.home / "uploads" / f"{nonce}.zip").read_bytes(), ZIP)
+        self.assertEqual(rig.door.request(nonce), {"request": nonce, "state": "pending"})
+        self.assertEqual(rig.put(nonce, ZIP), (404, {"error": "missing"}))
+        self.assertNotIn(message["zipSha256"], rig.err)
+        self.assertIn("took the zip for plaza", rig.err)
+        # A replace is a version, or empty; its slot lives an hour like a world's.
+        rig = self.rig()
+        _, _, other = self.send(rig, "ImportVersion", replace="v2")
+        rig.now = NOW + R.SLOT_SECONDS + 1
+        self.assertIsNone(rig.door.request(other["nonce"]))
+        self.assertEqual(rig.put(other["nonce"], ZIP), (410, {"error": "slot-expired"}))
+
+    def test_version_requests_are_checked_for_shape_machine_time_and_signer(self):
+        for kind, over in (("DuplicateVersion", {"version": "v0"}), ("PublishVersion", {"version": "2"}),
+                           ("DeleteVersion", {"version": "v10000"}), ("DownloadVersion", {"version": "V2"}),
+                           ("ImportVersion", {"replace": "x"}), ("ImportVersion", {"zipBytes": 0}),
+                           ("ImportVersion", {"zipSha256": "A" * 64})):
+            with self.subTest(kind=kind, over=over):
+                rig = self.rig()
+                status, reply, _ = self.send(rig, kind, **over)
+                self.assertEqual((status, reply["error"]), (400, "invalid"))
+                self.assertEqual(rig.dropped(), [])
+        rig = self.rig()
+        self.assertEqual(self.send(rig, "PublishVersion", machine="open-2")[:2], (400, {"error": "other-machine"}))
+        self.assertEqual(self.send(rig, "PublishVersion", expires=NOW - 1)[:2], (400, {"error": "expired"}))
+        message = self.message(rig, "PublishVersion")
+        stranger = Z.Oracle(D.W)
+        signed = json.dumps({"type": "PublishVersion", "message": message,
+                             "signature": stranger.sign("PublishVersion", message)}).encode()
+        self.assertEqual(rig.accept(signed), (403, {"error": "not-an-oracle-here"}))
+        # Signed as one type, sent as another: no signature holds.
+        signed = json.dumps({"type": "DeleteVersion", "message": message,
+                             "signature": rig.oracle.sign("PublishVersion", message)}).encode()
+        self.assertEqual(rig.accept(signed)[0], 403)  # recovers to nobody we know
+        self.assertEqual(rig.dropped(), [])
+        # A request counts once.
+        status, _, message = self.send(rig, "DeleteVersion")
+        self.assertEqual(status, 202)
+        signed = json.dumps({"type": "DeleteVersion", "message": message,
+                             "signature": rig.oracle.sign("DeleteVersion", message)}).encode()
+        self.assertEqual(rig.accept(signed), (409, {"error": "replayed"}))
+
+    def test_a_version_request_for_a_world_that_is_not_here_or_is_going_is_refused_by_name(self):
+        for kind in VERSION_KINDS:
+            with self.subTest(kind=kind, why="missing"):
+                rig = Rig(self)
+                self.assertEqual(self.attempt(rig, kind), (409, {"error": "missing"}))
+                self.assertEqual((rig.dropped(), list((rig.home / "uploads").iterdir())), ([], []))
+            with self.subTest(kind=kind, why="deleting waits"):
+                rig = self.rig()
+                rig.wait("DeleteWorld")
+                self.assertEqual(self.attempt(rig, kind), (409, {"error": "still-deleting"}))
+            with self.subTest(kind=kind, why="deleting taken"):
+                rig = self.rig()
+                (rig.home / "run" / "purge.json").write_text(json.dumps({"plaza": {"domain": "plaza.numinia.com"}}))
+                self.assertEqual(self.attempt(rig, kind), (409, {"error": "still-deleting"}))
+        # Another world's delete is no reason.
+        rig = self.rig()
+        rig.wait("DeleteWorld", wid="foro")
+        self.assertEqual(self.send(rig, "DuplicateVersion")[0], 202)
+
+    def test_a_version_zip_is_refused_over_the_cap_or_the_disk_by_name(self):
+        rig = self.rig()
+        status, reply, _ = self.send(rig, "ImportVersion", zipBytes=R.ZIP_MAX + 1)
+        self.assertEqual((status, reply), (413, {"error": "zip-too-big"}))
+        self.assertEqual(list((rig.home / "uploads").iterdir()), [])
+        # The reserve after the zip, what it unpacks to and every import already let in — worlds and versions alike.
+        first = R.reservation(len(ZIP))
+        rig = self.rig(free=first + R.RESERVE)
+        rig.put_world(wid="foro", domain="foro.numinia.com")
+        self.assertEqual(self.send(rig, "ImportVersion")[0], 202)
+        self.assertEqual(self.send(rig, "ImportVersion", world="foro")[:2], (507, {"error": "no-room"}))
+        rig.free = 2 * first + R.RESERVE
+        self.assertEqual(self.send(rig, "ImportVersion", world="foro")[0], 202)
+        # Once its zip is in the inbox, a version's unpacking is still promised; so is one being unpacked.
+        for waiting in ("inbox", "marker"):
+            with self.subTest(waiting=waiting):
+                rig = self.rig(free=first + R.RESERVE)
+                rig.put_world(wid="foro", domain="foro.numinia.com")
+                if waiting == "inbox":
+                    _, _, message = self.send(rig, "ImportVersion")
+                    self.assertEqual(rig.put(message["nonce"], ZIP)[0], 202)
+                else:
+                    self.marker(rig)
+                self.assertEqual(self.send(rig, "ImportVersion", world="foro")[:2], (507, {"error": "no-room"}))
+        rig = self.rig()
+        rig.door.disk_usage = mock.Mock(side_effect=OSError("no such disk"))
+        self.assertEqual(self.send(rig, "ImportVersion")[:2], (507, {"error": "no-room"}))
+
+    # --- what a publication holds off, and what holds it off ----------------------------------
+
+    def test_while_a_publication_waits_or_is_in_the_journal_everything_else_of_that_world_is_busy(self):
+        for how in ("inbox", "journal", "journal stuck"):
+            for kind in (*OLD_CHANGES, *VERSION_KINDS):
+                with self.subTest(how=how, kind=kind):
+                    rig = self.rig()
+                    rig.put_world(wid="foro", domain="foro.numinia.com")
+                    if how == "inbox":
+                        rig.wait("PublishVersion")
+                    else:
+                        self.journal(rig, **({"stuck": True} if how == "journal stuck" else {}))
+                    before = (rig.dropped(), sorted(p.name for p in (rig.home / "uploads").iterdir()))
+                    self.assertEqual(self.attempt(rig, kind), (409, {"error": "busy"}))
+                    self.assertEqual(before, (rig.dropped(), sorted(p.name for p in (rig.home / "uploads").iterdir())))
+            with self.subTest(how=how, what="other worlds, and the records of a shown code"):
+                rig = self.rig()
+                rig.put_world(wid="foro", domain="foro.numinia.com")
+                if how == "inbox":
+                    rig.wait("PublishVersion")
+                else:
+                    self.journal(rig)
+                (rig.etc / "codes" / "plaza").write_text(PLAZA_CODE + "\n")
+                self.assertEqual(self.send(rig, "PublishVersion", world="foro")[0], 202)
+                self.assertEqual(self.old(rig, "ShowWorldCode")[0], 202)  # a code is shown, not changed
+                self.assertEqual(self.old(rig, "ShowAdminCode")[0], 202)
+
+    def test_a_publication_is_busy_while_the_world_is_changing_or_another_version_is_on_its_way(self):
+        def updating(rig):
+            (rig.home / "run" / "updating.json").write_text(json.dumps({"plaza": {"nonce": "a" * 32, "by": ORACLE}}))
+
+        def restarting(rig):
+            (rig.home / "run" / "restart.json").write_text(json.dumps(["plaza"]))
+
+        def waits(kind):
+            return lambda rig: rig.wait(kind)
+
+        def sent(kind):
+            return lambda rig: self.assertEqual(self.send(rig, kind)[0], 202)
+
+        def slot(rig):
+            self.assertEqual(self.send(rig, "ImportVersion")[0], 202)
+
+        cases = {"updating": updating, "restarting": restarting, "an update waiting": waits("UpdateWorld"),
+                 "a pin waiting": waits("PinWorld"), "a new code waiting": waits("RotateWorldCode"),
+                 "a duplicate waiting": sent("DuplicateVersion"), "a download waiting": sent("DownloadVersion"),
+                 "a delete waiting": sent("DeleteVersion"), "an open import slot": slot,
+                 "an import being unpacked": self.marker,
+                 "an import's zip in": lambda rig: rig.put(self.send(rig, "ImportVersion")[2]["nonce"], ZIP)}
+        for name, setup in cases.items():
+            with self.subTest(name):
+                rig = self.rig()
+                setup(rig)
+                self.assertEqual(self.send(rig, "PublishVersion")[:2], (409, {"error": "busy"}))
+        # A stop, a start, a world's code shown, another world's changes: nothing to wait for.
+        rig = self.rig()
+        rig.put_world(wid="foro", domain="foro.numinia.com")
+        rig.wait("StopWorld")
+        rig.wait("StartWorld", nonce="f" * 32)
+        rig.wait("UpdateWorld", wid="foro", nonce="c" * 32)
+        (rig.home / "run" / "updating.json").write_text(json.dumps({"foro": {"nonce": "a" * 32, "by": ORACLE}}))
+        (rig.home / "run" / "restart.json").write_text(json.dumps(["foro"]))
+        self.assertEqual(self.send(rig, "PublishVersion")[0], 202)
+        # Two at once: the first is taken, the second is busy.
+        rig = self.rig()
+        self.assertEqual(self.send(rig, "PublishVersion")[0], 202)
+        self.assertEqual(self.send(rig, "PublishVersion", version="v3")[:2], (409, {"error": "busy"}))
+        self.assertEqual(len(rig.dropped()), 1)
+
+    def test_a_version_is_made_one_at_a_time(self):
+        def duplicate(rig):
+            self.assertEqual(self.send(rig, "DuplicateVersion")[0], 202)
+
+        def slot(rig):
+            self.assertEqual(self.send(rig, "ImportVersion")[0], 202)
+
+        def zipped(rig):
+            self.assertEqual(rig.put(self.send(rig, "ImportVersion")[2]["nonce"], ZIP)[0], 202)
+
+        for name, setup in {"a duplicate waiting": duplicate, "an open import slot": slot, "an import's zip in": zipped,
+                            "an import being unpacked": self.marker}.items():
+            for kind in ("DuplicateVersion", "ImportVersion"):
+                with self.subTest(name, kind=kind):
+                    rig = self.rig()
+                    setup(rig)
+                    self.assertEqual(self.send(rig, kind)[:2], (409, {"error": "busy"}))
+        # …but a version made does not hold off a download, a delete, a stop, or another world's version.
+        rig = self.rig()
+        rig.put_world(wid="foro", domain="foro.numinia.com")
+        duplicate(rig)
+        for kind in ("DeleteVersion", "DownloadVersion"):
+            self.assertEqual(self.send(rig, kind)[0], 202, kind)
+        self.assertEqual(self.send(rig, "ImportVersion", world="foro")[0], 202)
+        # A made version's slot that expired holds nothing.
+        rig = self.rig()
+        slot(rig)
+        rig.now = NOW + R.SLOT_SECONDS + 1
+        self.assertEqual(self.send(rig, "DuplicateVersion")[0], 202)
+
+    def test_the_older_requests_clash_as_they_always_did_beside_versions_that_are_only_being_made(self):
+        rig = self.rig()
+        rig.put_world(wid="foro", domain="foro.numinia.com")
+        self.assertEqual(self.send(rig, "ImportVersion")[0], 202)  # a zip on its way as a version…
+        rig.wait("DuplicateVersion", nonce="f" * 32)  # …a duplicate waiting…
+        self.marker(rig, wid="foro")  # …and one being unpacked in another world
+        # …none is a world on its way: its code is shown, changed, the world stopped, started, downloaded, deleted.
+        (rig.etc / "codes" / "plaza").write_text(PLAZA_CODE + "\n")
+        for kind in ("ShowWorldCode", "RotateWorldCode", "StopWorld", "StartWorld", "DownloadWorld", "DeleteWorld"):
+            with self.subTest(kind=kind):
+                self.assertEqual(self.old(rig, kind)[0], 202)
+        # A name or an address is not held by a zip that is only a version: a world is born beside it.
+        status, _, _ = rig.bring(ZIP, world="otra", domain="otra.numinia.com")
+        self.assertEqual(status, 202)
+        # …while a world born from a zip is still a world on its way (the older rules).
+        self.assertEqual(rig.bring(ZIP, world="otra", domain="distinta.numinia.com")[:2], (409, {"error": "exists"}))
+        self.assertEqual(rig.bring(ZIP, world="tercera", domain="otra.numinia.com")[:2],
+                         (409, {"error": "address-taken"}))
+
+    # --- what the door says --------------------------------------------------------------------
+
+    def test_the_machine_says_it_keeps_versions_and_how_many(self):
+        facts = Rig(self).door.machine()
+        self.assertEqual(facts["versions"], {"max": 2})
+        self.assertEqual(facts["versions"]["max"], D.V.MAX_VERSIONS)
+        json.dumps(facts)
+
+    def test_worlds_show_their_versions_the_implicit_one_when_there_is_no_file(self):
+        rig = self.rig()
+        order = json.loads((rig.home / "orders" / "plaza.json").read_text())
+        (rig.home / "orders" / "plaza.json").write_text(json.dumps({**order, "createdAt": "2026-10-01T09:00:00Z"}))
+        [world] = rig.door.worlds()["worlds"]
+        self.assertEqual(world["versions"], [{"id": "v1", "published": True, "bytes": None,
+                                               "createdAt": "2026-10-01T09:00:00Z", "origin": "created"}])
+        self.assertEqual((world["phase"], "versionComing" in world), ("running", False))
+        self.assertFalse((rig.home / "versions").exists())  # the door only reads
+        # Two versions once the reconciler wrote the file, sorted by number, one published.
+        self.meta(rig, published="v3", versions=("v1", "v3"))
+        [world] = rig.door.worlds()["worlds"]
+        self.assertEqual(world["versions"], [
+            {"id": "v1", "published": False, "bytes": 1000, "createdAt": "2026-10-21T10:00:00Z", "origin": "created"},
+            {"id": "v3", "published": True, "bytes": 2000, "createdAt": "2026-10-22T10:00:00Z", "origin": "zip"},
+        ])
+        for leaked in (ORACLE.lower(), "createdBy"):
+            self.assertNotIn(leaked, json.dumps(rig.door.worlds()))
+        # Numbers sort as numbers, not as words.
+        self.meta(rig, published="v2", versions=("v2", "v10"))
+        self.assertEqual([v["id"] for v in rig.door.worlds()["worlds"][0]["versions"]], ["v2", "v10"])
+        # A file the door cannot vouch for shows nothing; it is never taken for the implicit one.
+        (rig.home / "versions" / "plaza.json").write_text("{broken")
+        self.assertEqual(rig.door.worlds()["worlds"][0]["versions"], [])
+        (rig.home / "versions" / "plaza.json").write_text(json.dumps({"world": "otra"}))
+        self.assertEqual(rig.door.worlds()["worlds"][0]["versions"], [])
+        # Another world's file is its own.
+        rig.put_world(wid="foro", domain="foro.numinia.com")
+        self.meta(rig, wid="foro", published="v1", versions=("v1", "v2"))
+        listed = {w["id"]: w for w in rig.door.worlds()["worlds"]}
+        self.assertEqual([v["id"] for v in listed["foro"]["versions"]], ["v1", "v2"])
+        self.assertEqual(listed["plaza"]["versions"], [])
+
+    def test_worlds_born_or_going_keep_the_shape_they_had(self):
+        rig = Rig(self)
+        self.assertEqual(rig.accept(body("CreateWorld"))[0], 202)
+        (rig.home / "run" / "purge.json").write_text(json.dumps({"vieja": {"domain": "vieja.numinia.com"}}))
+        rig.bring(ZIP, world="otra")
+        for world in rig.door.worlds()["worlds"]:
+            self.assertNotIn("versions", world)
+            self.assertNotIn("versionComing", world)
+
+    def test_a_version_on_its_way_is_shown_while_the_world_goes_on(self):
+        rig = self.rig()
+        _, _, message = self.send(rig, "ImportVersion")
+        nonce = message["nonce"]
+        shown = lambda: rig.door.worlds()["worlds"]  # noqa: E731 — read at each step
+        [world] = shown()
+        self.assertEqual(world["versionComing"], {"kind": "import", "state": "uploading", "bytes": 0, "of": len(ZIP)})
+        self.assertEqual(world["phase"], "running")  # the live world is untouched
+        slot = rig.slot(nonce)
+        (rig.home / "uploads" / f"{nonce}.json").write_text(json.dumps({**slot, "bytes": 500}))
+        self.assertEqual(shown()[0]["versionComing"]["bytes"], 500)
+        for claimed, said in ((10**12, len(ZIP)), (-5, 0), ("500", 0), (True, 0)):
+            (rig.home / "uploads" / f"{nonce}.json").write_text(json.dumps({**slot, "bytes": claimed}))
+            self.assertEqual(shown()[0]["versionComing"]["bytes"], said)
+        # The zip is in and waits for the reconciler.
+        self.assertEqual(rig.put(nonce, ZIP)[0], 202)
+        [world] = shown()
+        self.assertEqual(world["versionComing"], {"kind": "import", "state": "waiting"})
+        self.assertEqual((world["id"], world["phase"], world["state"]), ("plaza", "running", "running"))
+        # Taken, and being unpacked: its marker says so (an ImportVersion's, with its type).
+        for path in (rig.home / "inbox").iterdir():
+            path.unlink()
+        self.marker(rig)
+        [world] = shown()  # still one world: a version is not a world on its way
+        self.assertEqual((world["versionComing"], world["phase"]), ({"kind": "import", "state": "working"}, "running"))
+        # Done: the marker goes with the answer.
+        (rig.home / "run" / R.IMPORTING).unlink()
+        self.assertNotIn("versionComing", shown()[0])
+        for leaked in (rig.oracle.address, message["zipSha256"]):
+            self.assertNotIn(leaked, json.dumps(rig.door.worlds()))
+
+    def test_a_duplicate_waiting_is_shown_and_so_is_a_download_not_at_all(self):
+        rig = self.rig()
+        self.assertEqual(self.send(rig, "DownloadVersion")[0], 202)
+        self.assertNotIn("versionComing", rig.door.worlds()["worlds"][0])
+        self.assertEqual(self.send(rig, "DuplicateVersion")[0], 202)
+        [world] = rig.door.worlds()["worlds"]
+        self.assertEqual(world["versionComing"], {"kind": "duplicate", "state": "waiting"})
+        self.assertEqual(world["phase"], "running")
+        # Another world's duplicate is its own.
+        rig.put_world(wid="foro", domain="foro.numinia.com")
+        listed = {w["id"]: w for w in rig.door.worlds()["worlds"]}
+        self.assertNotIn("versionComing", listed["foro"])
+
+    def test_a_publication_shows_as_switching_only_while_the_journal_names_the_world(self):
+        rig = self.rig()
+        rig.put_world(wid="foro", domain="foro.numinia.com")
+        rig.wait("PublishVersion")  # waiting in the inbox: the world has not been touched yet
+        listed = {w["id"]: w for w in rig.door.worlds()["worlds"]}
+        self.assertEqual((listed["plaza"]["phase"], listed["foro"]["phase"]), ("running", "running"))
+        self.journal(rig)
+        listed = {w["id"]: w for w in rig.door.worlds()["worlds"]}
+        self.assertEqual((listed["plaza"]["phase"], listed["foro"]["phase"]), ("switching", "running"))
+        self.assertNotIn("versionComing", listed["plaza"])
+        self.journal(rig, stuck=True)  # a person has to look; still down, still switching
+        self.assertEqual(rig.door.worlds()["worlds"][1]["phase"], "switching")
+        (rig.home / "run" / "switching.json").write_text("{broken")
+        self.assertEqual(rig.door.worlds()["worlds"][1]["phase"], "running")
+        # The state the order says is kept: a stopped world publishes stopped.
+        order = json.loads((rig.home / "orders" / "plaza.json").read_text())
+        (rig.home / "orders" / "plaza.json").write_text(json.dumps({**order, "state": "stopped"}))
+        self.assertEqual(rig.door.worlds()["worlds"][1]["state"], "stopped")
+        self.journal(rig)
+        self.assertEqual(rig.door.worlds()["worlds"][1]["state"], "stopped")
+
+    def test_a_version_request_does_not_hide_the_phase_of_another_change_waiting(self):
+        rig = self.rig()
+        self.assertEqual(self.old(rig, "StopWorld")[0], 202)
+        self.assertEqual(self.send(rig, "ImportVersion")[0], 202)
+        self.assertEqual(self.send(rig, "DuplicateVersion")[0], 409)  # busy: one version at a time
+        self.assertEqual(self.send(rig, "DeleteVersion")[0], 202)  # the last request to arrive, in the inbox
+        [world] = rig.door.worlds()["worlds"]
+        self.assertEqual(world["phase"], "stopping")
+        self.assertEqual(world["versionComing"]["state"], "uploading")
+
+    def test_a_zip_for_a_version_never_makes_a_world(self):
+        rig = Rig(self)  # no such world here
+        message = self.message(rig, "ImportVersion", world="ausente")
+        slot = {"type": "ImportVersion", "message": message, "signature": "0x", "signer": ORACLE,
+                "receivedAt": R.utc(NOW), "expiresAt": R.utc(NOW + R.SLOT_SECONDS), "bytes": 0}
+        (rig.home / "uploads" / f"{message['nonce']}.json").write_text(json.dumps(slot))
+        self.assertEqual(rig.door.worlds()["worlds"], [])
+        (rig.home / "inbox" / "0000000000001-x.json").write_text(json.dumps(
+            {"type": "ImportVersion", "message": message, "signer": ORACLE, "receivedAt": R.utc(NOW)}))
+        self.assertEqual(rig.door.worlds()["worlds"], [])
+        self.marker(rig, wid="ausente")
+        self.assertEqual(rig.door.worlds()["worlds"], [])
+
+    def test_the_marker_of_a_version_import_is_read_as_its_own_type_and_is_not_a_world_import(self):
+        rig = self.rig()
+        version = self.marker(rig)
+        self.assertEqual(rig.door.importing(), {"plaza": version})  # no longer skipped…
+        self.assertEqual(rig.door.importing("ImportVersion"), {"plaza": version})
+        self.assertEqual(rig.door.importing("ImportWorld"), {})  # …but not a world on its way
+        world = Z.import_message(ZIP, world="plaza-copia", expires=EXPIRES)
+        (rig.home / "run" / R.IMPORTING).write_text(json.dumps({"plaza-copia": {"nonce": world["nonce"], "message": world}}))
+        self.assertEqual(rig.door.importing(), {"plaza-copia": world})  # an ImportWorld's has no type
+        self.assertEqual(rig.door.importing("ImportWorld"), {"plaza-copia": world})
+        self.assertEqual(rig.door.importing("ImportVersion"), {})
+        [born] = [w for w in rig.door.worlds()["worlds"] if w["id"] == "plaza-copia"]
+        self.assertEqual(born["phase"], "importing")
+        # Each is judged as its own type, so one that is neither is skipped.
+        for marker in (
+            {"type": "ImportVersion", "made": "v3", "message": world},  # a world's message under a version's name
+            {"type": "ImportWorld", "message": version},  # a version's message under a world's
+            {"type": "DeleteWorld", "message": version},
+            {"type": "ImportVersion", "message": {**version, "world": "otra"}},  # names another world than its key
+            {"type": "ImportVersion", "message": {**version, "replace": "x"}},
+            {"message": "broken"}, "broken", None,
+        ):
+            with self.subTest(marker=marker):
+                (rig.home / "run" / R.IMPORTING).write_text(json.dumps({"plaza": marker}))
+                self.assertEqual(rig.door.importing(), {})
+        (rig.home / "run" / R.IMPORTING).write_text(json.dumps({"BAD": {"type": "ImportVersion", "message": version}}))
+        self.assertEqual(rig.door.importing(), {})
+        (rig.home / "run" / R.IMPORTING).write_text("[1]")
+        self.assertEqual(rig.door.importing(), {})
+
+    def test_the_reconciler_takes_what_the_door_dropped_and_the_door_shows_what_it_did(self):
+        rig = self.rig()
+        (rig.home / "data" / "plaza").mkdir(parents=True)
+        (rig.home / "versions" / "plaza" / "v2").mkdir(parents=True)
+        self.meta(rig, versions=("v1", "v2"))
+
+        def take():
+            with contextlib.redirect_stderr(io.StringIO()):
+                return R.take_requests(rig.home, rig.home / "orders", "open-1", frozenset({rig.oracle.address}),
+                                       frozenset(), "open-1.numinia.com", NOW, codes_dir=rig.etc / "codes")
+
+        def result(nonce):
+            return json.loads((rig.home / "requests" / f"{nonce}.json").read_text())
+
+        # A download of a version: the same copy number the door gave is the job's and the copy's.
+        _, reply, message = self.send(rig, "DownloadVersion", version="v2")
+        [entry] = take()
+        self.assertEqual((entry["type"], entry["copy"]), ("DownloadVersion", reply["copy"]))
+        self.assertEqual(result(message["nonce"])["state"], "working")
+        self.assertEqual(rig.door.copy(reply["copy"])["state"], "preparing")
+        # A publication: taken into the journal, the door says switching and holds everything else off.
+        _, _, publish = self.send(rig, "PublishVersion", version="v2")
+        take()
+        self.assertEqual(result(publish["nonce"])["state"], "working")
+        [world] = rig.door.worlds()["worlds"]
+        self.assertEqual((world["phase"], [v["published"] for v in world["versions"]]), ("switching", [True, False]))
+        for kind in ("StopWorld", "DuplicateVersion", "DownloadVersion", "PublishVersion"):
+            self.assertEqual(self.attempt(rig, kind), (409, {"error": "busy"}), kind)
+        self.assertEqual(R.read_switching(rig.home)["plaza"]["nonce"], publish["nonce"])
 
 
 if __name__ == "__main__":

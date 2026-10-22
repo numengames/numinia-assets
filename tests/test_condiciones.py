@@ -628,7 +628,7 @@ class Installed(unittest.TestCase):
 
     def test_the_bootstrap_installs_the_program_and_its_command(self):
         text = (MACHINE / "bootstrap.sh").read_text()
-        self.assertIn("nightly.py recipe.py condiciones.py signers.py; do", text)
+        self.assertIn("nightly.py recipe.py condiciones.py signers.py versions.py; do", text)
         self.assertIn("wrapper fleet-condiciones condiciones.py", text)
 
     def test_the_updater_manages_the_command_with_the_others(self):

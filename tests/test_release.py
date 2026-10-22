@@ -244,6 +244,19 @@ class TestRollout(Fleet):
         self.env.busy = lambda: set()
         self.assertEqual(self.pass_()["world"], "bz")
 
+    def test_a_world_whose_published_version_is_being_switched_is_busy(self):
+        self.order("bz")
+        self.order("ok")
+        job = {"nonce": "a" * 32, "by": None, "from": "v1", "to": "v2", "inoData": 5, "inoTo": 6}
+        R.write_json(self.home / "run" / "switching.json", {"bz": job, "bad-job": {"nonce": "x"}})
+        self.assertEqual(self.env.busy(), {"bz"})  # the real check, read from the journal; junk in it is ignored
+        self.assertEqual(self.pass_()["world"], "ok")
+        self.assertEqual([self.image("bz"), self.image("ok")], [OLD, NEW])
+        self.assertNotIn("applied", self.state())
+        (self.home / "run" / "switching.json").unlink()
+        self.assertEqual(self.env.busy(), set())
+        self.assertEqual(self.pass_()["world"], "bz")
+
     def test_idempotent_when_already_current(self):
         self.order("a", NEW)
         self.order("b", NEW, state="stopped")
@@ -374,7 +387,7 @@ class TestBootstrapWiring(unittest.TestCase):
     text = (MACHINE / "bootstrap.sh").read_text()
 
     def test_installed_not_run_from_the_clone(self):
-        self.assertIn("for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py condiciones.py signers.py; do", self.text)
+        self.assertIn("for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py condiciones.py signers.py versions.py; do", self.text)
         self.assertIn("wrapper fleet-release release.py", self.text)
         self.assertIn("ExecStart=/usr/local/sbin/fleet-release", self.text)
         self.assertNotIn("python3 $BOOK_DIR", self.text)
