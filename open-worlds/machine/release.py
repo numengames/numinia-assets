@@ -415,7 +415,7 @@ class Env:
         return self.home / RELEASE_DIR
 
     def _busy(self) -> set[str]:
-        return set(R.read_updates(self.home)) | set(R.read_restarts(self.home))
+        return set(R.read_updates(self.home)) | set(R.read_restarts(self.home)) | set(R.read_switching(self.home))
 
     def _canary(self) -> str | None:
         try:

@@ -41,6 +41,7 @@ import shutil
 import sqlite3
 import stat
 import subprocess
+import sys
 import time
 import zipfile
 from pathlib import Path
@@ -451,6 +452,195 @@ def duplicate_version(home: Path, orders: Path, entry: dict, message: dict, now:
             shutil.rmtree(stage, ignore_errors=True)
         if zipped.is_symlink() or zipped.is_file():
             zipped.unlink(missing_ok=True)
+
+
+def folder_ino(path: Path) -> int | None:
+    """The inode of a real folder at `path`; None when there is nothing there; -1 when there is a link or a file.
+
+    -1 never equals a recorded inode, so a link or a file in a folder's place
+    is "something else", never "missing" and never "the folder".
+    """
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return -1
+    return info.st_ino if stat.S_ISDIR(info.st_mode) else -1
+
+
+def publish_version(home: Path, orders: Path, entry: dict, message: dict) -> str | None:
+    """A signed PublishVersion: write it to the journal run/switching.json; the broken rule, or None when it is written.
+
+    Rules, in this order: `missing` (no order for the world),
+    `versions-unreadable` (its metadata cannot be trusted), `no-version`
+    (the world has no such version), `already-published` (it is the
+    published one; nothing to do, so it is refused rather than answered
+    done), `busy` (the world is already being switched, is updating, or
+    waits to be restarted), `not-a-folder` (the world's folder or the
+    version's is not a real folder), `versions-unwritable` (the journal could
+    not be written). Nothing moves here: the journal names the world,
+    the next plan leaves it out of the book, and finish_switches moves the
+    folders once Docker has taken its container down. The inode of both
+    folders is written now, so a run that finds the machine halfway can
+    tell which step was done.
+    """
+    wid, to = entry["world"], message["version"]
+    order = R.read_order(orders / f"{wid}.json")
+    if order is None:
+        return "missing"
+    meta = read_versions(home, order)
+    if meta is None:
+        return "versions-unreadable"
+    if to not in meta["versions"]:
+        return "no-version"
+    if to == meta["published"]:
+        return "already-published"
+    jobs = R.read_switching(home)
+    if wid in jobs or wid in R.read_updates(home) or wid in R.read_restarts(home):
+        return "busy"
+    root = versions_root(home)
+    if root.is_symlink() or (root / wid).is_symlink():
+        return "not-a-folder"
+    inode_data = folder_ino(home / "data" / wid)
+    inode_to = folder_ino(root / wid / to)
+    if inode_data is None or inode_to is None or -1 in (inode_data, inode_to):
+        return "not-a-folder"
+    jobs[wid] = {"nonce": entry["nonce"], "by": entry["by"], "from": meta["published"], "to": to,
+                 "inoData": inode_data, "inoTo": inode_to}
+    try:
+        R.write_switching(home, jobs)
+    except OSError:
+        return "versions-unwritable"
+    return None
+
+
+def docker_gone(wid: str) -> bool:
+    """Whether Docker has no container of this world left (running or not); any error is "not gone", to try next run."""
+    try:
+        done = subprocess.run(
+            ["docker", "ps", "-a", "-q", "--filter", f"label=com.docker.compose.service={wid}"],
+            capture_output=True, text=True, check=True, stdin=subprocess.DEVNULL, timeout=60,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return False
+    return done.stdout.strip() == ""
+
+
+def sync_folder(path: Path) -> None:
+    """Make a folder's last renames reach the disk, so the inode picture a crash leaves is one the recovery reads."""
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def switch_step(home: Path, wid: str, job: dict) -> int | None:
+    """Which step of a switch is next, from where the two recorded inodes are: 1, 2 or 3; None when it fits none.
+
+    `inoData` is the folder that was the published version's, `inoTo` the one
+    that is to become it. 3 means both renames are done (the world's folder
+    is `inoTo`, the old one waits as `<from>`); the metadata is what is left.
+    """
+    root = versions_root(home) / wid
+    here, old, new = folder_ino(home / "data" / wid), folder_ino(root / job["from"]), folder_ino(root / job["to"])
+    if here == job["inoTo"] and old == job["inoData"]:
+        return 3
+    if old == job["inoData"] and here is None and new == job["inoTo"]:
+        return 2
+    if here == job["inoData"] and old is None and new == job["inoTo"]:
+        return 1
+    return None
+
+
+def switch_world(home: Path, orders: Path, wid: str, job: dict) -> str:
+    """Take one world's switch as far as it goes now: `done`, `stuck` (no step fits the folders) or `retry` (an OSError).
+
+    The same function is the first try and the recovery: it reads the
+    inode picture at the start of every step and does what the picture says.
+    """
+    root = versions_root(home)
+    for _ in range(4):
+        step = switch_step(home, wid, job)
+        if step is None:
+            return "stuck"
+        try:
+            if step == 1:
+                mine = ensure_dirs(home, wid)
+                os.rename(home / "data" / wid, mine / job["from"])
+                sync_folder(home / "data")
+                sync_folder(mine)
+            elif step == 2:
+                os.rename(root / wid / job["to"], home / "data" / wid)
+                sync_folder(home / "data")
+                sync_folder(root / wid)
+            else:
+                return switch_metadata(home, orders, wid, job)
+        except OSError as error:
+            print(f"{wid}: a step of a version switch could not be done ({type(error).__name__}); the next run goes on",
+                  file=sys.stderr)
+            return "retry"
+    return "stuck"
+
+
+def switch_metadata(home: Path, orders: Path, wid: str, job: dict) -> str:
+    """The last step: the metadata says `to` is published, with both folders measured again; `done`, `stuck` or `retry`."""
+    order = R.read_order(orders / f"{wid}.json")
+    meta = read_versions(home, order) if order is not None else None
+    if meta is None or job["from"] not in meta["versions"] or job["to"] not in meta["versions"]:
+        return "stuck"
+    if meta["published"] not in (job["from"], job["to"]):
+        return "stuck"
+    meta["published"] = job["to"]
+    meta["versions"][job["to"]]["bytes"] = measure(home / "data" / wid)
+    meta["versions"][job["from"]]["bytes"] = measure(versions_root(home) / wid / job["from"])
+    try:
+        write_versions(home, wid, meta)
+    except ValueError:
+        return "stuck"
+    except OSError:
+        print(f"{wid}: the versions file could not be written; the next run goes on", file=sys.stderr)
+        return "retry"
+    return "done"
+
+
+def finish_switches(home: Path, orders: Path, now: float | None = None, container_gone=None) -> list[str]:
+    """Move the folders of every world the journal names whose container is gone; the worlds whose switch ended.
+
+    Called after Docker took the book without those worlds
+    (reconcile.plan leaves them out). `container_gone(wid)` says whether
+    Docker has no container of the world: docker_gone unless a test puts
+    another in its place; a world whose container is not gone, or cannot be
+    asked about, is left for the next run, and nothing moves. A switch that
+    ends is answered `done` before its journal entry goes, so a machine that
+    dies in between answers again (the same) on the next run. A switch whose
+    folders are in none of the places a step leaves them is answered `failed`
+    with `switch-stuck` ONCE (the entry gets `stuck: true`), the line goes to
+    stderr, and the entry stays: the world stays out of the book, never
+    started on the wrong folder. A person who puts the folders right is
+    followed on the next run.
+    """
+    jobs = R.read_switching(home)
+    gone = container_gone or docker_gone
+    ended = []
+    for wid, job in sorted(jobs.items()):
+        if not gone(wid):
+            continue
+        entry = {"nonce": job["nonce"], "type": "PublishVersion", "world": wid, "by": job["by"], "version": job["to"]}
+        outcome = switch_world(home, orders, wid, job)
+        if outcome == "done":
+            R.answer(home, entry, "done", None, now)
+            ended.append(wid)
+            jobs.pop(wid)
+            R.write_switching(home, jobs)
+        elif outcome == "stuck" and not job.get("stuck"):
+            print(f"{wid}: the folders of a version switch are not where a step leaves them; "
+                  f"the world stays down until a person looks", file=sys.stderr)
+            job["stuck"] = True
+            R.write_switching(home, jobs)
+            R.answer(home, entry, "failed", "switch-stuck", now)
+    return ended
 
 
 def purge_versions(home: Path, wid: str) -> None:

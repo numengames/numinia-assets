@@ -244,6 +244,19 @@ class TestRollout(Fleet):
         self.env.busy = lambda: set()
         self.assertEqual(self.pass_()["world"], "bz")
 
+    def test_a_world_whose_published_version_is_being_switched_is_busy(self):
+        self.order("bz")
+        self.order("ok")
+        job = {"nonce": "a" * 32, "by": None, "from": "v1", "to": "v2", "inoData": 5, "inoTo": 6}
+        R.write_json(self.home / "run" / "switching.json", {"bz": job, "bad-job": {"nonce": "x"}})
+        self.assertEqual(self.env.busy(), {"bz"})  # the real check, read from the journal; junk in it is ignored
+        self.assertEqual(self.pass_()["world"], "ok")
+        self.assertEqual([self.image("bz"), self.image("ok")], [OLD, NEW])
+        self.assertNotIn("applied", self.state())
+        (self.home / "run" / "switching.json").unlink()
+        self.assertEqual(self.env.busy(), set())
+        self.assertEqual(self.pass_()["world"], "bz")
+
     def test_idempotent_when_already_current(self):
         self.order("a", NEW)
         self.order("b", NEW, state="stopped")

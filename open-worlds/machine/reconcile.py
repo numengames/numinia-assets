@@ -182,6 +182,7 @@ WORLD_FOLDERS = ("assets/", "collections/")
 ENGINE_TABLES = ("config", "users", "blueprints", "entities")
 IMPORTING = "import.json"  # run/: the world being unpacked right now, for the door to show
 UPDATING = "updating.json"  # run/: the worlds moved to a new build, until Docker has started it
+SWITCHING = "switching.json"  # run/: the worlds whose published version is being switched, until the folders have moved
 
 # Every pattern is used with re.fullmatch: `$` alone would let a trailing
 # newline through, and a newline is how text turns into a new setting.
@@ -268,6 +269,7 @@ ADMIN_CODE = re.compile(r"[A-Za-z0-9_-]{8,64}")
 # replaces every such line with one plain `ADMIN_CODE=<code>`.
 ADMIN_CODE_LINE = re.compile(r"[ \t]*(?:export[ \t]+)?ADMIN_CODE[ \t]*(?:=.*)?")
 JWT = re.compile(r"[0-9a-f]{64}")
+SWITCH_FIELDS = {"nonce", "by", "from", "to", "inoData", "inoTo"}  # what a job in run/switching.json holds
 NONCE = re.compile(r"[0-9a-f]{32}")  # a request's number: 128 random bits, chosen by the browser
 NONCE_ZIP = re.compile(r"[0-9a-f]{32}\.zip")  # staging/<nonce>.zip: the zip a version's duplicate is making
 COPY_ID = re.compile(r"[0-9a-f]{32}")  # a copy's number: 128 random bits, chosen by the door
@@ -292,7 +294,7 @@ FIELD_RULES = {
 }
 # The requests about one of a world's versions, and the one that brings a zip in as a version.
 VERSION_REQUESTS = ("DuplicateVersion", "PublishVersion", "DeleteVersion", "DownloadVersion")
-NOT_YET = VERSION_REQUESTS + ("ImportVersion",)  # all but DeleteVersion and DuplicateVersion are refused until their own stories land
+NOT_YET = ("DownloadVersion", "ImportVersion")  # refused `not-yet` until their own stories land
 
 
 def matches(pattern: re.Pattern[str], value: object) -> bool:
@@ -721,6 +723,11 @@ def plan(
         allowed = read_allowed_domains()
     mine = select_orders(read_orders(orders_dir), alias, allowed, control_host)
     ready, keyless = split_by_keys(mine, home / "env")
+    # A world whose versions are being switched is left out of the book: Docker
+    # takes its container down, and nothing starts it on a folder in motion.
+    switching = sorted(read_switching(home))
+    ready = [o for o in ready if o["id"] not in switching]
+    keyless = [o for o in keyless if o["id"] not in switching]
     new_keys = keyless if matches(ADMIN_CODE, admin_code) else []
     if new_keys:
         keyless = []
@@ -732,6 +739,7 @@ def plan(
         "stopped": stopped,
         "keyless": [o["id"] for o in keyless],
         "new_keys": [o["id"] for o in new_keys],
+        "switching": switching,
         # The running worlds of the Numinia Engine: their folders are the engine user's.
         "engine_worlds": [o["id"] for o in running if runs_engine(o)],
         "compose": render_compose(running, home),
@@ -770,7 +778,7 @@ def save_waits(
     SAVE_INTERVAL seconds, and not when it is told to stop: a world stopped
     right after an edit would lose it. `before` is the compose file the
     running containers came from, `after` the one about to be applied, `keep`
-    the worlds that still have an order — a deleted world needs no save —
+    the worlds that still have an order, or are being switched — a deleted world needs no save —
     and `restart` the worlds restarted even though their service is the same
     (their admin code changed).
     """
@@ -874,7 +882,9 @@ def apply(p: dict, home: Path, admin_code: str | None = None, sleep=time.sleep,
     # The engine reads its key file only when its container starts: a world
     # whose admin code changed is restarted, after its next save like a stop.
     restart = restarting(before, after, queued)
-    waits = save_waits(before, after, set(p["running"]) | set(p["stopped"]), set(restart))
+    # A world being switched is not in `running`, yet Docker is about to stop it: it is kept, so it saves first.
+    waits = save_waits(before, after, set(p["running"]) | set(p["stopped"]) | set(p.get("switching", ())),
+                       set(restart))
     if waits:
         pause = max(waits.values())
         print(f"waiting {pause} s for {', '.join(sorted(waits))} to save before Docker stops or restarts them",
@@ -1263,6 +1273,41 @@ def finish_updates(home: Path, now: float | None = None) -> list[str]:
     return sorted(pending)
 
 
+def read_switching(home: Path) -> dict[str, dict]:
+    """The worlds whose published version is being switched (run/switching.json): id → the job.
+
+    A job is `{nonce, by, from, to, inoData, inoTo}` (and `stuck: true` once a
+    person has been told it cannot go on). Every field is checked; an entry
+    that is not whole is ignored, as is a file that is not an object.
+    """
+    raw = read_json(home / "run" / SWITCHING, {})
+    found = {}
+    for wid, job in (raw.items() if isinstance(raw, dict) else []):
+        if not matches(SLUG, wid) or not isinstance(job, dict) or set(job) - {"stuck"} != SWITCH_FIELDS:
+            continue
+        inodes = (job["inoData"], job["inoTo"])
+        if (
+            matches(NONCE, job["nonce"])
+            and (job["by"] is None or matches(ADDRESS, job["by"]))
+            and matches(VERSION, job["from"])
+            and matches(VERSION, job["to"])
+            and job["from"] != job["to"]
+            and all(isinstance(n, int) and not isinstance(n, bool) and n >= 0 for n in inodes)
+            and isinstance(job.get("stuck", False), bool)
+        ):
+            found[wid] = job
+    return found
+
+
+def write_switching(home: Path, jobs: dict[str, dict]) -> None:
+    """Write the journal whole; no worlds left, no file."""
+    path = home / "run" / SWITCHING
+    if jobs:
+        write_json(path, jobs)
+    else:
+        path.unlink(missing_ok=True)
+
+
 def carried_code(raw: object, kind: object) -> tuple[str | None, str | None]:
     """The admin code the door made for a create, an import or a change of code: (code, None), or (None, the rule).
 
@@ -1366,9 +1411,12 @@ def take_requests(
     run/copy-queue.json. A DeleteVersion removes one unpublished version at
     once (versions.delete_version); a DuplicateVersion copies one into a new
     version before the next request (versions.duplicate_version; its result
-    names the new version as `made`); the other requests about versions are
-    refused as `not-yet` until their own code lands. Returns the entries
-    taken, for the summary.
+    names the new version as `made`). A PublishVersion is checked and written
+    to the journal run/switching.json (versions.publish_version) and answered
+    `working`; finish_switches ends it once the world's container is gone.
+    Every other request about a world the journal names (bar the records of
+    a shown code) is refused `busy`. The requests about versions not built yet
+    are refused as `not-yet`. Returns the entries taken, for the summary.
     """
     now = time.time() if now is None else now
     inbox = home / "inbox"
@@ -1393,7 +1441,9 @@ def take_requests(
             admin_code, rule = carried_code(raw, entry["type"])
         if rule is None:
             deleting = {w: job.get("domain") for w, job in purge.items() if isinstance(job, dict)}
-            if entry["type"] == "ImportWorld":
+            if entry["world"] in read_switching(home) and entry["type"] not in ("ShowAdminCode", "ShowWorldCode"):
+                rule = "busy"  # its folders are moving; nothing else is done to it until they have
+            elif entry["type"] == "ImportWorld":
                 rule, detail = import_world(home, orders, codes_dir, entry, message, raw, admin_code, alias,
                                             allowed, control_host, now, deleting)
             elif entry["type"] == "UpdateWorld":
@@ -1406,6 +1456,9 @@ def take_requests(
             elif entry["type"] == "DuplicateVersion":
                 import versions  # here, not at the top: versions imports this file
                 rule = versions.duplicate_version(home, orders, entry, message, now)
+            elif entry["type"] == "PublishVersion":
+                import versions  # here, not at the top: versions imports this file
+                rule = versions.publish_version(home, orders, entry, message)
             elif entry["type"] in NOT_YET:
                 rule = "not-yet"  # signed and well formed, but this machine cannot do it yet
             else:
@@ -1430,6 +1483,9 @@ def take_requests(
             write_json(home / "copies" / f"{entry['copy']}.json",
                        {"copy": entry["copy"], "world": entry["world"], "state": "preparing", "at": utc(now)},
                        mode=0o640, group=door_gid())
+            answer(home, entry, "working", None, now)
+        elif entry["type"] == "PublishVersion":
+            # Done once the folders have moved and the world is back (finish_switches); until then the door says switching.
             answer(home, entry, "working", None, now)
         elif entry["type"] in ("UpdateWorld", "PinWorld") and message["image"] and (
                 read_order(orders / f"{entry['world']}.json") or {}).get("state") == "running":
@@ -2452,7 +2508,7 @@ def main(argv: list[str] | None = None) -> int:
         for wid in p["keyless"]:
             print(f"{wid}: order says running but it has no key file and this machine has no legacy admin code"
                   f" ({args.admin_code_file}) — not started", file=sys.stderr)
-        print(json.dumps({k: p[k] for k in ("alias", "running", "stopped", "keyless", "new_keys")}, indent=2))
+        print(json.dumps({k: p[k] for k in ("alias", "running", "stopped", "keyless", "new_keys", "switching")}, indent=2))
         print(p["compose"])
         print(p["caddyfile"])
         return 0
@@ -2496,6 +2552,17 @@ def run_once(args: argparse.Namespace, alias: str, orders: Path, admin_code: str
     deleted = purge_deleted(args.home, orders, codes_dir=args.codes_dir) if applied else []
     # A world moved to a new build is done once Docker took the book with it.
     updated = finish_updates(args.home) if applied else []
+    # A world whose published version is being switched, now that Docker took its container down:
+    # move the folders, then plan again so it comes back as its order says.
+    import versions  # here, not at the top: versions imports this file
+    switched = versions.finish_switches(args.home, orders) if applied else []
+    if switched:
+        p = plan(orders, args.home, alias, allowed, admin_code=admin_code, control_host=control_host)
+        try:
+            apply(p, args.home, admin_code, codes_dir=args.codes_dir)
+        except subprocess.CalledProcessError:
+            applied = False
+            print("docker did not take the book after a switch; the next run tries again", file=sys.stderr)
     pause = copies_wait(args.home, orders)
     if pause:
         time.sleep(pause)
@@ -2509,6 +2576,8 @@ def run_once(args: argparse.Namespace, alias: str, orders: Path, admin_code: str
         print(f"{wid}: keys made on this machine (its own JWT secret, the machine's legacy admin code)")
     if updated:
         print(f"{alias}: moved to their new build {updated}")
+    if switched:
+        print(f"{alias}: published version switched for {switched}")
     print(f"{alias}: running {p['running']} stopped {p['stopped']} keyless {p['keyless']}"
           f" deleted {deleted} copies {len(copied)}")
     return applied

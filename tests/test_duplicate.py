@@ -461,7 +461,7 @@ class Rules(unittest.TestCase):
 
     def test_other_requests_about_versions_are_still_not_yet(self):
         m = rig(self)
-        for kind in ("PublishVersion", "DownloadVersion", "ImportVersion"):
+        for kind in ("DownloadVersion", "ImportVersion"):
             msg = TV.message(kind)
             m.drop(kind, msg, copy=TV.COPY if kind == "DownloadVersion" else None)
             m.take()

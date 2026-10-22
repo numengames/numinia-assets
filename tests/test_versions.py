@@ -681,7 +681,7 @@ class Requests(unittest.TestCase):
         m.put_world()
         m.write_meta(two())
         folder = m.put_version("v2")
-        for kind in ("PublishVersion", "DownloadVersion", "ImportVersion"):
+        for kind in ("DownloadVersion", "ImportVersion"):
             msg = message(kind)
             m.drop(kind, msg, copy=COPY if kind == "DownloadVersion" else None)
             m.take()
