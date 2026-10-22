@@ -23,7 +23,15 @@ What it does, and nothing more:
   code an Oracle changes — written into the inbox entry for the
   reconciler, which puts it in the world's key file. The door never writes
   a key file and never logs a code.
-- An import (ImportWorld) names its zip's exact size and SHA-256. The door
+- A world keeps up to two versions (versions.py). The door takes the five
+  requests about them (DuplicateVersion, PublishVersion, DeleteVersion,
+  DownloadVersion, ImportVersion) like any other: a download answers with a
+  copy number, an import with an upload slot. It refuses `busy` what would
+  collide with a publication (one change at a time while the folders are to
+  move), and it shows each world's versions, a version on its way
+  (`versionComing`) and the phase `switching`. It only reads
+  /srv/fleet/versions/<id>.json; the folders are root's.
+- An import (ImportWorld, or ImportVersion for a world that is here) names its zip's exact size and SHA-256. The door
   first keeps an upload slot for it (/srv/fleet/uploads/<n>.json, an hour),
   if the disk has room for the zip and what it unpacks to; then
   PUT /fleet/v1/uploads/<n> streams the zip in, and only the zip that is
@@ -69,6 +77,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 import reconcile as R
+import versions as V
 import walletsig as W
 
 STATE = Path("/var/lib/fleetd")  # the request numbers already used
@@ -84,6 +93,8 @@ MAX_BODY = 16 * 1024
 LOG_LINES = 50
 PHASES = {"DeleteWorld": "deleting", "StopWorld": "stopping", "StartWorld": "starting", "UpdateWorld": "updating", "PinWorld": "updating"}
 BIRTHS = ("CreateWorld", "ImportWorld")  # the requests that make a world that is not here yet
+VERSION_TYPES = (*R.VERSION_REQUESTS, "ImportVersion")  # the requests about one of a world's versions
+MAKES = ("DuplicateVersion", "ImportVersion")  # the ones that make a version: one at a time per world
 # The requests that change a world that is here: one at a time (busy).
 CHANGES = ("RotateWorldCode", "UpdateWorld", "PinWorld", "StopWorld", "StartWorld")
 LENGTH = re.compile(r"[0-9]{1,20}")  # a Content-Length, digits only
@@ -191,39 +202,51 @@ class Door:
         return waiting
 
     def read_slot(self, nonce: str) -> dict | None:
-        """An upload slot as the door wrote it — an ImportWorld waiting for its zip — whether or not it expired."""
+        """An upload slot as the door wrote it — an ImportWorld or ImportVersion waiting for its zip — whether or not it expired."""
         if not R.matches(R.NONCE, nonce):
             return None
         raw = R.read_json(self.uploads / f"{nonce}.json", None)
-        if not isinstance(raw, dict) or raw.get("type") != "ImportWorld" or R.epoch(raw.get("expiresAt")) is None:
+        if not isinstance(raw, dict) or raw.get("type") not in R.IMPORTS or R.epoch(raw.get("expiresAt")) is None:
             return None
         message = raw.get("message")
         if not isinstance(message, dict) or message.get("nonce") != nonce:
             return None
-        return raw if R.request_problem("ImportWorld", message) is None else None
+        return raw if R.request_problem(raw["type"], message) is None else None
 
     def expired(self, slot: dict, now: float) -> bool:
         ends = R.epoch(slot.get("expiresAt"))
         return ends is None or now > ends
 
-    def slots(self) -> dict[str, dict]:
-        """The open upload slots, by request number."""
+    def slots(self, kind: str | None = None) -> dict[str, dict]:
+        """The open upload slots, by request number; only those of one type when `kind` is given."""
         now = self.clock()
         found = {}
         for path in sorted(self.uploads.glob("*.json")) if self.uploads.is_dir() else []:
             slot = self.read_slot(path.name[: -len(".json")])
-            if slot is not None and not self.expired(slot, now):
+            if slot is not None and not self.expired(slot, now) and kind in (None, slot["type"]):
                 found[path.name[: -len(".json")]] = slot
         return found
 
-    def importing(self) -> dict[str, dict]:
-        """The world the reconciler is unpacking right now (run/import.json): id → the message it signed."""
+    def importing(self, kind: str | None = None) -> dict[str, dict]:
+        """The world the reconciler is unpacking right now (run/import.json): id → the message it signed.
+
+        The marker of an ImportWorld has no `type`; an ImportVersion's says so
+        and names a world that is already here. Both are read, each checked as
+        its own type; with `kind` only that type's are given, so a version
+        being unpacked is never taken for a world being born.
+        """
         raw = R.read_json(self.home / "run" / R.IMPORTING, {})
         found = {}
         for wid, job in (raw.items() if isinstance(raw, dict) else []):
-            message = job.get("message") if isinstance(job, dict) else None
-            if R.matches(R.SLUG, wid) and R.request_problem("ImportWorld", message) is None:
-                found[wid] = message
+            if not R.matches(R.SLUG, wid) or not isinstance(job, dict):
+                continue
+            made = job.get("type", "ImportWorld")
+            message = job.get("message")
+            if made not in R.IMPORTS or kind not in (None, made) or R.request_problem(made, message) is not None:
+                continue
+            if made == "ImportVersion" and message["world"] != wid:
+                continue
+            found[wid] = message
         return found
 
     def origin_allowed(self, origin: str) -> bool:
@@ -248,6 +271,9 @@ class Door:
             "waiting": self.waiting(),
             # The room offers to bring a world back from a zip only to a door that says this.
             "imports": {"zipMaxBytes": R.ZIP_MAX},
+            # The room offers a world's versions (duplicate, publish, delete, download, a zip as a version)
+            # only to a door that says this; `max` is how many a world keeps, published one included.
+            "versions": {"max": V.MAX_VERSIONS},
             "engines": list(R.ENGINES),
             "updates": True,
             # Optional: a room that does not know them ignores them. `listens/pin`: this door takes a
@@ -360,10 +386,20 @@ class Door:
         A world not in the book yet shows how it is coming: `creating`, or for
         an import `uploading` (its zip arriving: `bytes` of `of`) and then
         `importing` (waiting in the inbox, or being unpacked).
+
+        A world that is here also shows its `versions` (what the metadata file
+        says, read from there: no folder is opened or measured) and, while a
+        version of it is being made, `versionComing`. Its phase is what it was,
+        except `switching` while the journal names it. A zip on its way as a
+        version of a world that is here never makes a second world.
         """
         allowed = R.read_allowed_domains(self.domains_file)
-        pending = {r["message"].get("world"): r for r in self.inbox()}
+        waiting = self.inbox()
+        pending = {r["message"].get("world"): r for r in waiting if r.get("type") not in VERSION_TYPES}
         updating = R.read_updates(self.home)
+        switching = R.read_switching(self.home)
+        version_slots = self.slots("ImportVersion")
+        version_marks = self.importing("ImportVersion")
         listed = []
         raw_orders = R.read_orders(self.orders)
         extras = {o["id"]: o for o in raw_orders}  # select_orders keeps only the fields the machine runs
@@ -378,7 +414,12 @@ class Door:
                                 "at": str(pin.get("at") or "")[:32]}
             if isinstance(error, str) and error:
                 shown["updateError"] = error[:200]
-            listed.append({**shown, "phase": PHASES.get(kind, settled)})
+            phase = "switching" if order["id"] in switching else PHASES.get(kind, settled)
+            here = {**shown, "phase": phase, "versions": V.listed(self.home, extras[order["id"]])}
+            making = self.version_coming(order["id"], waiting, version_slots, version_marks)
+            if making is not None:
+                here["versionComing"] = making
+            listed.append(here)
         known = {world["id"] for world in listed}
 
         def coming(message: dict, phase: str, **more: object) -> None:
@@ -403,14 +444,36 @@ class Door:
                 coming(raw["message"], "creating")
             elif raw["type"] == "ImportWorld":
                 coming(raw["message"], "importing")
-        for message in self.importing().values():
+        for message in self.importing("ImportWorld").values():
             coming(message, "importing")
-        for slot in self.slots().values():
+        for slot in self.slots("ImportWorld").values():
             coming(slot["message"], "uploading", bytes=uploaded(slot), of=slot["message"]["zipBytes"])
         for wid, domain in self.purging().items():
             if wid not in known:
                 listed.append({"id": wid, "domain": domain, "phase": "deleting"})
         return {"machine": self.alias, "worlds": sorted(listed, key=lambda w: w["id"]), "at": R.utc(self.clock())}
+
+    def version_coming(self, wid: str, waiting: list[dict], slots: dict[str, dict], marks: dict[str, dict]) -> dict | None:
+        """The version being made for a world that is here, as the room shows it; None when none is.
+
+        An import is `uploading` while its zip arrives (`bytes` of `of`),
+        `waiting` once the zip is in and the request waits in the inbox, and
+        `working` while the reconciler's marker names the world. A duplicate is
+        `waiting` in the inbox: the reconciler makes it within one run and
+        leaves no marker. The furthest along is the one shown.
+        """
+        if wid in marks:
+            return {"kind": "import", "state": "working"}
+        for raw in waiting:
+            message = raw["message"]
+            if message.get("world") != wid or raw.get("type") not in MAKES or R.request_problem(raw["type"], message):
+                continue
+            return {"kind": "import" if raw["type"] == "ImportVersion" else "duplicate", "state": "waiting"}
+        for slot in slots.values():
+            if slot["message"]["world"] == wid:
+                return {"kind": "import", "state": "uploading", "bytes": uploaded(slot),
+                        "of": slot["message"]["zipBytes"]}
+        return None
 
     def log(self) -> dict:
         path = self.home / "log.jsonl"
@@ -467,9 +530,15 @@ class Door:
         wid = message["world"]
         current = R.read_order(self.orders / f"{wid}.json")
         waiting = [r for r in self.inbox() if r["message"].get("world") == wid]
-        slots = list(self.slots().values())
-        importing = self.importing()
+        slots = list(self.slots("ImportWorld").values())  # a zip on its way as a version makes no world
+        importing = self.importing("ImportWorld")
         coming = wid in importing or any(s["message"]["world"] == wid for s in slots)
+        if kind in (*CHANGES, "DeleteWorld", "DownloadWorld", *VERSION_TYPES) and (
+                wid in R.read_switching(self.home) or any(r.get("type") == "PublishVersion" for r in waiting)):
+            # Its folders are about to move (or moving): nothing else is done to the world until they have.
+            return "busy"
+        if kind in VERSION_TYPES:
+            return self.version_clash(kind, wid, current, waiting)
         if kind in ("ShowWorldCode", "RotateWorldCode"):
             # A world's own code: shown or changed only for a world that is
             # here, settled, and not already changing its code — else the
@@ -534,6 +603,35 @@ class Door:
             return "address-mismatch"
         return None
 
+    def version_clash(self, kind: str, wid: str, current: dict | None, waiting: list[dict]) -> str | None:
+        """Why a request about one of a world's versions cannot be taken now; None when it can.
+
+        `still-deleting` and `missing` as for any change to a world. A version
+        is made one at a time (a duplicate or an import waits for the other),
+        and a publication needs the world at rest: not updating, not waiting
+        to restart, with no other change of its code or build and no other
+        version request waiting. What a world's versions allow (`no-version`,
+        `full`, `published`, …) is the reconciler's to say. That a publication
+        itself holds everything else off is clash's first rule.
+        """
+        if wid in self.purging() or any(r.get("type") == "DeleteWorld" for r in waiting):
+            return "still-deleting"
+        if current is None:
+            return "missing"
+        # A zip as a version of this world: its slot is open, or the reconciler is unpacking it.
+        making = wid in self.importing("ImportVersion") or any(
+            s["message"]["world"] == wid for s in self.slots("ImportVersion").values())
+        if kind in MAKES and (making or any(r.get("type") in MAKES for r in waiting)):
+            return "busy"
+        if kind == "PublishVersion":
+            if wid in R.read_updates(self.home) or wid in R.read_restarts(self.home):
+                return "busy"
+            # An update, a pin or a change of code waiting would start one of those first.
+            if making or any(r.get("type") in (*VERSION_TYPES, "UpdateWorld", "PinWorld", "RotateWorldCode")
+                             for r in waiting):
+                return "busy"
+        return None
+
     def room_for(self, zip_bytes: int) -> bool:
         """Whether the disk keeps its reserve after this zip, what it unpacks to, and every import already let in.
 
@@ -547,7 +645,7 @@ class Door:
             return False
         promised = sum(R.reservation(s["message"]["zipBytes"]) for s in self.slots().values())
         promised += sum(R.unpacking(r["message"]["zipBytes"]) for r in self.inbox()
-                        if r.get("type") == "ImportWorld" and R.request_problem("ImportWorld", r["message"]) is None)
+                        if r.get("type") in R.IMPORTS and R.request_problem(r["type"], r["message"]) is None)
         promised += sum(R.unpacking(m["zipBytes"]) for m in self.importing().values())
         return free >= R.reservation(zip_bytes) + R.RESERVE + promised
 
@@ -587,7 +685,7 @@ class Door:
             clash = self.clash(kind, message)
             if clash:
                 return 409, {"error": clash}
-            if kind == "ImportWorld":
+            if kind in R.IMPORTS:
                 if message["zipBytes"] > R.ZIP_MAX:
                     return 413, {"error": "zip-too-big"}
                 if not self.room_for(message["zipBytes"]):
@@ -595,7 +693,7 @@ class Door:
             reply: dict = {"request": nonce}
             dropped = {"type": kind, "message": message, "signature": request["signature"],
                        "signer": signer, "receivedAt": R.utc(now)}
-            if kind == "DownloadWorld":
+            if kind in ("DownloadWorld", "DownloadVersion"):
                 reply["copy"] = dropped["copy"] = os.urandom(16).hex()
             if kind in ("ShowAdminCode", "ShowWorldCode"):
                 # The machine's legacy code, or this one world's own.
@@ -609,7 +707,7 @@ class Door:
                 # Oracle who signed; the inbox entry carries it to the
                 # reconciler, which writes it into the world's key file.
                 reply["adminCode"] = dropped["adminCode"] = R.make_code()
-            if kind == "ImportWorld":
+            if kind in R.IMPORTS:
                 # Not in the inbox yet: a slot that waits an hour for the zip
                 # it names, which only then becomes the request.
                 slot = {**dropped, "expiresAt": R.utc(now + R.SLOT_SECONDS), "bytes": 0}
