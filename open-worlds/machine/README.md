@@ -19,13 +19,15 @@ moves with them.
 | `bootstrap.sh` | turns a fresh Debian 12 or Ubuntu (24.04 or later) VPS into a fleet machine, or updates one, in one line |
 | `fleetd.py` | the door: takes an Oracle's signed request and a world's zip, shows the machine's public facts, hands out copies |
 | `reconcile.py` | every minute and on each request: checks the requests again, changes the book, makes the containers match, deletes, zips copies, brings worlds back from zips |
+| `versions.py` | a world's versions: the metadata file, duplicate, delete, download, import and publish, and the journal that finishes a publication (called by `reconcile.py` and `fleetd.py`) |
 | `walletsig.py` | who signed a request: EIP-712 typed data, recovered to a wallet address |
 | `release.py` | every five minutes: the Numinia Engine worlds follow the latest published engine (canary, one world a pass, rollback, halt) |
 | `signers.py` | inside that same five-minute pass: takes the house's signed list of Oracles and Archons (`/etc/fleet/signers.house`) |
 | `nightly.py` | each night: a copy of every world, kept 14 days |
 | `condiciones.py` | by hand: turns a world's conditions-of-entry door on or off (`fleet-condiciones <world> on\|off\|status\|restart`) |
 | `recipe.py` | every ten minutes: the machine's own programs (this folder) follow `main` (canary, rest, GitHub's signature, rollback, halt) |
-| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py`, `test_release.py`, `test_nightly.py`, `test_signers.py`, `test_recipe.py`, `test_condiciones.py` | the tests, run by the depot's `python -m unittest` |
+| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py`, `test_release.py`, `test_nightly.py`, `test_signers.py`, `test_recipe.py`, `test_condiciones.py`, `test_versions.py`, `test_duplicate.py`, `test_publish.py`, `test_version_imports.py` | the tests, run by the depot's `python -m unittest` |
+| `../../tests/e2e/` | end to end, by hand (not in `unittest`): `versions_e2e.mjs` signs the version requests with viem against the real door and the real reconciler (needs node, viem and a python with `ecdsa`); `pin_e2e.mjs` does the same for a pin, behind Caddy |
 
 ## Bring up a machine
 
@@ -297,6 +299,84 @@ to refuse early. `/fleet/v1/machine` says the biggest zip the machine takes
 (`imports.zipMaxBytes`): the room offers *Traer de un zip* only to a door
 that says it.
 
+## Versions
+
+A world can keep **two versions** of itself: a published one, which is the
+world people visit, and one that waits beside it. Pablo's flow: duplicate
+the published one, publish the copy, touch it live, and keep the old one as
+the net to fall back on.
+
+- **Where they are.** The published version is where a world has always
+  been, `/srv/fleet/data/<id>/`: nothing moved, no world's container changed
+  when this arrived. The other lives at `/srv/fleet/versions/<id>/<vid>/`
+  (`<vid>` is `v1`, `v2`, …, on the same disk, so a rename is instant).
+  A name is **never reused** within a world: a download called `v3` can
+  never be mistaken for an older `v3`. `versions/` is `root:fleetd` 750 (the
+  door reads only the small metadata files); `versions/<id>/` is root's alone
+  (700); a Numinia Engine version keeps the engine user's ownership, as in
+  `data/`.
+- **Metadata.** `versions/<id>.json` says which one is published and, for
+  each version, when it was made, by which wallet, how (`created`, `zip` or
+  `copy:<vid>`) and how many bytes (measured when the folder is made, and
+  again for both when a publication swaps them). A world with no file has one
+  version, `v1`, published; the file is written the first time an Oracle
+  uses a version request. An order never holds version data. The room reads
+  all of it from `/fleet/v1/worlds` (`versions`, `versionComing`) and from
+  `/fleet/v1/machine` (`versions.max`: a door that does not say it gets no
+  button).
+- **The five requests** (each names the world, and a version except the
+  import):
+  - `DuplicateVersion` copies a version into a new one, unpublished, while
+    the world runs or stopped. A Hyperfy world uses SQLite's backup for the
+    database and hardlinks for the files that are named by their SHA-256 and
+    never rewritten; a Numinia Engine world is copied by the engine's own
+    `copia`, `comprobar` and `importar` tools, never by hardlinks (its
+    files are rewritten in place). Made in `staging/`, renamed into place
+    whole, listed last: nothing half-made is ever a version.
+  - `PublishVersion` makes another version the published one (below).
+  - `DeleteVersion` removes an unpublished version.
+  - `DownloadVersion` is a download of any version: the file is named
+    `<id>-<vid>-<date>.zip`; the unpublished one needs no wait for a save.
+  - `ImportVersion` puts a zip in as a new version of a world that is here,
+    through the same upload slot as an import. It is checked by **the
+    world's own engine** (a zip of the other engine fails that engine's
+    rules), and the live world is never touched. `replace` is empty when the
+    world has one version; when it has two it must name the unpublished one,
+    which goes only after the new one is whole.
+- **Publishing takes the world down for a few seconds.** The request is
+  written to a journal, `run/switching.json`, and answered `working`; the
+  world shows the phase `switching`. The next plan leaves it out of the
+  book, so Docker stops it after its next save. Only when Docker has taken
+  the book and the container is gone does the machine move the folders —
+  `data/<id>` to `versions/<id>/<old>`, then `versions/<id>/<new>` to
+  `data/<id>` — and write the metadata. The same run then plans again and
+  the world comes back as its order says (a stopped world stays stopped).
+  The world's address, container, keys and admin code never change; the
+  ranks and users live inside each version's data, so publishing brings that
+  version's admins. People inside are put out for a few seconds and
+  reconnect. If the machine dies halfway, the next run reads where the two
+  folders (by inode) are and finishes the job; a picture no step explains
+  leaves the world down, the request `failed` with `switch-stuck`, and the
+  journal for a person — the machine never starts a world on the wrong
+  folder. `release.py` counts a world in the journal as busy, so an engine
+  update never meets a publication.
+- **What it refuses**, by name. The door: `busy` (to every other change of a
+  world while a `PublishVersion` waits or the journal names it; to a
+  `PublishVersion` while the world is updating or restarting or has another
+  version request waiting; to a second duplicate or import while one is being
+  made), `missing`, `still-deleting`, `zip-too-big`, `no-room`. The
+  reconciler: `no-version`, `published` (the published one is not deleted),
+  `already-published`, `only-version` (a world always keeps one), `full` (two
+  versions already, or every name used), `no-room` (the disk keeps its
+  1 GiB reserve; a Numinia Engine duplicate needs room for a zip and a
+  folder), `engine-refused`, `fingerprint`, `switch-stuck`.
+- **Delete and copies.** `DeleteWorld` removes every version with the world.
+  The nightly copy still copies only `data/<id>` (the published one), so it
+  costs no more; it ignores `versions/` and skips a world whose folder is
+  between the two renames of a publication.
+- Not yet: visiting the unpublished version (it would need a second
+  container and an address), names for versions, a nightly copy of both.
+
 ## The signed requests
 
 Each request is EIP-712 typed data (domain `Numinia Fleet`, version `1`) —
@@ -313,6 +393,8 @@ as Snapshot does with votes. The wallet shows every field before signing.
 | `UpdateWorld` | machine, world, image, nonce, expires — another build of the world's own engine |
 | `PinWorld` | machine, world, image, reason, nonce, expires — hold a world on one build of its engine (`pin` in its order, which `release.py` honours); an empty image releases the pin |
 | `ShowAdminCode` | machine, nonce, expires — the machine's old shared code, for the room that still asks for it |
+| `DuplicateVersion`, `PublishVersion`, `DeleteVersion`, `DownloadVersion` | machine, world, version, nonce, expires — see *Versions* |
+| `ImportVersion` | machine, world, zipBytes, zipSha256, replace, nonce, expires — then the zip, `PUT /fleet/v1/uploads/<nonce>` as for an import; `replace` is `""` or the unpublished version it takes the place of |
 
 `nonce` is 128 random bits chosen by the browser; `expires` is at most
 fifteen minutes ahead. The door refuses a request for another machine, an
@@ -342,9 +424,10 @@ minute or two, is a machine that has stopped obeying.
 | `/srv/fleet/copies/` | the copies, for a day (`<c>.zip` and `<c>.json`) |
 | `/srv/fleet/uploads/` | a world's zip on its way in: the upload slot (`<n>.json`, an hour), the zip arriving (`.<n>.zip.part`), the zip waiting for the reconciler (`<n>.zip`). The door's (`fleetd`, mode 750); root reads it and deletes each zip once taken |
 | `/srv/fleet/staging/` | where the reconciler unpacks a zip and checks it before it becomes `data/<id>/` (root's alone, mode 700; empty between runs) |
+| `/srv/fleet/versions/<id>/<vid>/` | a world's other version (root's alone, mode 700; a Numinia Engine one keeps user 10001). `/srv/fleet/versions/<id>.json` says which version is published and what each is (`root:fleetd`, mode 640: the door reads it) |
 | `/srv/fleet/data/<id>/` | the world: `db.sqlite` and `assets/` (Hyperfy); `mundo.json`, `datos/`, `aventura/`, `entorno/`, `sesiones/` (the Numinia Engine's, user 10001, mode 700) |
 | `/srv/fleet/env/<id>.env` | the world's keys: its JWT secret and its admin code (mode 600, made by the machine, never in git) |
-| `/srv/fleet/run/` | the generated `docker-compose.yml`, `Caddyfile` and Caddy's state; `Caddyfile.applied` is the list of sites Caddy last accepted and `docker-compose.applied.yml` the compose file Docker last accepted; `purge.json` and `copy-queue.json` hold deletes and copies in progress, `restart.json` the worlds whose code changed and that wait to be restarted, `updating.json` the worlds moved to a new build until Docker has started it; `last-run.json` says when the reconciler last ran and how it ended |
+| `/srv/fleet/run/` | the generated `docker-compose.yml`, `Caddyfile` and Caddy's state; `Caddyfile.applied` is the list of sites Caddy last accepted and `docker-compose.applied.yml` the compose file Docker last accepted; `purge.json` and `copy-queue.json` hold deletes and copies in progress, `restart.json` the worlds whose code changed and that wait to be restarted, `updating.json` the worlds moved to a new build until Docker has started it, `switching.json` the worlds whose published version is being switched; `last-run.json` says when the reconciler last ran and how it ended |
 | `/srv/fleet/sock/fleetd.sock` | the door's socket; Caddy is the only way in to it |
 | `/srv/fleet/log.jsonl` | what was done here: when, what, which world, a short wallet |
 | `/srv/fleet/book/` | the clone of this repository, left on the commit the machine's line named: the recipe, and the orders adopted once |
@@ -539,6 +622,7 @@ touching any machine (the customers' machines too, in the alpha).
 `fleet-nightly.timer` runs `/usr/local/sbin/fleet-nightly` at 03:30 machine time (`Persistent=`, up to 10 minutes of random delay, low CPU and IO priority; installed by the bootstrap, never run from the clone).
 
 - **What**: one zip per world per UTC day in `/srv/fleet/nightly/<world>/<world>-YYYYMMDD-HHMMSS.zip`: the world's folder (`db.sqlite` through SQLite's online backup, so it is consistent while the world runs), its order and a `world.json` manifest with the sha256 of each file. Never keys or admin codes. Folder and zips are root-only (0700/0600).
+- **Only the published version**: `data/<id>`; a world's other versions (`versions/`) are not copied, and a world whose folder is between the two renames of a publication is skipped for that night.
 - **Reads only**: nothing is written in a world's folder and no container is stopped or touched. The zip is built as a hidden `.part` and moved into place whole.
 - **Idempotent**: a world that already has a copy dated today is left alone.
 - **Kept 14 days**: older zips go, but the newest copy of a world is never deleted, and a world removed from the machine keeps its copies until they age out.
