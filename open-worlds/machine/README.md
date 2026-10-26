@@ -23,11 +23,11 @@ moves with them.
 | `walletsig.py` | who signed a request: EIP-712 typed data, recovered to a wallet address |
 | `release.py` | every five minutes: the Numinia Engine worlds follow the latest published engine (canary, one world a pass, rollback, halt) |
 | `signers.py` | inside that same five-minute pass: takes the house's signed list of Oracles and Archons (`/etc/fleet/signers.house`) |
-| `nightly.py` | each night: a copy of every world, kept 14 days |
+| `nightly.py` | each night: a copy of every world, kept 14 days (a Numinia Engine world's is the engine's own export, so «Bring a world back» takes it) |
 | `condiciones.py` | by hand: turns a world's conditions-of-entry door on or off (`fleet-condiciones <world> on\|off\|status\|restart`) |
 | `recipe.py` | every ten minutes: the machine's own programs (this folder) follow `main` (canary, rest, GitHub's signature, rollback, halt) |
 | `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py`, `test_release.py`, `test_nightly.py`, `test_signers.py`, `test_recipe.py`, `test_condiciones.py`, `test_versions.py`, `test_duplicate.py`, `test_publish.py`, `test_version_imports.py` | the tests, run by the depot's `python -m unittest` |
-| `../../tests/e2e/` | end to end, by hand (not in `unittest`): `versions_e2e.mjs` signs the version requests with viem against the real door and the real reconciler (needs node, viem and a python with `ecdsa`); `pin_e2e.mjs` does the same for a pin, behind Caddy |
+| `../../tests/e2e/` | end to end, by hand (not in `unittest`): `versions_e2e.mjs` signs the version requests with viem against the real door and the real reconciler (needs node, viem and a python with `ecdsa`); `pin_e2e.mjs` does the same for a pin, behind Caddy; `nightly_restore_e2e.mjs` makes a nightly copy of a Numinia Engine world with the real `nightly.py` and the engine's real `copia`, then has the engine's `comprobar`/`importar` and the room's `inspectZip` take it (needs node 24 and checkouts of numinia-engine and numinia-web) |
 
 ## Bring up a machine
 
@@ -621,11 +621,12 @@ touching any machine (the customers' machines too, in the alpha).
 
 `fleet-nightly.timer` runs `/usr/local/sbin/fleet-nightly` at 03:30 machine time (`Persistent=`, up to 10 minutes of random delay, low CPU and IO priority; installed by the bootstrap, never run from the clone).
 
-- **What**: one zip per world per UTC day in `/srv/fleet/nightly/<world>/<world>-YYYYMMDD-HHMMSS.zip`: the world's folder (`db.sqlite` through SQLite's online backup, so it is consistent while the world runs), its order and a `world.json` manifest with the sha256 of each file. Never keys or admin codes. Folder and zips are root-only (0700/0600).
+- **What (a Hyperfy world)**: one zip per world per UTC day in `/srv/fleet/nightly/<world>/<world>-YYYYMMDD-HHMMSS.zip`: the world's folder (`db.sqlite` through SQLite's online backup, so it is consistent while the world runs), its order and a `world.json` manifest with the sha256 of each file. Never keys or admin codes. Folder and zips are root-only (0700/0600).
+- **What (a Numinia Engine world)**: the engine's own export, the same zip the download button gives, made by the `copia` tool of the world's own image (`reconcile.engine_copia`: no network, the folder read-only, the world's limits; the machine never re-implements the engine's rules). It holds `mundo.json`, `datos/`, `aventura/`, `entorno/` and the files to run it at home; never keys, never who came in. Nothing of ours is added to it (the engine's importer refuses a file its manifest does not list). The order (image, domain, limits; never keys) goes beside it, in `<world>-YYYYMMDD-HHMMSS.order.json` (0600), and is kept and deleted together with its zip. **It can be brought back from the room's «Bring a world back»**: upload the zip; the order file is only for whoever restores it by hand. If `copia` fails the world's result is `failed: …` (nothing partial is left, the others still get theirs, the service ends failed). A copy of an engine world made before this, in the Hyperfy shape (no `mundo.json`), cannot be restored: it does not count as tonight's, a proper one is made, and the old ones age out as any other.
 - **Only the published version**: `data/<id>`; a world's other versions (`versions/`) are not copied, and a world whose folder is between the two renames of a publication is skipped for that night.
 - **Reads only**: nothing is written in a world's folder and no container is stopped or touched. The zip is built as a hidden `.part` and moved into place whole.
 - **Idempotent**: a world that already has a copy dated today is left alone.
-- **Kept 14 days**: older zips go, but the newest copy of a world is never deleted, and a world removed from the machine keeps its copies until they age out.
+- **Kept 14 days**: older zips (and their order files) go, but the newest copy of a world is never deleted, and a world removed from the machine keeps its copies until they age out.
 - **Low disk**: a world is copied only if at least 2 GiB stay free after its folder's size; otherwise it is skipped and logged (`journalctl -u fleet-nightly`), and nothing else is deleted to make room. One world failing does not stop the others (the service then ends failed).
 - Result of the last pass: `/srv/fleet/nightly/state.json`. Different from the copy `release.py` makes before an update (`release/preupdate/`) and from the one a download makes (`copies/`, a day).
 

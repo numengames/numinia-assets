@@ -16,12 +16,26 @@ an order on this machine:
   stopped or touched: the copy only reads, so a running world is never
   disturbed. The copy is built in a hidden `.part` file and moved into place
   whole, so a reader never sees half a zip.
-* What goes in: the world's folder, its order (`order.json`) and a manifest
-  with the sha256 of each file. Never keys or admin codes: a copy that is
-  stolen opens nothing. (`env/` and `/etc/fleet/codes` stay out.)
-* Kept 14 days. Older zips are deleted by the date in their name, but the
-  newest copy of a world is never deleted, however old: a machine whose
-  copies stopped must not erase the last one it has.
+* What goes in, for a Hyperfy world: the world's folder, its order
+  (`order.json`) and a manifest with the sha256 of each file. Never keys or
+  admin codes: a copy that is stolen opens nothing. (`env/` and
+  `/etc/fleet/codes` stay out.)
+* What goes in, for a Numinia Engine world: the engine's own export, made by
+  the `copia` tool of the world's own image (`reconcile.engine_copia`, the
+  same one the download button uses; the machine never re-implements its
+  rules): `mundo.json`, `datos/`, `aventura/`, `entorno/`, never keys nor who
+  came in. The zip is exactly what the engine writes, nothing added (the
+  engine's importer refuses a file its manifest does not list), so the
+  room's «Bring a world back» takes it as it is. The order (image, domain,
+  limits; never keys) goes beside it, in `<world>-YYYYMMDD-HHMMSS.order.json`,
+  and is kept and pruned together with its zip. A copy of this world made
+  before this, in the Hyperfy shape (no `mundo.json`), is not restorable: it
+  does not count as tonight's, a proper one is made, and the old ones age out
+  as any other. If `copia` fails the world's result is `failed: ...`, nothing
+  partial is left and the other worlds still get theirs.
+* Kept 14 days. Older zips (and their order files) are deleted by the date in
+  their name, but the newest copy of a world is never deleted, however old: a
+  machine whose copies stopped must not erase the last one it has.
 * Low disk: a world is copied only if the free space left after its folder's
   size is still above MIN_FREE_BYTES; otherwise it is skipped and logged
   (`skipped: low disk`), nothing is deleted to make room and the pass ends
@@ -43,6 +57,7 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 import time
 import zipfile
@@ -55,7 +70,10 @@ STATE_FILE = "state.json"
 KEEP_DAYS = 14
 MIN_FREE_BYTES = 2 * 1024**3  # what must stay free after a copy is made
 ZIP_NAME = re.compile(r"(?P<world>[a-z0-9][a-z0-9-]*)-(?P<day>\d{8})-(?P<time>\d{6})\.zip")
+ORDER_NAME = re.compile(r"(?P<world>[a-z0-9][a-z0-9-]*)-(?P<day>\d{8})-(?P<time>\d{6})\.order\.json")
 FORMAT = "numinia-world-nightly/1"
+ORDER_FORMAT = "numinia-world-nightly-order/1"  # the sidecar of a Numinia Engine world's zip
+ENGINE_MANIFEST = "mundo.json"  # what makes an engine zip restorable: the room looks for it at the zip's root
 
 
 class Env:
@@ -87,10 +105,19 @@ def copies_of(folder: Path) -> list[tuple[str, Path]]:
     return sorted(found)
 
 
+def order_file(zipped: Path) -> Path:
+    """The order file that goes with a zip: `<name>.zip` -> `<name>.order.json`."""
+    return zipped.with_name(zipped.name[: -len(".zip")] + ".order.json")
+
+
 def prune(env: Env, wid: str) -> list[str]:
-    """Delete the world's copies older than KEEP_DAYS days, always keeping the newest one."""
+    """Delete the world's copies older than KEEP_DAYS days (each with its order file), always keeping the newest one.
+
+    An order file whose zip is not there (a pass killed between the two) is deleted too.
+    """
     gone = []
-    copies = copies_of(env.dir / wid)
+    folder = env.dir / wid
+    copies = copies_of(folder)
     limit = env.now() - KEEP_DAYS * 86400
     for stamp, path in copies[:-1]:  # the newest is never a candidate
         if day_start(stamp[:8]) + 86400 <= limit:  # the whole day it names is past the limit
@@ -98,7 +125,19 @@ def prune(env: Env, wid: str) -> list[str]:
                 path.unlink()
                 gone.append(path.name)
             except OSError:
+                continue
+            try:
+                order_file(path).unlink(missing_ok=True)
+            except OSError:
                 pass
+    for path in folder.iterdir() if folder.is_dir() else []:
+        if ORDER_NAME.fullmatch(path.name) and path.is_file() and not path.is_symlink():
+            if not path.with_name(path.name[: -len(".order.json")] + ".zip").exists():
+                try:
+                    path.unlink()
+                    gone.append(path.name)
+                except OSError:
+                    pass
     return gone
 
 
@@ -115,8 +154,8 @@ def tree_bytes(data: Path) -> int:
     return total
 
 
-def copy_world(env: Env, order: dict, now: float) -> Path:
-    """Zip one world, read-only on its folder, into <home>/nightly/<id>/, and return the zip."""
+def copy_folder(env: Env, order: dict) -> tuple[str, Path, Path]:
+    """The world's id, its folder here (checked) and its copies' folder (made, private)."""
     wid = order["id"]
     data = env.home / "data" / wid
     if data.is_symlink() or not data.is_dir():
@@ -124,6 +163,17 @@ def copy_world(env: Env, order: dict, now: float) -> Path:
     folder = env.dir / wid
     folder.mkdir(parents=True, exist_ok=True)
     os.chmod(folder, 0o700)
+    return wid, data, folder
+
+
+def copy_world(env: Env, order: dict, now: float) -> Path:
+    """Copy one world, read-only on its folder, into <home>/nightly/<id>/, and return the zip.
+
+    A Numinia Engine world's copy is the engine's own export; any other is the Hyperfy shape.
+    """
+    if R.runs_engine(order):
+        return copy_engine_world(env, order, now)
+    wid, data, folder = copy_folder(env, order)
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime(now))
     final = folder / f"{wid}-{stamp}.zip"
     part = folder / f".{wid}-{stamp}.zip.part"
@@ -168,6 +218,57 @@ def copy_world(env: Env, order: dict, now: float) -> Path:
     return final
 
 
+def copy_engine_world(env: Env, order: dict, now: float) -> Path:
+    """A Numinia Engine world's copy: the zip the engine's own `copia` writes, and its order file beside it.
+
+    Nothing is added to the zip (the engine's importer refuses what its
+    manifest does not list), so what the engine wrote is what the room's
+    «Bring a world back» reads. The order file is written first and the zip
+    moved into place last: a pass killed in between leaves an order file
+    with no zip, which prune deletes, never a zip without its order.
+    """
+    wid, data, folder = copy_folder(env, order)
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime(now))
+    final = folder / f"{wid}-{stamp}.zip"
+    part = folder / f".{wid}-{stamp}.zip.part"
+    side = order_file(final)
+    kept = {key: order[key] for key in ("id", "domain", "image", "limits", "org") if key in order}  # never keys
+    try:
+        R.engine_copia(order, data, part, mode=0o600)
+        with zipfile.ZipFile(part) as zipped:
+            if ENGINE_MANIFEST not in zipped.namelist():
+                raise OSError(f"the engine's copy has no {ENGINE_MANIFEST}")
+        os.chmod(part, 0o600)
+        R.write_json(side, {"format": ORDER_FORMAT, "world": wid, "copiedAt": R.utc(now), "order": kept}, mode=0o600)
+        os.replace(part, final)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        side.unlink(missing_ok=True)
+        raise
+    return final
+
+
+def done_today(env: Env, order: dict, folder: Path, today: str) -> bool:
+    """Whether the world already has tonight's copy, one the room can bring back.
+
+    A Hyperfy world: any zip dated today. A Numinia Engine world: only an
+    engine export (a `mundo.json` at its root) with its order file; a copy
+    in the old Hyperfy shape does not count, so tonight's proper one is made.
+    """
+    for stamp, path in copies_of(folder):
+        if not stamp.startswith(today):
+            continue
+        if not R.runs_engine(order):
+            return True
+        try:
+            with zipfile.ZipFile(path) as zipped:
+                if ENGINE_MANIFEST in zipped.namelist() and order_file(path).is_file():
+                    return True
+        except (OSError, zipfile.BadZipFile):
+            pass
+    return False
+
+
 def run_pass(env: Env) -> dict:
     """One nightly pass over every order. Never raises for one world's trouble; says what happened to each."""
     now = env.now()
@@ -185,7 +286,9 @@ def run_pass(env: Env) -> dict:
             stale.unlink(missing_ok=True)
         for stale in folder.glob(".*.sqlite.tmp") if folder.is_dir() else []:
             stale.unlink(missing_ok=True)
-        if any(stamp.startswith(today) for stamp, _p in copies_of(folder)):
+        for stale in folder.glob(".*.order.json.tmp") if folder.is_dir() else []:
+            stale.unlink(missing_ok=True)
+        if done_today(env, order, folder, today):
             results[wid] = "already done today"
         else:
             data = env.home / "data" / wid
@@ -200,7 +303,7 @@ def run_pass(env: Env) -> dict:
                 else:
                     try:
                         results[wid] = f"copied: {copy_world(env, order, now).name}"
-                    except (OSError, ValueError, zipfile.BadZipFile, sqlite3.Error) as error:
+                    except (OSError, ValueError, KeyError, zipfile.BadZipFile, sqlite3.Error, subprocess.SubprocessError) as error:
                         results[wid] = f"failed: {type(error).__name__}: {error}"
                         env.log(f"nightly {wid}: {results[wid]}")
         pruned += [f"{wid}/{name}" for name in prune(env, wid)]
