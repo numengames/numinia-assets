@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- `open-worlds/machine/`: the machine side of the room's «Restore from a copy». `GET
+  /fleet/v1/nightly` (public, read-only) lists the nightly copies — world, stamp, ISO time,
+  size, `kind` (`numinia-engine`, `hyperfy` or null), `restorable`, `worldExists` — newest first,
+  14 a world and 200 in all, from the zips' central directories alone; the root-only nightly
+  folder is never opened by the door, the nightly pass writes the list (`run/nightly.json`) and
+  the reconciler once if there is none. A new signed request type `DownloadNightly`
+  (machine, world, stamp, nonce, expires) copies one nightly zip, a regular file with no link on
+  the way, into `copies/` as an ordinary copy (the existing `/copies/<id>` and `/file` serve it;
+  no new download route), also for a world that was deleted; `not-found` when there is no such
+  copy, `no-room` under 1 GiB free. `/machine` adds `listens.nightly`. New type, never new
+  fields: every older digest is unchanged; `tests/fleet_vectors.json` is regenerated with viem
+  (two fresh throwaway keys, one new vector), the room copies it whole.
+
 - `open-worlds/machine/nightly.py`: the nightly copy of a Numinia Engine world is now the
   engine's own export (its image's `copia`, through the new `reconcile.engine_copia` that the
   download button shares), so the room's «Bring a world back» takes it; before, the Hyperfy-shaped

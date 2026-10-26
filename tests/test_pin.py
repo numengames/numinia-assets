@@ -212,7 +212,7 @@ class Seen(unittest.TestCase):
 
     def test_the_machine_advertises_pins_and_an_idle_release(self):
         facts = Rig(self).door.machine()
-        self.assertEqual(facts["listens"], {"pin": True})
+        self.assertEqual(facts["listens"], {"pin": True, "nightly": True})
         self.assertEqual(facts["release"], {"target": None, "commit": None, "halted": False, "haltedReason": None,
                                             "lastPass": None})
         for old in ("machine", "door", "oracles", "zones", "recipe", "lastRun", "waiting", "imports", "engines",

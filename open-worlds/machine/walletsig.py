@@ -138,6 +138,16 @@ ACTIONS: dict[str, tuple[tuple[str, str], ...]] = {
         ("nonce", "string"),
         ("expires", "uint256"),
     ),
+    # One of the machine's nightly copies (nightly.py) turned into an ordinary
+    # downloadable copy: the world and the copy's stamp (YYYYMMDD-HHMMSS, UTC).
+    # The world need not be here any more; its nightly folder outlives it.
+    "DownloadNightly": (
+        ("machine", "string"),
+        ("world", "string"),
+        ("stamp", "string"),
+        ("nonce", "string"),
+        ("expires", "uint256"),
+    ),
     # A zip taken as a new version of an existing world: the zip's exact size
     # and SHA-256, and the unpublished version it replaces ("" when the world
     # has one version). The engine, limits and address are the world's own.
