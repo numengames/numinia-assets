@@ -582,12 +582,12 @@ class Bootstrap(unittest.TestCase):
 
     def test_the_bootstrap_installs_and_starts_the_recipe_updater(self):
         text = (MACHINE / "bootstrap.sh").read_text()
-        self.assertIn("nightly.py recipe.py condiciones.py signers.py versions.py; do", text)
+        self.assertIn("nightly.py recipe.py condiciones.py signers.py versions.py cleanup.py; do", text)
         self.assertIn("wrapper fleet-recipe recipe.py", text)
         self.assertIn("cat > /etc/systemd/system/fleet-recipe.timer", text)
         self.assertIn("ExecStart=/usr/local/sbin/fleet-recipe", text)
-        self.assertIn("fleet-nightly.timer fleet-recipe.timer\n", text)  # enabled with the others
-        self.assertIn("fleet-nightly.timer fleet-recipe.timer; do", text)  # and checked at the end
+        self.assertIn("fleet-nightly.timer fleet-cleanup.timer fleet-recipe.timer\n", text)  # enabled with the others
+        self.assertIn("fleet-nightly.timer fleet-cleanup.timer fleet-recipe.timer; do", text)  # and checked at the end
         self.assertIn(" gpgv ", text)
         stop = next(line for line in text.splitlines() if line.strip().startswith("systemctl stop"))
         self.assertNotIn("fleet-recipe", stop)

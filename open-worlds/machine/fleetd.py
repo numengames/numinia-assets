@@ -40,7 +40,7 @@ What it does, and nothing more:
   it again without a new signature.
 - GET /fleet/v1/machine, /worlds, /log — public facts: the machine, the
   commit of the recipe it installed (and what its recipe updater is
-  doing: `recipeUpdate`), and whether its reconciler keeps up
+  doing: `recipeUpdate`; the disk: `disk`), and whether its reconciler keeps up
   (when it last ran, how it ended, how many requests wait and since when),
   whether it takes zips and up to what size, which engines it runs and
   that it takes updates, its worlds and their phase (an import shows its
@@ -281,6 +281,8 @@ class Door:
             "listens": {"pin": True},
             "release": self.release(),
             "recipeUpdate": self.recipe_update(),
+            # Optional: a room that does not know it ignores it. The disk, as cleanup.py last saw it.
+            "disk": self.disk(),
             "at": R.utc(self.clock()),
         }
 
@@ -302,6 +304,30 @@ class Door:
             "haltedReason": str(stop.get("reason"))[:200] if stop and stop.get("reason") else None,
             "lastPass": ({"at": last["at"][:32], "action": str(last.get("action"))[:40]}
                          if isinstance(last, dict) and isinstance(last.get("at"), str) else None),
+        }
+
+    def disk(self) -> dict:
+        """The disk as the daily cleanup (cleanup.py) last saw it: {usedPct, freeBytes, totalBytes, state, at}.
+
+        Read from its state file and checked field by field; a field that is not what it should be is None, and
+        every field is None when the cleanup never ran. Numbers only, never a path.
+        """
+        raw = R.read_json(self.home / "cleanup" / "state.json", {})
+        raw = raw if isinstance(raw, dict) else {}
+
+        def whole(value: object) -> int | None:
+            return value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 2**60 else None
+
+        used = raw.get("usedPct")
+        percent = (round(float(min(100, max(0, used))), 1)  # clamped before it becomes a float: a huge int cannot overflow
+                   if isinstance(used, (int, float)) and not isinstance(used, bool) and used == used else None)
+        state, at = raw.get("state"), raw.get("at")
+        return {
+            "usedPct": percent,
+            "freeBytes": whole(raw.get("freeBytes")),
+            "totalBytes": whole(raw.get("totalBytes")),
+            "state": state if state in ("ok", "warn", "full") else None,
+            "at": at[:32] if isinstance(at, str) and at else None,
         }
 
     def recipe_update(self) -> dict:

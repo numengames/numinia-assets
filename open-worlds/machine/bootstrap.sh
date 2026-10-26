@@ -35,9 +35,9 @@
 # folder for a world's zip), the programs, the alias, the machine's
 # address for the console (<alias>.numinia.com), the Oracles' wallets, the
 # machine's old shared admin code and the folder of each world's own, its
-# first orders (adopted once from the public order book), systemd units, and
-# a first run. It ends by saying which recipe it installed and by checking
-# that the machine obeys. Nothing here needs a GitHub credential.
+# first orders (adopted once from the public order book), a cap on the journal,
+# systemd units (the daily disk cleanup among them), and a first run. It ends
+# by saying which recipe it installed and by checking that the machine obeys. Nothing here needs a GitHub credential.
 #
 # The programs are INSTALLED to /usr/local/lib/fleet from this same commit and
 # run from there, never from the clone. fleet-recipe.timer runs this script
@@ -243,15 +243,16 @@ main() {
   # pause it while the programs change, so it never runs half-installed code
   # against a book not yet adopted. The end of this script starts it again.
   # fleet-recipe.timer is not paused: this script may be running under it.
-  systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer 2>/dev/null || true
+  systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer 2>/dev/null || true
   install -d -m 0755 "$LIB_DIR"
-  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py condiciones.py signers.py versions.py; do
+  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py condiciones.py signers.py versions.py cleanup.py; do
     install -m 0644 "$BOOK_DIR/open-worlds/machine/$program" "$LIB_DIR/$program"
   done
   wrapper fleet-reconcile reconcile.py
   wrapper fleetd fleetd.py
   wrapper fleet-release release.py
   wrapper fleet-nightly nightly.py
+  wrapper fleet-cleanup cleanup.py
   wrapper fleet-recipe recipe.py
   wrapper fleet-condiciones condiciones.py
   # Which commit the programs came from: the door shows it (/fleet/v1/machine
@@ -259,6 +260,22 @@ main() {
   mkdir -p /etc/fleet
   echo "$RECIPE" > /etc/fleet/recipe
   chmod 644 /etc/fleet/recipe
+
+  echo "== journald: the journal keeps at most 200 MB"
+  # Nothing capped the journal, and /var/log grows with every run of every timer.
+  # A drop-in, not an edit of journald.conf. systemd-journald is restarted only when
+  # the drop-in changed (a restart loses nothing: the journal is on disk); no world's
+  # container is touched. Docker's own logs are NOT set here: that needs
+  # /etc/docker/daemon.json and a restart of dockerd, which restarts every world.
+  local journald_conf=/etc/systemd/journald.conf.d/fleet.conf journald_tmp
+  journald_tmp="$(mktemp)"
+  printf '# Written by the fleet bootstrap: the journal never grows past this.\n[Journal]\nSystemMaxUse=200M\n' > "$journald_tmp"
+  if ! cmp -s "$journald_tmp" "$journald_conf"; then
+    install -d -m 0755 /etc/systemd/journald.conf.d
+    install -m 0644 "$journald_tmp" "$journald_conf"
+    systemctl restart systemd-journald || echo "!! journald did not restart: the cap applies from its next start" >&2
+  fi
+  rm -f "$journald_tmp"
 
   echo "== alias: $ALIAS"
   mkdir -p /etc/fleet
@@ -401,6 +418,28 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+  cat > /etc/systemd/system/fleet-cleanup.service <<EOF
+[Unit]
+Description=Fleet disk safety: old engine images and pre-update copies get a limit, and the door shows the disk
+After=docker.service
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/local/sbin/fleet-cleanup
+EOF
+  cat > /etc/systemd/system/fleet-cleanup.timer <<EOF
+[Unit]
+Description=Clean the disk each night at 04:10 (machine time), after the nightly copy
+
+[Timer]
+OnCalendar=*-*-* 04:10:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
   cat > /etc/systemd/system/fleet-recipe.service <<EOF
 [Unit]
 Description=Fleet recipe updater: this machine's programs follow main of numinia-assets (canary, rest, rollback, halt)
@@ -464,7 +503,7 @@ EOF
   if ! /usr/local/sbin/fleet-reconcile; then
     echo "the first run did not finish; the timer tries again every minute (journalctl -u fleet-reconcile -n 20)" >&2
   fi
-  systemctl enable --now fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-recipe.timer
+  systemctl enable --now fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer fleet-recipe.timer
 
   ORACLES="$(grep -c '^0x' /etc/fleet/signers || true)"
   cat <<EOF
@@ -491,7 +530,7 @@ EOF
   # The units this script paused or started must be running again, or no
   # request signed in the worlds room will ever be done here.
   local unit stopped=""
-  for unit in fleetd.service fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-recipe.timer; do
+  for unit in fleetd.service fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer fleet-recipe.timer; do
     if ! systemctl is-active --quiet "$unit"; then
       stopped="$stopped $unit"
     fi

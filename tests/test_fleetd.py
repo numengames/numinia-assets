@@ -327,6 +327,38 @@ class Facts(unittest.TestCase):
         (rig.etc / "recipe").write_bytes(b"\xff" * 40)
         self.assertIsNone(rig.door.machine()["recipe"])
 
+    def test_the_machine_says_how_full_its_disk_is_as_the_cleanup_last_saw_it(self):
+        rig = Rig(self)
+        none = {"usedPct": None, "freeBytes": None, "totalBytes": None, "state": None, "at": None}
+        self.assertEqual(rig.door.machine()["disk"], none)  # the cleanup never ran here
+        folder = rig.home / "cleanup"
+        folder.mkdir()
+        good = {"at": "2029-12-31T04:10:00Z", "usedPct": 48.26, "freeBytes": 19 * 2**30, "totalBytes": 37 * 2**30,
+                "state": "ok", "note": "x", "removed": [{"id": "sha256:" + "a" * 64}]}
+        (folder / "state.json").write_text(json.dumps(good))
+        facts = rig.door.machine()["disk"]
+        self.assertEqual(facts, {"usedPct": 48.3, "freeBytes": 19 * 2**30, "totalBytes": 37 * 2**30, "state": "ok",
+                                 "at": "2029-12-31T04:10:00Z"})
+        self.assertNotIn("removed", facts)  # a few numbers, never the list of images or a path
+        (folder / "state.json").write_text(json.dumps({**good, "usedPct": 250, "state": "warn"}))
+        self.assertEqual((rig.door.machine()["disk"]["usedPct"], rig.door.machine()["disk"]["state"]), (100.0, "warn"))
+        (folder / "state.json").write_text(json.dumps({**good, "usedPct": -3}))
+        self.assertEqual(rig.door.machine()["disk"]["usedPct"], 0.0)
+        wrong = {"usedPct": "48", "freeBytes": -1, "totalBytes": 1.5, "state": "bad", "at": ""}
+        odd = {"usedPct": True, "freeBytes": True, "totalBytes": 10**30, "state": 3, "at": 5}
+        for text, expected in (("{broken", none), ("[]", none), (json.dumps({**good, **wrong}), none),
+                               (json.dumps({**good, **odd}), none),
+                               (json.dumps({**good, "usedPct": 10**400, "state": "full"}),
+                                {**none, "usedPct": 100.0, "state": "full", "freeBytes": 19 * 2**30,
+                                 "totalBytes": 37 * 2**30, "at": good["at"]}),
+                               (json.dumps({**good, "usedPct": float("nan")}), {**none, "freeBytes": 19 * 2**30,
+                                "totalBytes": 37 * 2**30, "state": "ok", "at": good["at"]})):
+            with self.subTest(content=text[:40]):
+                (folder / "state.json").write_text(text)
+                self.assertEqual(rig.door.machine()["disk"], expected)
+        (folder / "state.json").write_bytes(b"\xff" * 9)
+        self.assertEqual(rig.door.machine()["disk"], none)
+
     def test_the_machine_says_whether_its_reconciler_keeps_up(self):
         """A request nobody takes, or a last run that stops moving, is a machine that no longer obeys."""
         rig = Rig(self)

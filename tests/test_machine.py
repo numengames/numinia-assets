@@ -735,7 +735,7 @@ class ReconcileTests(unittest.TestCase):
         text = (MACHINE / "bootstrap.sh").read_text()
         check = text.index("== does the machine obey?")
         self.assertLess(text.index("enable --now fleet-reconcile.timer fleet-reconcile.path"), check)
-        self.assertIn("for unit in fleetd.service fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-recipe.timer; do", text[check:])
+        self.assertIn("for unit in fleetd.service fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer fleet-recipe.timer; do", text[check:])
         self.assertIn('systemctl is-active --quiet "$unit"', text[check:])
         self.assertIn("exit 1", text[check:])
 
