@@ -76,7 +76,6 @@ RELEASE_URL_FILE = Path("/etc/fleet/release-url")  # optional: where to fetch th
 ETAG_FILE = "fleet-release.etag"
 SIGNED_TIMEOUT = 15
 PRE_UPDATE_DIR = "preupdate"
-KEEP_SECONDS = 14 * 24 * 3600  # a copy made before an update stays this long
 MAX_BYTES = 64 * 1024
 HEALTH_SECONDS = 90
 HEALTH_STEP = 5
@@ -491,13 +490,15 @@ def write_state(env: Env, state: dict) -> None:
 
 
 def prune_backups(env: Env) -> None:
-    folder = env.dir / PRE_UPDATE_DIR
-    for path in folder.glob("*.zip") if folder.is_dir() else []:
-        try:
-            if env.now() - path.stat().st_mtime > KEEP_SECONDS:
-                path.unlink()
-        except OSError:
-            pass
+    """The copies made before an update age out and are capped in bytes: the one rule lives in cleanup.py.
+
+    Imported here, not at the top, and never allowed to raise: an update must not depend on it."""
+    try:
+        import cleanup
+
+        cleanup.prune_preupdate(env.dir / PRE_UPDATE_DIR, env.now())
+    except Exception as err:  # noqa: BLE001 — a missing or broken cleanup.py costs only the pruning
+        env.log(f"the pre-update copies were not pruned ({type(err).__name__})")
 
 
 # ---------------------------------------------------------------------------

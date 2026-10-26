@@ -24,9 +24,10 @@ moves with them.
 | `release.py` | every five minutes: the Numinia Engine worlds follow the latest published engine (canary, one world a pass, rollback, halt) |
 | `signers.py` | inside that same five-minute pass: takes the house's signed list of Oracles and Archons (`/etc/fleet/signers.house`) |
 | `nightly.py` | each night: a copy of every world, kept 14 days (a Numinia Engine world's is the engine's own export, so «Bring a world back» takes it) |
+| `cleanup.py` | each night at 04:10: old engine images and pre-update copies get a limit, the logs are measured, and the door shows the disk (see *What keeps the disk from filling*) |
 | `condiciones.py` | by hand: turns a world's conditions-of-entry door on or off (`fleet-condiciones <world> on\|off\|status\|restart`) |
 | `recipe.py` | every ten minutes: the machine's own programs (this folder) follow `main` (canary, rest, GitHub's signature, rollback, halt) |
-| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py`, `test_release.py`, `test_nightly.py`, `test_signers.py`, `test_recipe.py`, `test_condiciones.py`, `test_versions.py`, `test_duplicate.py`, `test_publish.py`, `test_version_imports.py` | the tests, run by the depot's `python -m unittest` |
+| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py`, `test_release.py`, `test_nightly.py`, `test_cleanup.py`, `test_signers.py`, `test_recipe.py`, `test_condiciones.py`, `test_versions.py`, `test_duplicate.py`, `test_publish.py`, `test_version_imports.py` | the tests, run by the depot's `python -m unittest` |
 | `../../tests/e2e/` | end to end, by hand (not in `unittest`): `versions_e2e.mjs` signs the version requests with viem against the real door and the real reconciler (needs node, viem and a python with `ecdsa`); `pin_e2e.mjs` does the same for a pin, behind Caddy; `nightly_restore_e2e.mjs` makes a nightly copy of a Numinia Engine world with the real `nightly.py` and the engine's real `copia`, then has the engine's `comprobar`/`importar` and the room's `inspectZip` take it (needs node 24 and checkouts of numinia-engine and numinia-web) |
 
 ## Bring up a machine
@@ -428,6 +429,9 @@ minute or two, is a machine that has stopped obeying.
 | `/srv/fleet/data/<id>/` | the world: `db.sqlite` and `assets/` (Hyperfy); `mundo.json`, `datos/`, `aventura/`, `entorno/`, `sesiones/` (the Numinia Engine's, user 10001, mode 700) |
 | `/srv/fleet/env/<id>.env` | the world's keys: its JWT secret and its admin code (mode 600, made by the machine, never in git) |
 | `/srv/fleet/run/` | the generated `docker-compose.yml`, `Caddyfile` and Caddy's state; `Caddyfile.applied` is the list of sites Caddy last accepted and `docker-compose.applied.yml` the compose file Docker last accepted; `purge.json` and `copy-queue.json` hold deletes and copies in progress, `restart.json` the worlds whose code changed and that wait to be restarted, `updating.json` the worlds moved to a new build until Docker has started it, `switching.json` the worlds whose published version is being switched; `last-run.json` says when the reconciler last ran and how it ended |
+| `/srv/fleet/cleanup/state.json` | the disk as the daily cleanup last saw it: used percent, free, total, what it removed (the door shows a few of these numbers: `/fleet/v1/machine` → `disk`) |
+| `/srv/fleet/release/preupdate/` | the copy of a world made before each engine update (`<id>-<unix time>.zip`; 14 days, at most 2 GiB, never the newest of a world by the cap) |
+| `/etc/systemd/journald.conf.d/fleet.conf` | the journal's cap (`SystemMaxUse=200M`), written by the bootstrap |
 | `/srv/fleet/sock/fleetd.sock` | the door's socket; Caddy is the only way in to it |
 | `/srv/fleet/log.jsonl` | what was done here: when, what, which world, a short wallet |
 | `/srv/fleet/book/` | the clone of this repository, left on the commit the machine's line named: the recipe, and the orders adopted once |
@@ -574,7 +578,7 @@ Numinia Engine worlds follow the latest published engine by themselves; no Oracl
 
 - **Target**: the public asset `imagen.json` of the release `latest` of `numengames/numinia-engine`, fetched anonymously over https (no GitHub credential on the machine). Its image must be `ghcr.io/numengames/numinia-engine@sha256:…`.
 - **Order**: stopped worlds change together (nothing restarts). Running worlds change **one per pass**, the canary first (`/etc/fleet/canary`, a world id; else the lowest id), then by id. Hyperfy worlds, pinned worlds (`pin` in the order) and worlds with another change under way (`busy`) are skipped.
-- **Per world**: a copy before (kept 14 days in `/srv/fleet/release/preupdate/`), `docker pull`, the order's image changes (`previousImage` is kept), the reconciler remakes only that container (the Caddyfile does not change: no Caddy reload), then health: container running without restarts and `/status` reporting the target commit (`commitHash`, as the engine answers it) within 90 s.
+- **Per world**: a copy before (kept 14 days and at most 2 GiB in `/srv/fleet/release/preupdate/`; `cleanup.py` owns that rule), `docker pull`, the order's image changes (`previousImage` is kept), the reconciler remakes only that container (the Caddyfile does not change: no Caddy reload), then health: container running without restarts and `/status` reporting the target commit (`commitHash`, as the engine answers it) within 90 s.
 - **Failure**: the world goes back to `previousImage`, the digest is written to `bad`, and the machine **halts** (`halted` in `/srv/fleet/release/state.json`) until a different digest is published. `updateError` stays in the order.
 - **Kill switch (optional)**: a signed `FleetRelease` placed at `/srv/fleet/release/fleet-release.json` (`{message, signature}`) from an Oracle in `/etc/fleet/signers`, with the highest `seq` seen, replaces the target: a digest pins the fleet there, an empty `image` pauses it. Without it the machine follows `latest`. The record can also be **fetched**: set `FLEET_RELEASE_URL` (or put one line in `/etc/fleet/release-url`; unset = off, the local file only; production: `https://numinia.com/fleet/release.json`, which answers `{message, signature}`, an `ETag` per `seq`, 304 when unchanged and 404 before anything is published). Each pass the machine asks with `If-None-Match`, verifies the answer against its own `/etc/fleet/signers` exactly as for the local file, and writes it to `fleet-release.json` only if its `seq` is above every `seq` it has seen (anti-rollback). A network error, 404, 5xx, garbage, a record over 64 KiB, a stranger's signature or an old `seq` change nothing and never override the local state. Pause (empty `image`) and go-back (a higher `seq` naming an older digest) travel the same way; `--dry-run` does not fetch.
 - **Provenance (optional, OFF by default)**: with `FLEET_RELEASE_PROVENANCE` (or the one word in `/etc/fleet/provenance`) set to `api` or `gh`, `latest` is believed only if its image has a build attestation; a refused image is treated as not published (nothing changes, the reason is in `state.json` → `provenanceRefused` and the log). `api` fetches the public attestation of the digest from `api.github.com` (anonymous, no credential) and checks that it is SLSA provenance of THAT digest, built from THAT commit by `.github/workflows/publicar-motor.yml` on `main` of `numengames/numinia-engine`; it does **not** verify the sigstore signature. `gh` runs `gh attestation verify` (signature, repository, workflow, ref) and needs `gh` plus a `GH_TOKEN` on the machine; an unknown word counts as `gh`. A signed `FleetRelease` is not subject to the check (an Oracle decided). Turn it on only once releases come only from the workflow; a release published by hand has no attestation and would be refused.
@@ -629,6 +633,77 @@ touching any machine (the customers' machines too, in the alpha).
 - **Kept 14 days**: older zips (and their order files) go, but the newest copy of a world is never deleted, and a world removed from the machine keeps its copies until they age out.
 - **Low disk**: a world is copied only if at least 2 GiB stay free after its folder's size; otherwise it is skipped and logged (`journalctl -u fleet-nightly`), and nothing else is deleted to make room. One world failing does not stop the others (the service then ends failed).
 - Result of the last pass: `/srv/fleet/nightly/state.json`. Different from the copy `release.py` makes before an update (`release/preupdate/`) and from the one a download makes (`copies/`, a day).
+
+## What keeps the disk from filling (`cleanup.py`)
+
+Before this, nothing removed an old engine image: every engine update leaves the
+previous image on the disk for good (a machine went from 5 % to 85 % in eleven
+days), and nothing said the disk was filling. `fleet-cleanup.timer` runs
+`/usr/local/sbin/fleet-cleanup` at 04:10 machine time, after the nightly copy
+(`Persistent=`, low CPU and IO priority; installed by the bootstrap, never run
+from the clone). `fleet-cleanup --dry-run` prints what it would do and changes
+nothing (no file, no state).
+
+- **Old engine images.** Removed one by one by their exact id (`docker rmi <id>`; never
+  `docker image prune -a`, never `-f`), and only an image that is ALL of: used by no container
+  (running or stopped); not named by any order in `orders/` (its `image`, its `previousImage`, a
+  pin: every string of the order is compared); not the `target`, `applied` or `rolling` image
+  in `release/state.json` (the current one and the one to go back to); not in the compose files
+  Docker last accepted; not Caddy's; not one of the **newest 2 local images of its repository**
+  (so a rollback target exists even if every record is odd); and **older than 48 h**, counted
+  from the later of its build and the last time it was tagged or pulled here. Dangling images
+  follow the same rules, minus the repository one. If Docker cannot list images or containers, or an
+  order cannot be read, no image is touched; while `release.py` holds its lock (an update is
+  under way) none is either. A `docker rmi` that fails is reported (`failed` in the state) and
+  never stops the others. The note says «up to N MiB»: images share layers, so the sum of their
+  sizes is the most that can come back; `freedBytes` is what the disk really gained.
+- **Pre-update copies** (`release/preupdate/`): 14 days, as before, **and** at most 2 GiB for the
+  folder (`PREUPDATE_CAP_BYTES`). Over the cap the oldest go first, but the cap never deletes the
+  newest copy of a world (if only those are left, the note says the folder is over its cap). The
+  rule lives in `cleanup.py`; `release.py`'s `prune_backups` calls it after every pass, so there
+  is one rule and not two.
+- **Logs.** The journal: the bootstrap writes `/etc/systemd/journald.conf.d/fleet.conf`
+  (`SystemMaxUse=200M`) and restarts `systemd-journald` only when that file changed (a restart
+  loses nothing). Docker's container logs are **not capped yet**, on purpose: see below. The
+  cleanup measures `/var/lib/docker/containers/*/*-json.log` and the journal (read only) and
+  puts both sizes in its state (`containerLogBytes`, `journalBytes`), so a log that grows is seen.
+- **The door shows the disk.** `/srv/fleet/cleanup/state.json` holds `{at, usedPct, freeBytes,
+  totalBytes, removedImages, freedBytes, preupdateBytes, state, note, …}`, and `GET /fleet/v1/machine`
+  carries `disk: {usedPct, freeBytes, totalBytes, state, at}` from it (all `null` until the first
+  run; a room that does not know the field ignores it). `state` is `ok`, `warn` (80 % used or
+  more) or `full` (90 % or more), measured after cleaning. At 85 % or more after cleaning it does
+  **not** delete anything else: the note says so, and a person decides. In `full` the command
+  ends with an error, so `systemctl --failed` shows it.
+- **Never touched**: `data/`, `copies/`, `nightly/`, `env/`, the signers, `/etc/fleet`.
+
+### Why Docker's logs are not capped here
+
+The natural place is `logging: {driver: json-file, options: {max-size: 10m, max-file: 3}}` on each
+world's service in the compose file `reconcile.py` renders. It is **not shipped**: Compose
+decides whether to recreate a container by hashing the service's whole configuration, and
+`logging` is part of it, so the next reconcile pass would run `docker compose up -d` and recreate
+EVERY running world at once (and `save_waits` would first make the reconciler wait for each save). A
+log driver's options can only be set when a container is created. `/etc/docker/daemon.json` would
+restart `dockerd` (every world with it) and is not touched either. The safe route is to apply it
+where a world is recreated anyway: when an engine update moves a world (`release.py`
+sets its order's image), the order would also record that the world takes the log cap, and the
+renderer would add `logging` only to the services whose order says so. That needs a new, reviewed order
+field and a change in `reconcile.py`'s `select_orders`, and is the next step. A test pins that no service carries
+a `logging` key today.
+
+### How a machine that only updates itself gets this
+
+`recipe.py` (every ten minutes) compares the id of the `open-worlds/machine/` folder: a new
+program file changes that id, so it counts as a new recipe. The canary installs it at once, the
+rest after the 2 h rest, and only if GitHub signed the commit. The install runs **that commit's own**
+`bootstrap.sh` (fetched by `recipe.py`, run with the alias alone), and the bootstrap writes
+`cleanup.py`, the `fleet-cleanup` command, the service and the timer, the journald drop-in, runs
+`daemon-reload` and `enable --now` on the timers. So a new program and a new timer **do** reach a
+machine that only self-updates; nothing is done by hand and `recipe.py` did not need a new rail.
+The health check of the **old** updater (the one that is running) does not look at the new timer;
+from the next recipe on, `recipe.py` also requires `fleet-cleanup.timer` to be active and waits
+while `fleet-cleanup.service` runs. The first cleanup runs at the next 04:10 (not at install
+time); `sudo systemctl start fleet-cleanup` runs it now.
 
 ## The conditions door, by hand (`condiciones.py`)
 
