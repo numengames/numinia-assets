@@ -2379,6 +2379,29 @@ def finish_copy(home: Path, wid: str, copy_id: str, part: Path, filename: str, n
     return status
 
 
+def engine_copia(order: dict, data: Path, part: Path, mode: int = 0o640) -> None:
+    """Run the engine's own `copia` on a world's folder (read-only) and leave its zip in `part`.
+
+    The one place the machine asks an engine image for the world's zip: the
+    download button (build_engine_copy) and the nightly copy (nightly.py)
+    both come through here. `part` is created new (no symlink followed) with
+    `mode`; on any failure (container error, not a zip, timeout) it is
+    removed and the error is raised, so no half file is ever left.
+    """
+    fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, mode)
+    try:
+        with os.fdopen(fd, "wb") as out:
+            done = run_tool(engine_tool(order["image"], "copia", order["limits"], f"{data}:{ENGINE_FOLDER}:ro"),
+                            stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.PIPE, timeout=TOOL_SECONDS)
+        if done.returncode != 0:
+            raise OSError("the engine did not make the copy")
+        if not zipfile.is_zipfile(part):
+            raise OSError("the engine's copy is not a zip")
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+
+
 def build_engine_copy(home: Path, order: dict, copy_id: str, now: float | None = None,
                       folder: Path | None = None, version: str | None = None) -> dict:
     """A Numinia Engine world's zip, made by the engine itself (`copia`): the machine never re-implements its rules.
@@ -2398,18 +2421,7 @@ def build_engine_copy(home: Path, order: dict, copy_id: str, now: float | None =
     part = copies / f".{copy_id}.zip.part"
     if data.is_symlink() or not data.is_dir():
         raise OSError("the world has no folder here")
-    fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o640)
-    try:
-        with os.fdopen(fd, "wb") as out:
-            done = run_tool(engine_tool(order["image"], "copia", order["limits"], f"{data}:{ENGINE_FOLDER}:ro"),
-                            stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.PIPE, timeout=TOOL_SECONDS)
-        if done.returncode != 0:
-            raise OSError("the engine did not make the copy")
-        if not zipfile.is_zipfile(part):
-            raise OSError("the engine's copy is not a zip")
-    except BaseException:
-        part.unlink(missing_ok=True)
-        raise
+    engine_copia(order, data, part)
     return finish_copy(home, wid, copy_id, part, copy_name(wid, version, now), now, version)
 
 

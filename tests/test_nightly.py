@@ -1,13 +1,21 @@
 # SPDX-FileCopyrightText: 2026 Numen Games S.L.
 # SPDX-License-Identifier: MIT
 
-"""The machine's nightly copy: one consistent zip per world per day, 14 days, idempotent, harmless on a low disk."""
+"""The machine's nightly copy: one consistent zip per world per day, 14 days, idempotent, harmless on a low disk.
+
+A Hyperfy world's zip is the machine's own; a Numinia Engine world's is the engine's own export (`copia`) with its
+order beside it, so the room can bring it back. Docker is the one thing faked: `FakeCopia` answers as the engine
+image would, from the world's folder it is handed.
+"""
 
 from pathlib import Path
+from unittest import mock
+import hashlib
 import importlib.util
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -33,6 +41,56 @@ N = load("nightly")
 
 DAY = 86400
 T0 = 1_800_000_000.0  # a fixed instant
+HYPERFY = "ghcr.io/numengames/numinia-hyperfy2:sha-0e2045370989d051e73f81c7c9d53121d5c374b3"
+ENGINE = "ghcr.io/numengames/numinia-engine@sha256:" + "a" * 64
+LIMITS = {"memory": "4g", "cpus": "1", "maxUploadMb": 50}
+
+
+class FakeCopia:
+    """Answers as the engine image's `copia` would: the world's mundo@2 zip, written from the folder mounted at /mundo."""
+
+    def __init__(self, exit_code=0, body=None, error=None):
+        self.exit_code, self.body, self.error, self.calls = exit_code, body, error, []
+
+    def __call__(self, cmd, **kwargs):
+        self.calls.append(cmd)
+        if self.error:
+            raise self.error
+        if self.exit_code:
+            kwargs["stdout"].write(b"half a zip")
+            return subprocess.CompletedProcess(cmd, self.exit_code, None, b"docker: no such image\n")
+        if self.body is not None:
+            kwargs["stdout"].write(self.body)
+            return subprocess.CompletedProcess(cmd, 0, None, b"")
+        folder = Path(cmd[cmd.index("-v") + 1].rsplit(":/mundo", 1)[0])
+        listed, blobs = [], {}
+        for part in ("datos", "aventura", "entorno"):
+            for path in sorted((folder / part).rglob("*")) if (folder / part).is_dir() else []:
+                if path.is_file() and not path.name.startswith("claves"):
+                    blob = path.read_bytes()
+                    rel = path.relative_to(folder).as_posix()
+                    blobs[rel] = blob
+                    listed.append({"ruta": rel, "bytes": len(blob), "sha256": hashlib.sha256(blob).hexdigest()})
+        manifest = {"esquema": "numinia-engine/mundo@2", "motor": {"build": "t"}, "creado": "2027-01-15T08:00:00Z", "ficheros": listed}
+        with zipfile.ZipFile(kwargs["stdout"], "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("mundo.json", json.dumps(manifest))
+            for rel, blob in blobs.items():
+                z.writestr(rel, blob)
+            z.writestr("LEEME.txt", "run it yourself")
+        return subprocess.CompletedProcess(cmd, 0, None, b"")
+
+
+def time_stamp(now):
+    return N.time.strftime("%Y%m%d-%H%M%S", N.time.gmtime(now))
+
+
+def zip_bytes(files):
+    import io
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        for name, body in files.items():
+            z.writestr(name, body)
+    return out.getvalue()
 
 
 class Nightly(unittest.TestCase):
@@ -50,9 +108,9 @@ class Nightly(unittest.TestCase):
         env.log = self.logs.append
         self.env = env
 
-    def world(self, wid, db=True, files=None):
+    def world(self, wid, db=True, files=None, image=HYPERFY):
         (self.home / "orders" / f"{wid}.json").write_text(json.dumps(
-            {"id": wid, "domain": f"{wid}.example.org", "image": "ghcr.io/numengames/numinia-engine@sha256:" + "a" * 64}))
+            {"id": wid, "domain": f"{wid}.example.org", "image": image, "limits": LIMITS}))
         data = self.home / "data" / wid
         data.mkdir(parents=True)
         if db:
@@ -65,6 +123,31 @@ class Nightly(unittest.TestCase):
             (data / name).parent.mkdir(parents=True, exist_ok=True)
             (data / name).write_bytes(body)
         return data
+
+    def engine_world(self, wid, files=None):
+        """A Numinia Engine world's folder: datos/, aventura/, entorno/, and what must never travel."""
+        files = files or {
+            "datos/objetos.json": b'{"state": []}',
+            "datos/misiones.jsonl": b'{"op": "s"}\n',
+            "aventura/ejemplo/mision.json": b'{"id": "m1"}',
+            "entorno/entorno.json": b'{"cielo": "alba"}',
+            "claves.env": b"ADMIN_CODE=secret-sentinel\n",
+            "sesiones/2027.jsonl": b'{"quien": "visitor-sentinel"}\n',
+        }
+        return self.world(wid, db=False, files=files, image=ENGINE)
+
+    def copia(self, fake=None):
+        """Put a fake `copia` where the machine runs the engine's tools; the fake, to read what it was asked."""
+        fake = fake or FakeCopia()
+        patch = mock.patch.object(R, "run_tool", fake)
+        patch.start()
+        self.addCleanup(patch.stop)
+        return fake
+
+    def left(self, wid):
+        """Everything in a world's copies folder, hidden files too."""
+        folder = self.home / "nightly" / wid
+        return sorted(p.name for p in folder.iterdir()) if folder.is_dir() else []
 
     def zips(self, wid):
         folder = self.home / "nightly" / wid
@@ -167,6 +250,257 @@ class TestCopy(Nightly):
         self.assertEqual(os.stat(self.home / "nightly").st_mode & 0o777, 0o700)
         self.assertEqual(os.stat(folder).st_mode & 0o777, 0o700)
         self.assertEqual(os.stat(folder / self.zips("a")[0]).st_mode & 0o777, 0o600)
+
+
+class TestEngineWorld(Nightly):
+    def test_an_engine_world_gets_the_engines_own_zip_and_its_order_beside_it(self):
+        self.engine_world("m")
+        fake = self.copia()
+        out = self.pass_()
+        self.assertTrue(out["worlds"]["m"].startswith("copied: m-"))
+        (name,) = self.zips("m")
+        folder = self.home / "nightly" / "m"
+        stem = name[: -len(".zip")]
+        self.assertEqual(self.left("m"), [f"{stem}.order.json", name])
+        with zipfile.ZipFile(folder / name) as z:
+            names = z.namelist()
+            self.assertEqual(names[0], "mundo.json")  # at the root, where the room and the engine look for it
+            self.assertNotIn("order.json", names)  # nothing of ours is in the engine's zip: its importer refuses extras
+            self.assertNotIn("world.json", names)
+            manifest = json.loads(z.read("mundo.json"))
+            self.assertEqual(manifest["esquema"], "numinia-engine/mundo@2")
+            self.assertEqual({f["ruta"] for f in manifest["ficheros"]},
+                             {"datos/objetos.json", "datos/misiones.jsonl", "aventura/ejemplo/mision.json", "entorno/entorno.json"})
+            self.assertFalse(any(b"secret-sentinel" in z.read(n) or b"visitor-sentinel" in z.read(n) for n in names))
+        side = json.loads((folder / f"{stem}.order.json").read_text())
+        self.assertEqual(side, {"format": "numinia-world-nightly-order/1", "world": "m", "copiedAt": R.utc(T0),
+                                "order": {"id": "m", "domain": "m.example.org", "image": ENGINE, "limits": LIMITS}})
+        # the engine's own tool, in the machine's own sandbox: the folder read-only, no network, the world's limits
+        (cmd,) = fake.calls
+        self.assertEqual(cmd[-1], "copia")
+        self.assertEqual(cmd[cmd.index("--network") + 1], "none")
+        self.assertIn(f"{self.home}/data/m:/mundo:ro", cmd)
+        self.assertEqual(cmd[cmd.index("--memory") + 1], "4g")
+
+    def test_files_and_names_are_as_before_and_private(self):
+        self.engine_world("m")
+        self.copia()
+        self.pass_()
+        folder = self.home / "nightly" / "m"
+        (name,) = self.zips("m")
+        self.assertRegex(name, r"m-\d{8}-\d{6}\.zip")
+        self.assertEqual(name, f"m-{time_stamp(T0)}.zip")
+        for path in folder.iterdir():
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600, path.name)
+        self.assertEqual(os.stat(folder).st_mode & 0o777, 0o700)
+
+    def test_a_sidecar_is_never_taken_for_a_zip(self):
+        self.assertIsNone(N.ZIP_NAME.fullmatch("m-20270115-080000.order.json"))
+        self.assertIsNotNone(N.ORDER_NAME.fullmatch("m-20270115-080000.order.json"))
+        self.assertIsNone(N.ORDER_NAME.fullmatch("m-20270115-080000.zip"))
+
+    def test_the_world_folder_is_only_read(self):
+        data = self.engine_world("m")
+        self.copia()
+        before = {p.relative_to(data).as_posix(): (p.stat().st_mtime_ns, p.read_bytes()) for p in data.rglob("*") if p.is_file()}
+        self.pass_()
+        after = {p.relative_to(data).as_posix(): (p.stat().st_mtime_ns, p.read_bytes()) for p in data.rglob("*") if p.is_file()}
+        self.assertEqual(before, after)
+
+    def test_a_hyperfy_world_is_copied_as_ever_and_the_engine_is_never_asked(self):
+        self.world("h", files={"assets/x.glb": b"model"})
+        self.engine_world("m")
+        fake = self.copia()
+        self.pass_()
+        (name,) = self.zips("h")
+        self.assertEqual(self.left("h"), [name])  # no sidecar
+        with zipfile.ZipFile(self.home / "nightly" / "h" / name) as z:
+            self.assertEqual(set(z.namelist()), {"world/db.sqlite", "world/assets/x.glb", "order.json", "world.json"})
+        self.assertEqual([c[-3:] for c in fake.calls], [[f"{self.home}/data/m:/mundo:ro", ENGINE, "copia"]])
+
+    def test_a_second_pass_the_same_day_changes_nothing(self):
+        self.engine_world("m")
+        fake = self.copia()
+        self.pass_()
+        first = {p.name: p.stat().st_mtime_ns for p in (self.home / "nightly" / "m").iterdir()}
+        self.clock += 3600
+        out = self.pass_()
+        self.assertEqual(out["worlds"]["m"], "already done today")
+        self.assertEqual({p.name: p.stat().st_mtime_ns for p in (self.home / "nightly" / "m").iterdir()}, first)
+        self.assertEqual(len(fake.calls), 1)
+
+    def test_a_copy_of_today_in_the_old_shape_is_not_todays_and_a_proper_one_is_made(self):
+        self.engine_world("m")
+        folder = self.home / "nightly" / "m"
+        folder.mkdir(parents=True)
+        old = folder / f"m-{N.day_of(T0)}-000100.zip"  # what the machine used to make for every world
+        with zipfile.ZipFile(old, "w") as z:
+            z.writestr("world/datos/objetos.json", "{}")
+            z.writestr("order.json", "{}")
+            z.writestr("world.json", "{}")
+        self.copia()
+        out = self.pass_()
+        self.assertTrue(out["worlds"]["m"].startswith("copied: m-"))
+        new = [n for n in self.zips("m") if n != old.name]
+        self.assertEqual(len(new), 1)
+        self.assertTrue(old.exists())  # old ones age out as any; none is deleted early
+        with zipfile.ZipFile(folder / new[0]) as z:
+            self.assertIn("mundo.json", z.namelist())
+        self.assertEqual(self.pass_()["worlds"]["m"], "already done today")
+
+    def test_an_engine_zip_of_today_without_its_order_file_is_not_done_either(self):
+        self.engine_world("m")
+        self.copia()
+        self.pass_()
+        (name,) = self.zips("m")
+        (self.home / "nightly" / "m" / f"{name[:-4]}.order.json").unlink()
+        self.clock += 60
+        self.assertTrue(self.pass_()["worlds"]["m"].startswith("copied: m-"))
+        self.assertEqual(len(self.zips("m")), 2)
+
+    def test_a_broken_zip_of_today_does_not_count(self):
+        self.engine_world("m")
+        folder = self.home / "nightly" / "m"
+        folder.mkdir(parents=True)
+        (folder / f"m-{N.day_of(T0)}-000100.zip").write_bytes(b"not a zip")
+        self.copia()
+        self.assertTrue(self.pass_()["worlds"]["m"].startswith("copied"))
+
+    def test_when_copia_fails_the_world_fails_nothing_partial_is_left_and_the_others_get_theirs(self):
+        for label, fake in (("exit code", FakeCopia(exit_code=1)),
+                            ("not a zip", FakeCopia(body=b"this is not a zip")),
+                            ("no mundo.json", FakeCopia(body=zip_bytes({"world/x": b"1", "order.json": b"{}"}))),
+                            ("no docker", FakeCopia(error=FileNotFoundError("docker"))),
+                            ("timeout", FakeCopia(error=subprocess.TimeoutExpired("docker", 1800)))):
+            with self.subTest(label):
+                self.setUp()
+                self.world("a")
+                self.engine_world("m")
+                self.world("z")
+                self.copia(fake)
+                out = self.pass_()
+                self.assertTrue(out["worlds"]["m"].startswith("failed: "), out["worlds"]["m"])
+                self.assertEqual(self.left("m"), [])
+                self.assertEqual(len(self.zips("a")), 1)
+                self.assertEqual(len(self.zips("z")), 1)
+                self.assertTrue(any("nightly m: failed" in line for line in self.logs))
+                self.assertEqual(N.main(["--home", str(self.home)]), 1)
+
+    def test_a_failed_pass_the_next_night_tries_again(self):
+        self.engine_world("m")
+        patch = mock.patch.object(R, "run_tool", FakeCopia(exit_code=1))
+        patch.start()
+        self.assertTrue(self.pass_()["worlds"]["m"].startswith("failed"))
+        patch.stop()
+        self.copia()
+        self.assertTrue(self.pass_()["worlds"]["m"].startswith("copied"))
+
+    def test_a_low_disk_skips_and_the_engine_is_never_asked(self):
+        self.engine_world("m")
+        fake = self.copia()
+        self.free = N.MIN_FREE_BYTES - 1
+        out = self.pass_()
+        self.assertTrue(out["worlds"]["m"].startswith("skipped: low disk"))
+        self.assertEqual((fake.calls, self.left("m")), ([], []))
+
+    def test_a_world_without_a_folder_is_skipped(self):
+        self.engine_world("m")
+        (self.home / "data" / "m").rename(self.home / "data" / "m-away")
+        self.copia()
+        self.assertEqual(self.pass_()["worlds"]["m"], "skipped: no folder")
+
+
+class TestEngineRetention(Nightly):
+    def nights(self, wid, n):
+        for _ in range(n):
+            self.pass_()
+            self.advance(1)
+
+    def test_a_zip_and_its_order_file_age_out_together_and_the_newest_stays(self):
+        self.engine_world("m")
+        self.copia()
+        self.nights("m", 20)
+        names = self.left("m")
+        zips = [n for n in names if n.endswith(".zip")]
+        sides = [n for n in names if n.endswith(".order.json")]
+        self.assertGreaterEqual(len(zips), 14)
+        self.assertLessEqual(len(zips), 15)
+        self.assertEqual(sorted(z[:-4] for z in zips), sorted(s[: -len(".order.json")] for s in sides))
+        self.assertEqual(len(names), 2 * len(zips))
+
+    def test_the_newest_copy_and_its_order_file_are_never_deleted_however_old(self):
+        self.engine_world("m")
+        self.copia()
+        self.pass_()
+        self.advance(60)
+        (self.home / "data" / "m").rename(self.home / "data" / "m-away")
+        self.pass_()
+        self.assertEqual(len(self.left("m")), 2)
+
+    def test_an_old_copy_goes_with_its_order_file_and_the_newest_stays_with_its_own(self):
+        self.engine_world("m")
+        self.copia()
+        self.pass_()
+        old = self.left("m")
+        self.advance(1)
+        self.pass_()
+        self.advance(30)
+        self.free = 0
+        self.pass_()
+        left = self.left("m")
+        self.assertEqual(len(left), 2)
+        self.assertTrue(set(left).isdisjoint(old))  # the first night's pair went, the second's stayed
+
+    def test_an_order_file_with_no_zip_is_deleted_and_files_that_are_not_ours_are_not(self):
+        self.engine_world("m")
+        self.copia()
+        folder = self.home / "nightly" / "m"
+        folder.mkdir(parents=True)
+        (folder / "m-20200101-000000.order.json").write_text("{}")
+        (folder / "notes.order.json").write_text("mine")
+        (folder / "m-20200101-000000.order.json.bak").write_text("mine too")
+        self.pass_()
+        self.assertFalse((folder / "m-20200101-000000.order.json").exists())
+        self.assertEqual((folder / "notes.order.json").read_text(), "mine")
+        self.assertTrue((folder / "m-20200101-000000.order.json.bak").exists())
+
+    def test_the_order_file_of_a_removed_world_goes_with_its_zip_the_last_stays(self):
+        self.engine_world("m")
+        self.copia()
+        self.nights("m", 3)
+        (self.home / "orders" / "m.json").unlink()
+        self.advance(40)
+        self.world("other")
+        self.pass_()
+        zips = self.zips("m")
+        self.assertEqual(len(zips), 1)
+        self.assertEqual(len(self.left("m")), 2)
+        self.assertEqual(zips[0].split("-")[-2], N.day_of(T0 + 2 * DAY))
+
+    def test_a_pass_that_was_killed_leaves_no_harm(self):
+        self.engine_world("m")
+        folder = self.home / "nightly" / "m"
+        folder.mkdir(parents=True)
+        (folder / ".m-20270101-000000.zip.part").write_bytes(b"half")
+        (folder / ".m-20270101-000000.order.json.tmp").write_bytes(b"half")
+        self.copia()
+        self.pass_()
+        self.assertEqual(len(self.left("m")), 2)
+        self.assertEqual([p.name for p in folder.glob(".*")], [])
+
+    def test_old_copies_in_the_old_shape_age_out_as_any(self):
+        self.engine_world("m")
+        folder = self.home / "nightly" / "m"
+        folder.mkdir(parents=True)
+        for day in range(1, 4):  # 1, 2 and 3 days before tonight's: all old shape, no order file
+            when = N.day_of(T0 - (day + 40) * DAY)
+            with zipfile.ZipFile(folder / f"m-{when}-030000.zip", "w") as z:
+                z.writestr("world.json", "{}")
+        self.copia()
+        self.pass_()
+        zips = self.zips("m")
+        self.assertEqual(len(zips), 1)  # 40+ days old: gone; tonight's proper one stays
+        self.assertEqual(zips[0].split("-")[-2], N.day_of(T0))
 
 
 class TestIdempotent(Nightly):

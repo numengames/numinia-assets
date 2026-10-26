@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `open-worlds/machine/nightly.py`: the nightly copy of a Numinia Engine world is now the
+  engine's own export (its image's `copia`, through the new `reconcile.engine_copia` that the
+  download button shares), so the room's «Bring a world back» takes it; before, the Hyperfy-shaped
+  zip had no `mundo.json` and no engine copy could be restored. The order goes beside the zip in
+  `<world>-YYYYMMDD-HHMMSS.order.json`, pruned with it. An engine world's old-shape copy made
+  today no longer counts as done: a proper one is made, the old ones age out. Hyperfy worlds
+  are unchanged. `tests/e2e/nightly_restore_e2e.mjs` proves it with the engine's real tools and
+  the room's real `inspectZip`.
+
 - `open-worlds/machine/versions.py` and five new signed requests: a world keeps up to
   **two versions** and an Oracle chooses which one is published. `data/<id>/` stays the
   published version (no mount moves); the other waits in `versions/<id>/<vid>/`, with a
