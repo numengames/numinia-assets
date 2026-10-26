@@ -276,6 +276,7 @@ NONCE_ZIP = re.compile(r"[0-9a-f]{32}\.zip")  # staging/<nonce>.zip: the zip a v
 COPY_ID = re.compile(r"[0-9a-f]{32}")  # a copy's number: 128 random bits, chosen by the door
 ADDRESS = re.compile(r"0x[0-9a-f]{40}")
 SHA256 = re.compile(r"[0-9a-f]{64}")  # a zip's fingerprint, as the browser computed and the Oracle signed it
+STAMP = re.compile(r"[0-9]{8}-[0-9]{6}")  # a nightly copy's stamp: YYYYMMDD-HHMMSS, UTC (nightly.py names its zips by it)
 VERSION = re.compile(r"v[1-9][0-9]{0,3}")  # a world's version: v1, v2, … never reused within a world
 # A name inside a zip that starts with a drive (C:, c:\…): a Windows path, never a world's.
 DRIVE = re.compile(r"[A-Za-z]:.*", re.DOTALL)
@@ -291,6 +292,7 @@ FIELD_RULES = {
     "nonce": NONCE,
     "zipSha256": SHA256,
     "version": VERSION,
+    "stamp": STAMP,
     "replace": VERSION,  # an ImportVersion may also leave it empty: request_problem
 }
 # The requests about one of a world's versions, and the one that brings a zip in as a version.
@@ -1108,6 +1110,8 @@ def check_request(
     }
     if kind in VERSION_REQUESTS and matches(VERSION, message.get("version")):
         entry["version"] = message["version"]
+    if kind == "DownloadNightly" and matches(STAMP, message.get("stamp")):
+        entry["stamp"] = message["stamp"]
     problem = request_problem(kind, message)
     if problem:
         return entry, None, problem
@@ -1124,7 +1128,7 @@ def check_request(
     if signer not in signers:
         return entry, None, "the signer is not an Oracle of this machine"
     entry["by"] = signer
-    if kind in ("DownloadWorld", "DownloadVersion"):
+    if kind in ("DownloadWorld", "DownloadVersion", "DownloadNightly"):
         if not matches(COPY_ID, raw.get("copy")):
             return entry, None, "no copy number"
         entry["copy"] = raw["copy"]
@@ -1363,6 +1367,8 @@ def answer(home: Path, entry: dict, state: str, rule: str | None = None, now: fl
               "rule": rule, "at": utc(now)}
     if entry.get("version") is not None:
         result["version"] = entry["version"]
+    if entry.get("stamp") is not None:
+        result["stamp"] = entry["stamp"]  # a DownloadNightly's copy
     if entry.get("made") is not None:
         result["made"] = entry["made"]  # a DuplicateVersion's new version: the slot that appeared
     if detail is not None:
@@ -1420,6 +1426,10 @@ def take_requests(
     request, into a new unpublished version (versions.import_version; its
     result names the version it replaced as `version`, "" for none, and the
     new one as `made`); the live world is not touched.
+    A DownloadNightly is checked at once (nightly.download_nightly: the
+    copy must be a regular file in the world's nightly folder, which may
+    outlive the world) and waits in the same queue, its job naming the
+    stamp; make_copies copies that file.
     Every other request about a world the journal names (bar the records of
     a shown code) is refused `busy`. Returns the entries taken, for the summary.
     """
@@ -1446,7 +1456,8 @@ def take_requests(
             admin_code, rule = carried_code(raw, entry["type"])
         if rule is None:
             deleting = {w: job.get("domain") for w, job in purge.items() if isinstance(job, dict)}
-            if entry["world"] in read_switching(home) and entry["type"] not in ("ShowAdminCode", "ShowWorldCode"):
+            if entry["world"] in read_switching(home) and entry["type"] not in (
+                    "ShowAdminCode", "ShowWorldCode", "DownloadNightly"):
                 rule = "busy"  # its folders are moving; nothing else is done to it until they have
             elif entry["type"] == "ImportWorld":
                 rule, detail = import_world(home, orders, codes_dir, entry, message, raw, admin_code, alias,
@@ -1470,6 +1481,9 @@ def take_requests(
             elif entry["type"] == "ImportVersion":
                 import versions  # here, not at the top: versions imports this file
                 rule, detail = versions.import_version(home, orders, entry, message, raw, now)
+            elif entry["type"] == "DownloadNightly":
+                import nightly  # here, not at the top: nightly imports this file
+                rule = nightly.download_nightly(home, message)
             else:
                 rule = change_book(entry, message, orders, alias, allowed, control_host, now, deleting)
                 if rule is None and admin_code is not None:
@@ -1487,10 +1501,13 @@ def take_requests(
         if entry["type"] == "DeleteWorld":
             purge[entry["world"]] = {"nonce": entry["nonce"], "by": entry["by"], "domain": message["domain"]}
             answer(home, entry, "working", None, now)
-        elif entry["type"] in ("DownloadWorld", "DownloadVersion"):
+        elif entry["type"] in ("DownloadWorld", "DownloadVersion", "DownloadNightly"):
             job = {"copy": entry["copy"], "world": entry["world"], "nonce": entry["nonce"], "by": entry["by"]}
             record = {"copy": entry["copy"], "world": entry["world"], "state": "preparing", "at": utc(now)}
-            if entry["type"] == "DownloadVersion":
+            if entry["type"] == "DownloadNightly":
+                # The job names the nightly copy to bring out; make_copies copies that file.
+                job["nightly"] = entry["stamp"]
+            elif entry["type"] == "DownloadVersion":
                 # The job names the version it copies; the record the door serves says so too.
                 job["version"] = record["version"] = entry["version"]
             queue.append(job)
@@ -2459,6 +2476,8 @@ def copies_wait(home: Path, orders: Path) -> int:
     queue = read_json(home / "run" / "copy-queue.json", [])
     for job in queue if isinstance(queue, list) else []:
         wid = job.get("world") if isinstance(job, dict) else None
+        if isinstance(job, dict) and "nightly" in job:
+            continue  # a finished file on disk: nothing is waiting to be saved
         order = read_order(orders / f"{wid}.json") if matches(SLUG, wid) else None
         # The Numinia Engine's own copy needs no wait: it writes each snapshot whole.
         if order is None or order.get("state") != "running" or runs_engine(order):
@@ -2483,7 +2502,10 @@ def record_run(home: Path, ok: bool, rule: str | None = None, now: float | None 
 
 
 def make_copies(home: Path, orders: Path, alias: str, now: float | None = None) -> list[str]:
-    """Zip every queued copy; a world copied minutes ago gets the same zip again."""
+    """Zip every queued copy; a world copied minutes ago gets the same zip again.
+
+    A DownloadNightly's job names a nightly copy, which is copied as it is.
+    """
     now = time.time() if now is None else now
     path = home / "run" / "copy-queue.json"
     queue = read_json(path, [])
@@ -2491,6 +2513,13 @@ def make_copies(home: Path, orders: Path, alias: str, now: float | None = None) 
     group = door_gid()
     for job in queue if isinstance(queue, list) else []:
         if not isinstance(job, dict) or not matches(COPY_ID, job.get("copy")) or not matches(NONCE, job.get("nonce")):
+            continue
+        if "nightly" in job:
+            # A DownloadNightly: a file already on the disk, whether or not the world is still here.
+            if matches(SLUG, job.get("world")) and matches(STAMP, job["nightly"]):
+                import nightly  # here, not at the top: nightly imports this file
+                if nightly.make_copy(home, job, now):
+                    made.append(job["copy"])
             continue
         version = job.get("version")  # a DownloadVersion's job names its version; a DownloadWorld's has none
         if version is not None and not matches(VERSION, version):
@@ -2662,6 +2691,8 @@ def run_once(args: argparse.Namespace, alias: str, orders: Path, admin_code: str
         time.sleep(pause)
     copied = make_copies(args.home, orders, alias)
     prune_copies(args.home)
+    import nightly  # here, not at the top: nightly imports this file
+    nightly.ensure_index(args.home)  # the door lists the nightly copies from it; the nightly pass keeps it after this
     if synced:
         print(f"{alias}: code files made equal to their key files for {synced}")
     if expired:

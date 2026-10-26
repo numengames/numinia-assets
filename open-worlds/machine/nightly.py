@@ -42,6 +42,13 @@ an order on this machine:
   with success so the other worlds still get theirs. Pruning old zips runs
   anyway: that only frees space.
 
+* Two things leave this folder, and only these. The list of the copies
+  (`build_index`: world, stamp, size, kind, restorable; no path, no key) is
+  written to <home>/run/nightly.json after each pass, for the door to show
+  (the folder is root's alone, the door cannot open it). And a signed
+  DownloadNightly copies one zip into `copies/` as an ordinary copy
+  (`make_copy`), also for a world that was deleted: its folder stays.
+
 State: <home>/nightly/state.json (when the pass ran and what happened to each
 world). Everything outside (clock, free space) is passed in, so the tests run
 with a fake clock and a fake disk.
@@ -57,6 +64,7 @@ import os
 import re
 import shutil
 import sqlite3
+import stat
 import subprocess
 import sys
 import time
@@ -74,6 +82,10 @@ ORDER_NAME = re.compile(r"(?P<world>[a-z0-9][a-z0-9-]*)-(?P<day>\d{8})-(?P<time>
 FORMAT = "numinia-world-nightly/1"
 ORDER_FORMAT = "numinia-world-nightly-order/1"  # the sidecar of a Numinia Engine world's zip
 ENGINE_MANIFEST = "mundo.json"  # what makes an engine zip restorable: the room looks for it at the zip's root
+HYPERFY_DB = f"world/{R.ENGINE_DB}"  # what makes a Hyperfy zip restorable
+INDEX_FILE = "nightly.json"  # in <home>/run/: the list the door shows (the folder itself is root's alone)
+INDEX_PER_WORLD = 14  # the most copies of one world the list names
+INDEX_MAX = 200  # the most copies it names in all
 
 
 class Env:
@@ -269,6 +281,169 @@ def done_today(env: Env, order: dict, folder: Path, today: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# The list of the copies (for the door) and a copy brought out (DownloadNightly)
+# ---------------------------------------------------------------------------
+
+
+def stamp_time(stamp: str) -> str | None:
+    """The ISO time (UTC) a stamp names; None when it is not a real date and time."""
+    try:
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.strptime(stamp, "%Y%m%d-%H%M%S"))
+    except ValueError:
+        return None
+
+
+def describe(path: Path) -> tuple[str | None, bool]:
+    """(kind, restorable) of one nightly zip, from its central directory alone: nothing is unpacked.
+
+    `numinia-engine`: a `mundo.json` at the root, restorable when the order
+    file beside it is there too. `hyperfy`: a `world/db.sqlite`. Any other
+    zip, or a file that is not one, is (None, False).
+    """
+    try:
+        with zipfile.ZipFile(path) as zipped:
+            names = set(zipped.namelist())
+    except (OSError, zipfile.BadZipFile, zipfile.LargeZipFile, EOFError, ValueError, RuntimeError):
+        return None, False
+    if ENGINE_MANIFEST in names:
+        side = order_file(path)
+        return "numinia-engine", side.is_file() and not side.is_symlink()
+    if HYPERFY_DB in names:
+        return "hyperfy", True
+    return None, False
+
+
+def build_index(home: Path) -> list[dict]:
+    """What the room may list: every nightly copy as {world, stamp, at, bytes, kind, restorable}, newest first.
+
+    At most INDEX_PER_WORLD of a world and INDEX_MAX in all. Names a file
+    only by world and stamp: no path, no key. A folder or a zip that is a
+    symlink, or a name that is not ours, is not listed.
+    """
+    root = home / NIGHTLY_DIR
+    found: list[dict] = []
+    folders = sorted(p for p in root.iterdir() if p.is_dir() and not p.is_symlink()) if root.is_dir() and not root.is_symlink() else []
+    for folder in folders:
+        if not R.matches(R.SLUG, folder.name):
+            continue
+        listed = 0
+        for stamp, path in reversed(copies_of(folder)):
+            if listed >= INDEX_PER_WORLD:
+                break
+            match = ZIP_NAME.fullmatch(path.name)
+            at = stamp_time(stamp)
+            if at is None or match is None or match["world"] != folder.name:
+                continue
+            try:
+                size = path.stat().st_size
+            except OSError:
+                continue
+            kind, restorable = describe(path)
+            found.append({"world": folder.name, "stamp": stamp, "at": at, "bytes": size, "kind": kind,
+                          "restorable": restorable})
+            listed += 1
+    found.sort(key=lambda e: e["world"])
+    found.sort(key=lambda e: e["stamp"], reverse=True)  # stable: newest first, then by world
+    return found[:INDEX_MAX]
+
+
+def write_index(home: Path, now: float | None = None) -> list[dict]:
+    """Write <home>/run/nightly.json for the door, which cannot open the (root-only) nightly folder."""
+    copies = build_index(home)
+    R.write_json(home / "run" / INDEX_FILE, {"at": R.utc(now), "copies": copies}, mode=0o644)
+    return copies
+
+
+def ensure_index(home: Path) -> None:
+    """Write the list when there is none yet (a machine installed before it); the nightly pass keeps it after."""
+    if not (home / "run" / INDEX_FILE).is_file():
+        try:
+            write_index(home)
+        except OSError as error:
+            print(f"the list of nightly copies could not be written ({type(error).__name__})", file=sys.stderr)
+
+
+def nightly_zip(home: Path, wid: str, stamp: str) -> Path | None:
+    """The nightly zip of this world and stamp when it is a regular file in the world's own folder; else None.
+
+    The world need not be here: its folder outlives it. No symlink anywhere on
+    the way (the nightly folder, the world's, the file), and the name is
+    built from the checked world and stamp, never taken from outside.
+    """
+    if not R.matches(R.SLUG, wid) or not R.matches(R.STAMP, stamp) or stamp_time(stamp) is None:
+        return None
+    root = home / NIGHTLY_DIR
+    folder = root / wid
+    path = folder / f"{wid}-{stamp}.zip"
+    try:
+        if root.is_symlink() or folder.is_symlink() or not folder.is_dir():
+            return None
+        if path.is_symlink() or not stat.S_ISREG(path.lstat().st_mode):
+            return None
+    except OSError:
+        return None
+    return path
+
+
+def download_nightly(home: Path, message: dict) -> str | None:
+    """A signed DownloadNightly: check there is such a copy; the broken rule, or None when it may be queued.
+
+    `not-found`: no nightly folder for the world, no zip of that stamp in
+    it, or one that is not a plain file. Nothing is written here.
+    """
+    return None if nightly_zip(home, message["world"], message["stamp"]) is not None else "not-found"
+
+
+def make_copy(home: Path, job: dict, now: float) -> bool:
+    """Turn the nightly copy a job names into an ordinary copy record + zip, as a download of the world makes one.
+
+    The file is copied (never linked: finishing a copy changes its group
+    and mode, and the nightly zip stays root's alone), read through one
+    descriptor opened without following a link and checked to be a regular
+    file, so nothing can swap it for another in between. It is named as the
+    nightly zip is. Fails (state `failed`, the rule in the request's result)
+    when it is gone (`not-found`), the disk would be left under R.RESERVE
+    (`no-room`) or the copy cannot be made. Returns whether a copy is ready.
+    """
+    wid, stamp, copy_id = job["world"], job["nightly"], job["copy"]
+    copies = home / "copies"
+    entry = {"nonce": job["nonce"], "type": "DownloadNightly", "world": wid, "stamp": stamp, "by": job.get("by")}
+    failed = {"copy": copy_id, "world": wid, "state": "failed", "at": R.utc(now)}
+    group = R.door_gid()
+
+    def fail(rule: str) -> bool:
+        R.write_json(copies / f"{copy_id}.json", failed, mode=0o640, group=group)
+        R.answer(home, entry, "failed", rule, now)
+        return False
+
+    path = nightly_zip(home, wid, stamp)
+    if path is None:
+        return fail("not-found")
+    copies.mkdir(parents=True, exist_ok=True)
+    part = copies / f".{copy_id}.zip.part"
+    try:
+        source = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
+        return fail("not-found")
+    try:
+        with os.fdopen(source, "rb") as src:
+            if not stat.S_ISREG(os.fstat(src.fileno()).st_mode):
+                return fail("not-found")
+            if shutil.disk_usage(copies).free - os.fstat(src.fileno()).st_size < R.RESERVE:
+                return fail("no-room")
+            out = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640)
+            with os.fdopen(out, "wb") as dst:
+                shutil.copyfileobj(src, dst, 1 << 20)
+        R.finish_copy(home, wid, copy_id, part, path.name, now)
+    except (OSError, ValueError) as error:
+        part.unlink(missing_ok=True)
+        print(f"the nightly copy of {wid} could not be brought out ({type(error).__name__})", file=sys.stderr)
+        return fail("the copy could not be made")
+    R.answer(home, entry, "done", None, now)
+    return True
+
+
 def run_pass(env: Env) -> dict:
     """One nightly pass over every order. Never raises for one world's trouble; says what happened to each."""
     now = env.now()
@@ -313,6 +488,10 @@ def run_pass(env: Env) -> dict:
             pruned += [f"{folder.name}/{name}" for name in prune(env, folder.name)]
     summary = {"at": R.utc(now), "worlds": results, "pruned": pruned}
     R.write_json(env.dir / STATE_FILE, summary, mode=0o600)
+    try:
+        write_index(env.home, now)
+    except OSError as error:  # the list is the door's; a pass that made its copies still ends well
+        env.log(f"nightly: the list of copies could not be written ({type(error).__name__})")
     return summary
 
 

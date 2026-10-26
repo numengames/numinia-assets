@@ -38,6 +38,10 @@ What it does, and nothing more:
   exactly that size and that SHA-256 turns the slot into a request in the
   inbox. Another zip is refused and the slot kept, so the browser can send
   it again without a new signature.
+- GET /fleet/v1/nightly — the machine's nightly copies (world, stamp, size,
+  kind, whether the room can bring it back, whether the world is still
+  here), read from the list the nightly pass wrote; a DownloadNightly turns
+  one into an ordinary copy, also for a world that was deleted.
 - GET /fleet/v1/machine, /worlds, /log — public facts: the machine, the
   commit of the recipe it installed (and what its recipe updater is
   doing: `recipeUpdate`; the disk: `disk`), and whether its reconciler keeps up
@@ -76,6 +80,7 @@ import time
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
+import nightly as N
 import reconcile as R
 import versions as V
 import walletsig as W
@@ -278,7 +283,9 @@ class Door:
             "updates": True,
             # Optional: a room that does not know them ignores them. `listens/pin`: this door takes a
             # PinWorld (hold a world on a build, or let it follow the fleet again).
-            "listens": {"pin": True},
+            # `listens/nightly`: this door lists the nightly copies (GET /nightly) and takes a
+            # DownloadNightly, also for a world that is gone.
+            "listens": {"pin": True, "nightly": True},
             "release": self.release(),
             "recipeUpdate": self.recipe_update(),
             # Optional: a room that does not know it ignores it. The disk, as cleanup.py last saw it.
@@ -501,6 +508,32 @@ class Door:
                         "of": slot["message"]["zipBytes"]}
         return None
 
+    def nightly(self) -> dict:
+        """The machine's nightly copies, newest first, as the nightly pass listed them (run/nightly.json).
+
+        The folder is root's alone; the pass writes the list after each run
+        (and the reconciler once, if there is none). Each entry is checked
+        again here, whatever the file says: only a world, a stamp, a time, a
+        size, a kind and `restorable`, plus `worldExists` (the world has an
+        order here now; a deleted world's copies are listed all the same).
+        No key, no path.
+        """
+        raw = R.read_json(self.home / "run" / N.INDEX_FILE, {})
+        listed = []
+        for item in (raw.get("copies") if isinstance(raw, dict) and isinstance(raw.get("copies"), list) else []):
+            if not isinstance(item, dict) or len(listed) >= N.INDEX_MAX:
+                continue
+            world, stamp, size, kind = item.get("world"), item.get("stamp"), item.get("bytes"), item.get("kind")
+            if (not R.matches(R.SLUG, world) or not R.matches(R.STAMP, stamp) or N.stamp_time(stamp) is None
+                    or isinstance(size, bool) or not isinstance(size, int) or size < 0
+                    or kind not in ("numinia-engine", "hyperfy", None) or not isinstance(item.get("restorable"), bool)):
+                continue
+            listed.append({
+                "world": world, "stamp": stamp, "at": N.stamp_time(stamp), "bytes": size, "kind": kind,
+                "restorable": item["restorable"], "worldExists": R.read_order(self.orders / f"{world}.json") is not None,
+            })
+        return {"machine": self.alias, "nightly": listed, "at": R.utc(self.clock())}
+
     def log(self) -> dict:
         path = self.home / "log.jsonl"
         lines = path.read_text(encoding="utf-8").splitlines()[-LOG_LINES:] if path.is_file() else []
@@ -553,6 +586,8 @@ class Door:
         """
         if kind == "ShowAdminCode":
             return None
+        if kind == "DownloadNightly":
+            return None  # a file on the disk, whether or not the world is here; the reconciler says not-found
         wid = message["world"]
         current = R.read_order(self.orders / f"{wid}.json")
         waiting = [r for r in self.inbox() if r["message"].get("world") == wid]
@@ -719,7 +754,7 @@ class Door:
             reply: dict = {"request": nonce}
             dropped = {"type": kind, "message": message, "signature": request["signature"],
                        "signer": signer, "receivedAt": R.utc(now)}
-            if kind in ("DownloadWorld", "DownloadVersion"):
+            if kind in ("DownloadWorld", "DownloadVersion", "DownloadNightly"):
                 reply["copy"] = dropped["copy"] = os.urandom(16).hex()
             if kind in ("ShowAdminCode", "ShowWorldCode"):
                 # The machine's legacy code, or this one world's own.
@@ -938,6 +973,8 @@ class Handler(BaseHTTPRequestHandler):
             found = door.machine()
         elif parts == ["worlds"]:
             found = door.worlds()
+        elif parts == ["nightly"]:
+            found = door.nightly()
         elif parts == ["log"]:
             found = door.log()
         elif len(parts) == 2 and parts[0] == "requests":

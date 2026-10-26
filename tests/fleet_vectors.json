@@ -416,6 +416,28 @@
         "name": "expires",
         "type": "uint256"
       }
+    ],
+    "DownloadNightly": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "type": "string"
+      },
+      {
+        "name": "stamp",
+        "type": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
     ]
   },
   "vectors": [
@@ -433,8 +455,8 @@
         "expires": 1893456000
       },
       "digest": "0x6390352cb3395b9e08c31daaec3288413a5800cef65a6569164809637382ca1d",
-      "signature": "0x8e81f2a7364dee0d091e7abc35118d1354511c4eba13ba5c462a0513a8dab9f1132dc59469c7bd8512a2b637df76c7fe18a0652ee0156655b8d50abb973492721c",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0x852a198cd5ed919b7dd40c120cb11bb2e1f532d4486a1f746445ccd27a28de95596cff8f7a8c50b495fb1e0d60eea6471437308039a3ec14ca904821546394451c",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "DeleteWorld",
@@ -446,8 +468,8 @@
         "expires": 1893456000
       },
       "digest": "0x4a05422e004fb6b333ed98bbc3d487bdbd231f0ebbf1e6d12516123f4f890a67",
-      "signature": "0xb3d87a45c3d0a9daeebf6dd371bab188af2b6ba7973ef9a8c5388f043c27cbb77ec3ae6a8b17db359944274a6fa074763ffc4adfa839c8088414cf80d6ecd6151c",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0x878b150cfe882a8c939d9e69faec01c49f20b1fa870b42b6c1701094194b49e267c48656d3543ee44715a7c8ce43e8f498325bc6f9f0a230d6defc71ba63ef721b",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "StopWorld",
@@ -458,8 +480,8 @@
         "expires": 1893456000
       },
       "digest": "0xcce8832bb8c525e8a94356bd6e02d9d3e39d4fa88b0d9cf49eff9e7eaf8965d1",
-      "signature": "0x19d23b378fa15e385925cd9edb65aaa566f9ea80fc17d4d7259297112bb3ebb4044b9d72ec9a6fd4d4fba11225234874e4a39f6f2bfe891ca506b95dce1222c21b",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0xc1afb2c132eb6a90fc6ed009371f24d77b402dbcaf5439ae1e49e1535fed921f19bd28cc76a31cfafe268e5294532ab9a3b9733a062f6f2627876053f46b4d371b",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "StartWorld",
@@ -470,8 +492,8 @@
         "expires": 1893456000
       },
       "digest": "0xd84f2ea0aea5ef8176282fb8b08b92dfdc169109ed22205f2271d8c372d82a26",
-      "signature": "0xeaf29def4737dcdf71558942aa3833332c721c2c14187cf03f132d60048d859255e714ca4e4988a8ab9e9d5e13e8429fe46fae736951b6f1b0ffbcf01b21d7e31b",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0xfb6f90360a9df8479864a1e26d1355a8665786f58d81e1a01aed253c9acbae557889ddfc61c845fd7faa1457e8b00df3e8eeee1731fe607f13bc99993341af201b",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "DownloadWorld",
@@ -482,8 +504,8 @@
         "expires": 1893456000
       },
       "digest": "0xe03580fe93dd2192b20cd5fe6cba48e25020390d9e46e608440cfd5ec2651a27",
-      "signature": "0x1458a90d559606d9e618e438f37211cb744afe47d587d0a5ab76dd5df47079884f55630ae1a8375b3dfbf468a3893aa23fae3e3d29f28786b95eb21cbb6384b81b",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0xafaaed988a1614b88218a7ab9b7e76e8d7e0185ff2d86199bea89466d28ba9c164629318c0127f66e8d2ee61467d221284a156680d886e98451ddcf94b264dc01b",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "ShowAdminCode",
@@ -493,8 +515,8 @@
         "expires": 1893456000
       },
       "digest": "0x026533a50e419d03f37105c6f319572c0500f9b65237935ac8670b8dd46ecfe9",
-      "signature": "0x766a663b546915ad1bb0c312f64822f06d9e447a28044cd3f8c7eb874e2b4ff57e06a8a5626320d972b71de6084244483ecd741d8b9aab15df9f2edc3433d5701c",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0x80760b75ab110b8d070a4b230fa0e5474a344d39ac8471231febad183d50e2e1205399d86bd45e30377a8d0a81cd7bac102be7cc13020c2af8e3813507337e261b",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "ShowWorldCode",
@@ -505,8 +527,8 @@
         "expires": 1893456000
       },
       "digest": "0xf69173093218a76e67036e4059ad590d73a16d98de0532caf0ab55464aae3dfd",
-      "signature": "0xe0917e1b9cf3c126348b326d8415fb10dd9b6448ceaff3c87d6e56ed87efa1bd282ac71b48aa2793582b7f5cbeded0a7dfeab7f46d1ccbbcfa271ae2fd73492f1b",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0xe690ae8774a2be3a32cb85392921281db9c27a179776933bb2c61891a1e94e8a6d4122e07852a2814a0b7289841ccd24d52e89a3ba0479dc9339d1d502a070ff1c",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "RotateWorldCode",
@@ -517,8 +539,8 @@
         "expires": 1893456000
       },
       "digest": "0x167365fbf09a8fbe0cd684c20bce0ea5e0ceb682a44775f09ebd45137ba1ed82",
-      "signature": "0x08ec95bb5468967a14d9f5a9ff97a64a4a38e529b7e9a903fd6608be00ee7c321511c6b9b39a65ca8a9373ee37697bac01c82c72e09e390197d2c0c4c82b98311b",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0x8e832ada68dc315a2001f2bfebbdd99907eeeb1aad10855805e2fedf9c91a8c11333c001181d02c722777a0368dc41e0815712ae985fa634c1ca909c96e2b5ee1c",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "ImportWorld",
@@ -536,8 +558,8 @@
         "expires": 1893456000
       },
       "digest": "0x772dc4f6286f22eca4f7eb4bcfc2d0211b060fb1417a9a19415feed1a4999ebe",
-      "signature": "0x11dc74caf7aec391ff3a5144fe4ecd79e1cec6be5c21799d572dfc3fcb7ddb6a5a5d51c578b178bed1a3708074c74ff8c94c5bc8ba97cd2a57aae01ebf0a8e331b",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0xf7b293499dfab8b8713b1b5d93d30fd8608e3388879a48ecb1ce35368818cadb56cba004dfe84bbaeb4179602c3f03461069a887578f84d900d29be3f7a4c03e1b",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "UpdateWorld",
@@ -549,8 +571,8 @@
         "expires": 1893456000
       },
       "digest": "0x43cabdd5396fb9a42e85e9f001424dad6c43c5a282f9a1e075c700b9736ab598",
-      "signature": "0xa4ed8d364b4a19309f32941aaa23b0a12621a43607aebce6c5477836fb02f7ed469e362d13de2945b1330e91ca82e112efc294aa420836caeeb41ad07b87c8881b",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0x8d2c638ad2cc3ef8795ee2be681fb1a1e42e3a8df9342f4b80e2a87e978a994f199073b47bfb9d52cc0429f7d33327a6247ce2a90f8732536e707ba999ab2f5c1b",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "FleetRelease",
@@ -562,8 +584,8 @@
         "issuedAt": 1893456000
       },
       "digest": "0xb577c6cc0d0fc62c3974dd3686d9e7c2e69f810d62a66625f851dd5a1c3f436b",
-      "signature": "0x83bb4f31766f2243d4c9048a2ccf4546d311b683b18383321fa1affb7be64a0e795b93b93b3d15200e11cfb4a202bdada5ef04205c6a3747619f620cf024467e1c",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0xcdb97314ae0563adce32a1ee6d4ef8270efc91f865b807320fc32fe44567fc6c048b92563334e0f6e3ceb9fb8c87fb4762f603113281f74049ca78bbb3b4c0401c",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "PinWorld",
@@ -576,8 +598,8 @@
         "expires": 1893456000
       },
       "digest": "0xf22c718fb4699360f01d365ae9a4c4dc67a4b54a33a6bea2194aed7a814806a8",
-      "signature": "0xc36bef64bbd0b3e2e534f99029e1f5567d9a983eea5c1cf656a1a5fa3d532bdf3246320b22cb4349b6adc548c6dee2681d77582e51e6c8d6ce6be94186321bb31c",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0x84bfb68d30b1adaf6da0483b37c3d953e5dbe05866e0a5e99f2ff4c3651f1d5a38ed256c4908a32b3ccd09d14169ad7d6baf857889632b604b52e934280a09911c",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "PinWorld",
@@ -590,8 +612,8 @@
         "expires": 1893456000
       },
       "digest": "0xd6390dd7bd98b75943878cf7f3cac790a5ca9da764d1333e7437efe1f82474bf",
-      "signature": "0xbe20d225bf7b4a0f9d637b63fd8eafa885ecf405b37a52cfc891e99dd71fa8d42f328d3151a4c484eaa7f6e3861f29b4feef5cc83cac336804fb2c6201a5dc751c",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0x9eeeae7019c27fa4247fcc554e8381213c578cf2307b8f7488345cd6153aab4b0fd8f148a0ea8d0bdc55c69d5a35680891d5f9d5981c8f88a73243df1a0551451c",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "DuplicateVersion",
@@ -603,8 +625,8 @@
         "nonce": "b123456789abcdef0123456789abcdef"
       },
       "digest": "0x6473616a81ee5856ef76101f8debc65cfec203cf805abd20c2ac8eb8ca9baf7c",
-      "signature": "0x0d9bbde47cc68369f0c127d05945142551cab3a2759f93230f7c61fc390a9c0e64c556a893c28f82f6a4bd1f21afb39b5704b51ed3f13c408388f1ccdb875ffc1c",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0x3372d4b9c34c9fb187cab502ef40caf76f0902a56dd69cbe7e057cfad86cbc5f1b3c7f91a45199af6cdd3cc7b535c52230735ca2b5ff12dee38971678a8cff1f1b",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "PublishVersion",
@@ -616,8 +638,8 @@
         "nonce": "c123456789abcdef0123456789abcdef"
       },
       "digest": "0xfd1c1f252b40286e286d753b9e0009a067faf09872f97a0838002e57b610e6ab",
-      "signature": "0x61ec633880b8db0303c4eeafc4f87cd0d4c5b1528f4bf5178e20ed45bbf575f70a80a59d7841c275d83e62f4a75cf00d702aa5332057c56be958da357effc9ea1c",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0xbabaa3d9b7475a1b419775686f5a0c31f4e470082fb0953b5e0ba3fee8bc48ad497cbeeddff90225debc1ed0c547a0aa8d6cec0ad037972f2f1ef0b12fa66a481b",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "DeleteVersion",
@@ -629,8 +651,8 @@
         "nonce": "d123456789abcdef0123456789abcdef"
       },
       "digest": "0x55359456e26dd74c0cb22b05d6d09494c6a91c11aa27b8c1428fe3d580c4d6c2",
-      "signature": "0x3cb51bcae56bf608e4f142a36c5caf1bf125da13e00f0a8a374ead374ec0888e4e875b50243aa8a2023c6c5cb3ed322a0b791d0ec5b576dfef9202a5f25a1a5e1b",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0x7afecc5e24f5014071a3753e6803955cb1c4600339b8b44de8ea5406976753fb1c5e4bdc54bc050a413b9117af994e7528c747f174b20f4f0bfc0ef752fa59f11c",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "DownloadVersion",
@@ -642,8 +664,8 @@
         "nonce": "e123456789abcdef0123456789abcdef"
       },
       "digest": "0x9888f432d732e8f387134c340f101ef54617bd9c3dc34c5cc3a589161d101f3d",
-      "signature": "0x05973fbf29984b10aca1b1002dcc3964c199b7c5291b727c87654208a94436122f5d101896797d092aa70d31208b494174e643b66cfc6453027549ef48a024e31c",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0xc16c2e5995beaf6fd908870f55eb48cf8d58bfdbe9db89d0c55913c83292dea4653ac4a4ffb55aab862e39f12ced51004fc2db2aa533675b90c2304bcd3087f31b",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "ImportVersion",
@@ -657,8 +679,8 @@
         "expires": 1893456000
       },
       "digest": "0xdaed6cee11f52b3e439b09500d772a9daaed999c506cfed1597dc31cc48b24bc",
-      "signature": "0x23b8f65b7adb89749b2b59ca69f29da20b0a02b7599546fb975c10d45efcf87475a9a4c640a40eae8a4f4f1852e323d29934e96ba509335a4d15d74593ea13401c",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0x2538236d4dac358a6b6392f8d56f677f1599ed4ba2df54cd28c7b97495f75b3d57b7827c8630a254a0872ca76e5772c9a5dd1fdfea2ff8d1979c49caca4132c21c",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "ImportVersion",
@@ -672,8 +694,21 @@
         "expires": 1893456000
       },
       "digest": "0xc3e639a81190c9f90d4d7d04e705473ce61d8b45c2c3e9fd2556b4da189f1171",
-      "signature": "0xc8aea1aed891841338ba21d1cd60e015e51b97f96e8070537a99492de8fa365f638458f54de155980340a2c68c3a3dde24e1bbc29f04ab117de9181f9bdfea5a1b",
-      "signer": "0xfd36aa363e8f90303165b67ab03efb1bfb870e22"
+      "signature": "0x2350318b46160cc823df061dbd2b8fa82435c68504869133e150f7d44605a09c5c70951c38e990fcadfa511675dae7374216e72aaaa90f5c7a1e7b6d082bbf881c",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
+    },
+    {
+      "type": "DownloadNightly",
+      "message": {
+        "machine": "open-1",
+        "world": "plaza",
+        "stamp": "20261018-033012",
+        "nonce": "1a23456789abcdef0123456789abcdef",
+        "expires": 1893456000
+      },
+      "digest": "0xea0d554cd18a1dc5a051a5049034d738a5103dc9b4af658225dc24269c8f5a69",
+      "signature": "0x9fb30b11abdcfcfd65a9e348278f77c7169ea424f07984e744d23b5cfa8e5e962d253187c776aa777cbe888b0c73b7df39ebb7466f45b4beb29763fb51b3d9e41b",
+      "signer": "0xcf2646d0094209a4504a17c7473c3e2b0d99a2c9"
     },
     {
       "type": "FleetSigners",
@@ -695,8 +730,8 @@
       "nonce": "2123456789abcdef0123456789abcdef",
       "expires": 1893456000
     },
-    "signature": "0x80106580ce7005d1ba2dc50341c5416dda5fc9b033257650dee49b1ea4828d666ae90abef934798d22b6bed34e01a9578fcee7fb862b126266b1a1d7b8ebb5be1c",
-    "signer": "0xfe10a3f6a57fb674186895913553b44e9ec74063"
+    "signature": "0x0d1fd248feb955df6b57c00b4bb53d88478b93dc604cbe10cd8343f76c47cea00e41424ac3abbb452de6bd46923ba4657bb25efbe394d33ac855406e19079cb41c",
+    "signer": "0xe706f3ca2fe25436aee2d4a803e999ead8d1c6d0"
   },
   "keccak": [
     {
