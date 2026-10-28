@@ -2501,6 +2501,32 @@ def record_run(home: Path, ok: bool, rule: str | None = None, now: float | None 
     write_json(home / "run" / LAST_RUN, {"at": utc(now), "ok": ok, "rule": rule})
 
 
+CONTAINERS_FILE = Path("/run/fleet/containers.json")  # /run is memory: gone at reboot, written again by the next run
+
+
+def record_containers(path: Path = CONTAINERS_FILE, now: float | None = None) -> None:
+    """Which container is which service (a world's id, or Caddy), for the vitals program to read.
+
+    fleet-vitals runs as its own user and has no docker socket, so it cannot ask. The reconciler runs as root and
+    already talks to docker: after each run it writes {"at", "containers": {service: full container id}} here,
+    world-readable (names and ids are no secret). A trouble here never fails the run.
+    """
+    try:
+        out = subprocess.run(["docker", "ps", "--no-trunc", "--format", '{{.ID}} {{.Label "com.docker.compose.service"}}'],
+                             capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL, check=True).stdout
+        found = {}
+        for line in out.splitlines():
+            cid, _, service = line.partition(" ")
+            service = service.strip()
+            if matches(re.compile(r"[0-9a-f]{64}"), cid) and service and matches(SLUG, service):
+                found[service] = cid
+        path.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(path.parent, 0o755)
+        write_json(path, {"at": utc(now), "containers": found}, mode=0o644)
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        print(f"containers.json not written: {error}", file=sys.stderr)
+
+
 def make_copies(home: Path, orders: Path, alias: str, now: float | None = None) -> list[str]:
     """Zip every queued copy; a world copied minutes ago gets the same zip again.
 
@@ -2641,6 +2667,7 @@ def main(argv: list[str] | None = None) -> int:
         record_run(args.home, False, "the run stopped on an unexpected error")
         raise
     record_run(args.home, applied, None if applied else "docker did not take the book")
+    record_containers()
     return 0 if applied else 1
 
 

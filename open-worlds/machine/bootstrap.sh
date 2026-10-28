@@ -450,6 +450,15 @@ After=docker.service
 Type=oneshot
 Nice=19
 IOSchedulingClass=idle
+# Its own unprivileged user: no root, no docker socket. It reads /proc, the
+# cgroups and /run/fleet/containers.json (written by the reconciler) and writes
+# only its own state directory.
+DynamicUser=yes
+StateDirectory=fleet/vitals
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
 ExecStart=/usr/local/sbin/fleet-vitals
 EOF
   cat > /etc/systemd/system/fleet-vitals.timer <<EOF

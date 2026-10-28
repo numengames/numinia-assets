@@ -41,6 +41,7 @@ class Fake:
         self.tmp = Path(tmp)
         self.proc = self.tmp / "proc"
         self.cg = self.tmp / "cg"
+        self.ran = []
         self.set(cpu_line, net_line, usec, mem)
         write(self.proc / "loadavg", "1.00 0.5 0.2 1/100 5\n")
         write(self.proc / "meminfo", "MemTotal: 4000000 kB\nMemAvailable: 1000000 kB\nSwapTotal: 100 kB\nSwapFree: 40 kB\n")
@@ -58,12 +59,12 @@ class Fake:
 
     def env(self, now):
         def run(cmd, timeout=60):
-            if cmd[:2] == ["docker", "ps"]:
-                return f"{CID} city-hall\n{'b' * 64} bad name\n"
+            self.ran.append(cmd)
             return None
 
-        return V.Env(self.tmp / "home", self.proc, self.cg, now=lambda: now, run=run,
-                     disk_usage=lambda p: Usage(1000, 400, 600), cores=2)
+        write(self.tmp / "containers.json", json.dumps({"at": "x", "containers": {"city-hall": CID, "bad name": "b" * 64, "short": "abc"}}))
+        return V.Env(self.tmp / "state", self.proc, self.cg, now=lambda: now, run=run,
+                     disk_usage=lambda p: Usage(1000, 400, 600), cores=2, containers_file=self.tmp / "containers.json")
 
 
 NET = "lo: 5 0 0 0 0 0 0 0 5 0 0 0 0 0 0 0\neth0: %d 1 2 3 0 0 0 0 %d 1 4 5 0 0 0 0\nveth1: 99 0 0 0 0 0 0 0 99 0 0 0 0 0 0 0\n"
@@ -77,7 +78,7 @@ class Vitals(unittest.TestCase):
             self.assertEqual(first["scopes"], 2)
             fake.set("cpu  150 0 150 880 10 0 0 10\n", NET % (7000, 5000), 31_000_000, 700)
             V.run_pass(fake.env(1_000_060))
-            db = sqlite3.connect(fake.tmp / "home" / "vitals" / "vitals.db")
+            db = sqlite3.connect(fake.tmp / "state" / "vitals.db")
             got = {(s, n): v for s, n, v in db.execute("SELECT scope, name, value FROM m WHERE ts = ?", (1_000_060 - 1_000_060 % 60,))}
             self.assertAlmostEqual(got[("machine", "cpu_busy_pct")], 100 * 100 / 200)
             self.assertAlmostEqual(got[("machine", "cpu_steal_pct")], 100 * 10 / 200)
@@ -92,6 +93,8 @@ class Vitals(unittest.TestCase):
             self.assertAlmostEqual(got[("c:city-hall", "cpu_pct_of_core")], 50.0)
             self.assertEqual(got[("c:city-hall", "mem_bytes")], 700)
             self.assertNotIn("c:bad name", {s for s, _ in got})  # a name that is not a name is skipped
+            self.assertEqual({s for s, _ in got}, {"machine", "c:city-hall"})  # a short id is skipped too
+            self.assertFalse([c for c in fake.ran if c[0] == "docker"])  # never asks docker
             names = {n for _, n in got}
             self.assertFalse({n for n in names if "ip" in n.split("_") or "wallet" in n or "player" in n or "people" in n})
 
@@ -142,13 +145,51 @@ class Vitals(unittest.TestCase):
             V.run_pass(env)
             env.now = lambda: 2_000_060
             V.run_pass(env)
-            db = sqlite3.connect(fake.tmp / "home" / "vitals" / "vitals.db")
+            db = sqlite3.connect(fake.tmp / "state" / "vitals.db")
             facts = dict(db.execute("SELECT name, value FROM facts"))
             self.assertEqual(facts["security_updates_waiting"], "1")
             self.assertEqual(facts["updates_waiting"], "2")
             self.assertEqual(facts["kernel"], "6.8.0-1")
             self.assertEqual(sum(1 for c in calls if c[0] == "apt-get"), 1)
             self.assertEqual([c for c in calls if c[0] == "apt-get"][0][:2], ["apt-get", "-s"])  # a simulation, never an install
+
+    def test_a_missing_or_odd_containers_file_gives_machine_only(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake = Fake(d, "cpu  1 0 1 8 0 0 0 0\n", NET % (1, 1), 1, 1)
+            env = fake.env(3_000_000)
+            (fake.tmp / "containers.json").unlink()
+            self.assertEqual(V.containers(env), {})
+            write(fake.tmp / "containers.json", "[1,2")
+            self.assertEqual(V.containers(env), {})
+            self.assertEqual(V.run_pass(env)["scopes"], 1)
+
+    def test_the_service_is_unprivileged_and_the_program_never_calls_docker(self):
+        boot = (MACHINE / "bootstrap.sh").read_text(encoding="utf-8")
+        unit = boot[boot.index("cat > /etc/systemd/system/fleet-vitals.service"):]
+        unit = unit[:unit.index("\nEOF\n")]
+        for line in ("DynamicUser=yes", "StateDirectory=fleet/vitals", "NoNewPrivileges=yes", "ProtectSystem=strict",
+                     "ProtectHome=yes", "PrivateTmp=yes"):
+            self.assertIn(line, unit)
+        self.assertNotIn("User=root", unit)
+        self.assertNotIn('["docker"', (MACHINE / "vitals.py").read_text(encoding="utf-8"))
+
+    def test_the_reconciler_writes_the_containers_file_readable_by_all(self):
+        import subprocess
+        from unittest import mock
+        R = load("reconcile")
+        out = f"{CID} city-hall\n{'c' * 64} caddy\nshort x\n{'d' * 64} \n{'e' * 64} Bad_Name\n"
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "fleet" / "containers.json"
+            done = subprocess.CompletedProcess([], 0, stdout=out)
+            with mock.patch.object(subprocess, "run", return_value=done):
+                R.record_containers(path, now=0)
+            data = json.loads(path.read_text())
+            self.assertEqual(data["containers"], {"city-hall": CID, "caddy": "c" * 64})
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+            self.assertEqual(path.parent.stat().st_mode & 0o777, 0o755)
+            with mock.patch.object(subprocess, "run", side_effect=OSError("no docker")):
+                R.record_containers(path, now=0)  # a trouble never raises
+            self.assertEqual(json.loads(path.read_text())["containers"]["caddy"], "c" * 64)
 
     def test_door_does_not_serve_it_yet(self):
         text = (MACHINE / "fleetd.py").read_text(encoding="utf-8")

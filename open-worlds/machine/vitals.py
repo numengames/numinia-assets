@@ -4,9 +4,14 @@
 """The fleet machine's vitals: what the machine and each world container use, kept locally.
 
 Runs every minute from a systemd timer (fleet-vitals.timer), installed by the
-bootstrap and never run from the clone. Each pass reads Linux's own counters
-(/proc, the cgroups, statvfs; nothing is installed) and appends one sample per
-metric to a small SQLite file, <home>/vitals/vitals.db:
+bootstrap and never run from the clone. It runs as its own unprivileged user
+(DynamicUser=yes, state in /var/lib/fleet/vitals, no root, no docker socket).
+Each pass reads Linux's own counters (/proc, the cgroups, statvfs; nothing is
+installed) and appends one sample per metric to a small SQLite file,
+<state dir>/vitals.db. What it reads: /proc, /sys/fs/cgroup, /etc/os-release,
+/var/run/reboot-required, `apt-get -s upgrade` (a simulation), and
+/run/fleet/containers.json, the small file the reconciler (root) writes with
+each container's id and world name: this program never asks docker.
 
 - machine, the USE method (use, saturation, errors): cpu busy / steal /
   iowait %, load per core, pressure (PSI) of cpu, memory and io, memory
@@ -43,7 +48,8 @@ import sys
 import time
 from pathlib import Path
 
-HOME = Path(os.environ.get("FLEET_HOME", "/var/lib/fleet"))
+STATE_DIR = Path(os.environ.get("STATE_DIRECTORY", "/var/lib/fleet/vitals").split(":")[0])
+CONTAINERS_FILE = Path("/run/fleet/containers.json")  # written by reconcile.py, world-readable: names and ids, no secrets
 RAW_KEEP_S = 48 * 3600
 FIVE_KEEP_S = 30 * 86400
 HOUR_KEEP_S = 400 * 86400
@@ -158,10 +164,11 @@ def cgroup_stat_usec(text: str | None) -> int | None:
 class Env:
     """Everything outside: the files, the clock, docker, the disk. The tests replace these."""
 
-    def __init__(self, home: Path = HOME, proc: Path = Path("/proc"), cgroup: Path = CGROUP,
-                 now=time.time, run=None, disk_usage=shutil.disk_usage, cores: int | None = None) -> None:
-        self.home = home
-        self.dir = home / "vitals"
+    def __init__(self, dir: Path = STATE_DIR, proc: Path = Path("/proc"), cgroup: Path = CGROUP,
+                 now=time.time, run=None, disk_usage=shutil.disk_usage, cores: int | None = None,
+                 containers_file: Path = CONTAINERS_FILE) -> None:
+        self.dir = dir
+        self.containers_file = containers_file
         self.proc = proc
         self.cgroup = cgroup
         self.now = now
@@ -188,13 +195,17 @@ def open_db(path: Path) -> sqlite3.Connection:
 
 
 def containers(env: Env) -> dict[str, str]:
-    """{full container id: name} of the running containers; empty if docker does not answer."""
-    out = env.run(["docker", "ps", "--no-trunc", "--format", "{{.ID}} {{.Names}}"])
+    """{full container id: name} from the file the reconciler writes; empty if it is missing or odd. Never docker."""
+    try:
+        data = json.loads(env.containers_file.read_text(encoding="utf-8"))
+        listed = data["containers"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
     result = {}
-    for line in (out or "").splitlines():
-        cid, _, name = line.partition(" ")
-        if re.fullmatch(r"[0-9a-f]{64}", cid) and NAME.fullmatch(name.strip()):
-            result[cid] = name.strip()
+    if isinstance(listed, dict):
+        for name, cid in listed.items():
+            if isinstance(cid, str) and re.fullmatch(r"[0-9a-f]{64}", cid) and NAME.fullmatch(str(name)):
+                result[cid] = str(name)
     return result
 
 
@@ -224,7 +235,7 @@ def collect(env: Env, prev: dict, now: float) -> tuple[dict[str, dict[str, float
     if up:
         machine["uptime_s"] = float(up.split()[0])
     try:
-        du = env.disk_usage(env.home)
+        du = env.disk_usage(env.dir)
         machine["disk_used_pct"] = 100.0 * du.used / du.total if du.total else 0.0
         machine["disk_free_bytes"] = float(du.free)
     except OSError:
@@ -338,9 +349,9 @@ def run_pass(env: Env) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Keep this machine's own vitals (cpu, memory, disk, network, containers) locally.")
-    ap.add_argument("--home", type=Path, default=HOME)
+    ap.add_argument("--dir", type=Path, default=STATE_DIR)
     args = ap.parse_args(argv)
-    env = Env(args.home)
+    env = Env(args.dir)
     env.dir.mkdir(parents=True, exist_ok=True)
     with open(env.dir / "lock", "w") as lock:
         try:

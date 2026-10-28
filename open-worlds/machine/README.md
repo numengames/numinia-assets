@@ -838,9 +838,17 @@ ten minutes (installed by the bootstrap, never run from the clone).
 
 ## Vitals (`vitals.py`)
 
-`fleet-vitals.timer` runs `/usr/local/sbin/fleet-vitals` every minute. It reads
-Linux's own counters (`/proc`, the containers' cgroups, `statvfs`) and keeps one
-sample per metric in `/var/lib/fleet/vitals/vitals.db` (SQLite): for the machine,
+`fleet-vitals.timer` runs `/usr/local/sbin/fleet-vitals` every minute **as its
+own unprivileged user** (`DynamicUser=yes`, `StateDirectory=fleet/vitals`,
+`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`): no
+root and no docker socket. It reads Linux's own counters (`/proc`, the
+containers' cgroups, `statvfs`, `/etc/os-release`, `apt-get -s`) and keeps one
+sample per metric in `/var/lib/fleet/vitals/vitals.db` (SQLite). Which cgroup is
+which world comes from `/run/fleet/containers.json`, a small world-readable
+file the reconciler (root, already talking to docker) rewrites after every
+run: `{"at", "containers": {service: container id}}`. If the file is missing
+(after a reboot, until the first run) only the machine's own vitals are kept.
+The vitals keep: for the machine,
 cpu busy / steal / iowait %, load per core, pressure (PSI) of cpu, memory and
 io, memory available, swap used, OOM kills, disk, network bytes per second and
 packet errors and drops, uptime; for each running container, memory and cpu from
