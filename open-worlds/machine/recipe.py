@@ -4,7 +4,7 @@
 """The fleet machine's recipe updater: the machine's own programs follow main, by themselves.
 
 release.py keeps the WORLDS on the latest engine; this keeps the MACHINE'S
-PROGRAMS (fleetd, reconcile, release, nightly, cleanup, condiciones, signers, versions, this file and
+PROGRAMS (fleetd, reconcile, release, nightly, cleanup, vitals, condiciones, signers, versions, this file and
 bootstrap.sh itself: everything under open-worlds/machine/) on main of
 numengames/numinia-assets, so a merge reaches every machine without anyone
 running the bootstrap line by hand again.
@@ -90,8 +90,8 @@ COMMIT = re.compile(r"[0-9a-f]{40}")
 ALIAS = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 DOOR = "fleetd.service"
 TIMERS = ("fleet-reconcile.timer", "fleet-reconcile.path", "fleet-release.timer", "fleet-nightly.timer",
-          "fleet-cleanup.timer", "fleet-recipe.timer")
-OTHER_JOBS = ("fleet-reconcile.service", "fleet-release.service", "fleet-nightly.service", "fleet-cleanup.service")
+          "fleet-cleanup.timer", "fleet-vitals.timer", "fleet-recipe.timer")
+OTHER_JOBS = ("fleet-reconcile.service", "fleet-release.service", "fleet-nightly.service", "fleet-cleanup.service", "fleet-vitals.service")
 GIT_TIMEOUT = 120
 GIT_MAX_BYTES = 64 * 1024 * 1024  # the partial clone is wiped and made again above this
 OBJECT_MAX = 256 * 1024  # a commit object or the bootstrap, at most

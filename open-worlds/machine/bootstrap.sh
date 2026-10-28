@@ -243,9 +243,9 @@ main() {
   # pause it while the programs change, so it never runs half-installed code
   # against a book not yet adopted. The end of this script starts it again.
   # fleet-recipe.timer is not paused: this script may be running under it.
-  systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer 2>/dev/null || true
+  systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer fleet-vitals.timer 2>/dev/null || true
   install -d -m 0755 "$LIB_DIR"
-  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py condiciones.py signers.py versions.py cleanup.py; do
+  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py condiciones.py signers.py versions.py cleanup.py vitals.py; do
     install -m 0644 "$BOOK_DIR/open-worlds/machine/$program" "$LIB_DIR/$program"
   done
   wrapper fleet-reconcile reconcile.py
@@ -253,6 +253,7 @@ main() {
   wrapper fleet-release release.py
   wrapper fleet-nightly nightly.py
   wrapper fleet-cleanup cleanup.py
+  wrapper fleet-vitals vitals.py
   wrapper fleet-recipe recipe.py
   wrapper fleet-condiciones condiciones.py
   # Which commit the programs came from: the door shows it (/fleet/v1/machine
@@ -440,6 +441,28 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+  cat > /etc/systemd/system/fleet-vitals.service <<EOF
+[Unit]
+Description=Fleet vitals: this machine's cpu, memory, disk and network, and its containers', kept locally (nothing is published)
+After=docker.service
+
+[Service]
+Type=oneshot
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/local/sbin/fleet-vitals
+EOF
+  cat > /etc/systemd/system/fleet-vitals.timer <<EOF
+[Unit]
+Description=Take the machine's vitals every minute
+
+[Timer]
+OnCalendar=minutely
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
+EOF
   cat > /etc/systemd/system/fleet-recipe.service <<EOF
 [Unit]
 Description=Fleet recipe updater: this machine's programs follow main of numinia-assets (canary, rest, rollback, halt)
@@ -503,7 +526,7 @@ EOF
   if ! /usr/local/sbin/fleet-reconcile; then
     echo "the first run did not finish; the timer tries again every minute (journalctl -u fleet-reconcile -n 20)" >&2
   fi
-  systemctl enable --now fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer fleet-recipe.timer
+  systemctl enable --now fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer fleet-vitals.timer fleet-recipe.timer
 
   ORACLES="$(grep -c '^0x' /etc/fleet/signers || true)"
   cat <<EOF
@@ -530,7 +553,7 @@ EOF
   # The units this script paused or started must be running again, or no
   # request signed in the worlds room will ever be done here.
   local unit stopped=""
-  for unit in fleetd.service fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer fleet-recipe.timer; do
+  for unit in fleetd.service fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer fleet-vitals.timer fleet-recipe.timer; do
     if ! systemctl is-active --quiet "$unit"; then
       stopped="$stopped $unit"
     fi
