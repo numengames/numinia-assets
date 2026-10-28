@@ -25,9 +25,10 @@ moves with them.
 | `signers.py` | inside that same five-minute pass: takes the house's signed list of Oracles and Archons (`/etc/fleet/signers.house`) |
 | `nightly.py` | each night: a copy of every world, kept 14 days (a Numinia Engine world's is the engine's own export, so «Bring a world back» takes it) |
 | `cleanup.py` | each night at 04:10: old engine images and pre-update copies get a limit, the logs are measured, and the door shows the disk (see *What keeps the disk from filling*) |
+| `vitals.py` | every minute: the machine's cpu, memory, disk, network and each container's memory and cpu, kept in a small local file; nothing is published (see *Vitals*) |
 | `condiciones.py` | by hand: turns a world's conditions-of-entry door on or off (`fleet-condiciones <world> on\|off\|status\|restart`) |
 | `recipe.py` | every ten minutes: the machine's own programs (this folder) follow `main` (canary, rest, GitHub's signature, rollback, halt) |
-| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py`, `test_release.py`, `test_nightly.py`, `test_cleanup.py`, `test_nightly_download.py`, `test_signers.py`, `test_recipe.py`, `test_condiciones.py`, `test_versions.py`, `test_duplicate.py`, `test_publish.py`, `test_version_imports.py` | the tests, run by the depot's `python -m unittest` |
+| `../../tests/test_machine.py`, `test_requests.py`, `test_fleetd.py`, `test_walletsig.py`, `test_imports.py`, `test_engines.py`, `test_release.py`, `test_nightly.py`, `test_vitals.py`, `test_cleanup.py`, `test_nightly_download.py`, `test_signers.py`, `test_recipe.py`, `test_condiciones.py`, `test_versions.py`, `test_duplicate.py`, `test_publish.py`, `test_version_imports.py` | the tests, run by the depot's `python -m unittest` |
 | `../../tests/e2e/` | end to end, by hand (not in `unittest`): `versions_e2e.mjs` signs the version requests with viem against the real door and the real reconciler (needs node, viem and a python with `ecdsa`); `pin_e2e.mjs` does the same for a pin, behind Caddy; `nightly_restore_e2e.mjs` makes a nightly copy of a Numinia Engine world with the real `nightly.py` and the engine's real `copia`, then has the engine's `comprobar`/`importar` and the room's `inspectZip` take it (needs node 24 and checkouts of numinia-engine and numinia-web) |
 
 ## Bring up a machine
@@ -834,3 +835,33 @@ ten minutes (installed by the bootstrap, never run from the clone).
   machine refuses the next recipe (`refused`: "signed by a key that is not
   GitHub's web-flow key") until the new key is in `recipe.py` and the line is
   run once by hand.
+
+## Vitals (`vitals.py`)
+
+`fleet-vitals.timer` runs `/usr/local/sbin/fleet-vitals` every minute **as its
+own unprivileged user** (`DynamicUser=yes`, `StateDirectory=fleet/vitals`,
+`NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`): no
+root and no docker socket. It reads Linux's own counters (`/proc`, the
+containers' cgroups, `statvfs`, `/etc/os-release`, `apt-get -s`) and keeps one
+sample per metric in `/var/lib/fleet/vitals/vitals.db` (SQLite). Which cgroup is
+which world comes from `/run/fleet/containers.json`, a small world-readable
+file the reconciler (root, already talking to docker) rewrites after every
+run: `{"at", "containers": {service: container id}}`. If the file is missing
+(after a reboot, until the first run) only the machine's own vitals are kept.
+The vitals keep: for the machine,
+cpu busy / steal / iowait %, load per core, pressure (PSI) of cpu, memory and
+io, memory available, swap used, OOM kills, disk, network bytes per second and
+packet errors and drops, uptime; for each running container, memory and cpu from
+its cgroup. Once a day it also notes the OS, the kernel, whether a reboot is
+needed and how many security updates wait (`apt-get -s`, a simulation: nothing
+is installed).
+
+History: 1 minute for 48 hours, 5 minutes for 30 days, 1 hour for 400 days; the
+file is capped at 50 MB (the oldest hourly rows go first).
+
+**It publishes nothing, on purpose.** Real-time load and patch state are
+private: the door does not read this file. A later change serves it only with a
+short-lived read-only token and a request limit. It keeps no IP, no name, no
+wallet and no count of people: machines and containers only. `test_vitals.py`
+checks that the door does not serve it. The bootstrap installs the program, the
+service and the timer; `recipe.py` requires the timer to be active.

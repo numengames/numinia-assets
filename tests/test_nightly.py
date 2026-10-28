@@ -682,7 +682,7 @@ class TestBootstrapWiring(unittest.TestCase):
     text = (MACHINE / "bootstrap.sh").read_text()
 
     def test_installed_not_run_from_the_clone(self):
-        self.assertIn("nightly.py recipe.py condiciones.py signers.py versions.py cleanup.py; do", self.text)
+        self.assertIn("nightly.py recipe.py condiciones.py signers.py versions.py cleanup.py vitals.py; do", self.text)
         self.assertIn("wrapper fleet-nightly nightly.py", self.text)
         self.assertIn("ExecStart=/usr/local/sbin/fleet-nightly", self.text)
 
@@ -691,7 +691,7 @@ class TestBootstrapWiring(unittest.TestCase):
         self.assertIn("Persistent=true", self.text)
         self.assertIn("enable --now fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer", self.text)
         check = self.text.index("== does the machine obey?")
-        self.assertIn("fleet-nightly.timer fleet-cleanup.timer fleet-recipe.timer; do", self.text[check:])
+        self.assertIn("fleet-nightly.timer fleet-cleanup.timer fleet-vitals.timer fleet-recipe.timer; do", self.text[check:])
 
     def test_the_timer_is_paused_while_programs_change(self):
         self.assertIn("systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer", self.text)

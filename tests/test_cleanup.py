@@ -553,7 +553,7 @@ class Wiring(unittest.TestCase):
     text = (MACHINE / "bootstrap.sh").read_text()
 
     def test_the_bootstrap_installs_cleanup_the_way_it_installs_the_others(self):
-        self.assertIn("versions.py cleanup.py; do", self.text)
+        self.assertIn("versions.py cleanup.py vitals.py; do", self.text)
         self.assertIn("wrapper fleet-cleanup cleanup.py", self.text)
         self.assertIn("ExecStart=/usr/local/sbin/fleet-cleanup", self.text)
         self.assertIn("cat > /etc/systemd/system/fleet-cleanup.service", self.text)
@@ -565,8 +565,8 @@ class Wiring(unittest.TestCase):
         nightly = self.text[self.text.index("cat > /etc/systemd/system/fleet-nightly.timer"):][:300]
         self.assertIn("OnCalendar=*-*-* 03:30:00", nightly)  # cleanup runs after it
         self.assertIn("systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer", self.text)
-        self.assertIn("enable --now fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer fleet-recipe.timer", self.text)
-        self.assertIn("fleet-nightly.timer fleet-cleanup.timer fleet-recipe.timer; do", self.text)
+        self.assertIn("enable --now fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer fleet-vitals.timer fleet-recipe.timer", self.text)
+        self.assertIn("fleet-nightly.timer fleet-cleanup.timer fleet-vitals.timer fleet-recipe.timer; do", self.text)
 
     def test_the_journal_gets_a_cap_by_a_drop_in_and_docker_is_left_alone(self):
         self.assertIn("/etc/systemd/journald.conf.d/fleet.conf", self.text)
