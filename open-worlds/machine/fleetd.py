@@ -535,14 +535,19 @@ class Door:
         return {"machine": self.alias, "nightly": listed, "at": R.utc(self.clock())}
 
     def log(self) -> dict:
+        """What was done here, newest first, for anyone. The short wallet (`by`) stays in log.jsonl and is never served:
+        a short wallet is a stable identifier, and with the exact time it shows one person's habits."""
         path = self.home / "log.jsonl"
         lines = path.read_text(encoding="utf-8").splitlines()[-LOG_LINES:] if path.is_file() else []
         entries = []
         for line in reversed(lines):
             try:
-                entries.append(json.loads(line))
+                entry = json.loads(line)
             except ValueError:
                 continue
+            if isinstance(entry, dict):
+                entry.pop("by", None)
+            entries.append(entry)
         return {"machine": self.alias, "entries": entries}
 
     def request(self, nonce: str) -> dict | None:

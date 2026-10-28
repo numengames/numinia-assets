@@ -434,7 +434,7 @@ minute or two, is a machine that has stopped obeying.
 | `/srv/fleet/release/preupdate/` | the copy of a world made before each engine update (`<id>-<unix time>.zip`; 14 days, at most 2 GiB, never the newest of a world by the cap) |
 | `/etc/systemd/journald.conf.d/fleet.conf` | the journal's cap (`SystemMaxUse=200M`), written by the bootstrap |
 | `/srv/fleet/sock/fleetd.sock` | the door's socket; Caddy is the only way in to it |
-| `/srv/fleet/log.jsonl` | what was done here: when, what, which world, a short wallet |
+| `/srv/fleet/log.jsonl` | what was done here: when, what, which world, a short wallet (the door's `/log` leaves the wallet out: it is a stable identifier of a person) |
 | `/srv/fleet/book/` | the clone of this repository, left on the commit the machine's line named: the recipe, and the orders adopted once |
 | `/etc/fleet/alias` | this machine's alias |
 | `/etc/fleet/recipe` | the commit the machine's programs were installed from |

@@ -413,6 +413,15 @@ class Facts(unittest.TestCase):
         self.assertEqual(len(entries), D.LOG_LINES - 1)
         self.assertEqual(entries[0]["at"], f"t{D.LOG_LINES + 4}")
 
+    def test_the_log_never_says_who(self):
+        rig = Rig(self)
+        line = {"at": "t1", "type": "StopWorld", "world": "w", "by": "0x367a\u202648dc", "state": "done"}
+        (rig.home / "log.jsonl").write_text(json.dumps(line) + "\n")
+        entry = rig.door.log()["entries"][0]
+        self.assertEqual(entry, {"at": "t1", "type": "StopWorld", "world": "w", "state": "done"})
+        self.assertNotIn("0x367a", json.dumps(rig.door.log()))
+        self.assertIn("0x367a", (rig.home / "log.jsonl").read_text())  # the machine's own file keeps it
+
     def test_a_finished_request_shows_the_reconcilers_result(self):
         rig = Rig(self)
         nonce = "b" * 32
