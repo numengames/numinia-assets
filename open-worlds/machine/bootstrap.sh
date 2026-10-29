@@ -245,7 +245,7 @@ main() {
   # fleet-recipe.timer is not paused: this script may be running under it.
   systemctl stop fleet-reconcile.timer fleet-reconcile.path fleet-release.timer fleet-nightly.timer fleet-cleanup.timer fleet-vitals.timer 2>/dev/null || true
   install -d -m 0755 "$LIB_DIR"
-  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py condiciones.py signers.py versions.py cleanup.py vitals.py; do
+  for program in reconcile.py walletsig.py fleetd.py release.py nightly.py recipe.py condiciones.py signers.py versions.py cleanup.py vitals.py vitalsread.py; do
     install -m 0644 "$BOOK_DIR/open-worlds/machine/$program" "$LIB_DIR/$program"
   done
   wrapper fleet-reconcile reconcile.py
@@ -455,6 +455,9 @@ IOSchedulingClass=idle
 # only its own state directory.
 DynamicUser=yes
 StateDirectory=fleet/vitals
+RuntimeDirectory=fleet-vitals
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

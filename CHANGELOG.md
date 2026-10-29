@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `open-worlds/machine/`: a private door onto one machine's own vitals. `GET
+  /fleet/v1/vitals/minute|five|hour` answers only to an Oracle's read token (`FleetVitalsRead`:
+  machine, issuedAt, expires, nonce; EIP-712, `Authorization: Bearer <base64 of the signed
+  record>`) that names THIS machine, is signed by a wallet the machine already obeys, and lives at
+  most 24 hours. Nothing about tokens is stored. 60 requests a minute. It serves the numbers
+  fleet-vitals exports to `/run/fleet-vitals/` (cpu, memory, disk, network; each world's cpu and
+  memory): no addresses, no names of people, no count of people. The public facts never carry them.
 - `open-worlds/machine/`: the machine side of the room's «Restore from a copy». `GET
   /fleet/v1/nightly` (public, read-only) lists the nightly copies — world, stamp, ISO time,
   size, `kind` (`numinia-engine`, `hyperfy` or null), `restorable`, `worldExists` — newest first,

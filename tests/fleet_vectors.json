@@ -438,6 +438,24 @@
         "name": "expires",
         "type": "uint256"
       }
+    ],
+    "FleetVitalsRead": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "issuedAt",
+        "type": "uint256"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      }
     ]
   },
   "vectors": [

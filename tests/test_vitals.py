@@ -64,7 +64,7 @@ class Fake:
 
         write(self.tmp / "containers.json", json.dumps({"at": "x", "containers": {"city-hall": CID, "bad name": "b" * 64, "short": "abc"}}))
         return V.Env(self.tmp / "state", self.proc, self.cg, now=lambda: now, run=run,
-                     disk_usage=lambda p: Usage(1000, 400, 600), cores=2, containers_file=self.tmp / "containers.json")
+                     disk_usage=lambda p: Usage(1000, 400, 600), cores=2, containers_file=self.tmp / "containers.json", out=self.tmp / "out")
 
 
 NET = "lo: 5 0 0 0 0 0 0 0 5 0 0 0 0 0 0 0\neth0: %d 1 2 3 0 0 0 0 %d 1 4 5 0 0 0 0\nveth1: 99 0 0 0 0 0 0 0 99 0 0 0 0 0 0 0\n"
@@ -191,9 +191,30 @@ class Vitals(unittest.TestCase):
                 R.record_containers(path, now=0)  # a trouble never raises
             self.assertEqual(json.loads(path.read_text())["containers"]["caddy"], "c" * 64)
 
-    def test_door_does_not_serve_it_yet(self):
+    def test_the_door_serves_vitals_only_behind_a_read_token(self):
         text = (MACHINE / "fleetd.py").read_text(encoding="utf-8")
-        self.assertNotIn("vitals", text)  # real-time load is private: served only with a token, in a separate change
+        # the one route, and it goes through the token check; the public facts never name them
+        self.assertEqual(text.count('parts[0] == "vitals"'), 1)
+        self.assertIn("VR.check(", text)
+        for public in ("def machine", "def worlds", "def nightly"):
+            body = text.split(public, 1)[1].split("    def ", 1)[0]
+            self.assertNotIn("vitals", body)
+
+    def test_export_is_world_readable_and_holds_only_numbers(self):
+        with tempfile.TemporaryDirectory() as d:
+            fake = Fake(d, "cpu  100 0 100 800 0 0 0 0\n", NET % (1000, 2000), 1_000_000, 500)
+            V.run_pass(fake.env(1_000_000))
+            fake.set("cpu  150 0 150 880 10 0 0 10\n", NET % (7000, 5000), 31_000_000, 700)
+            V.run_pass(fake.env(1_000_060))
+            minute = fake.tmp / "out" / "minute.json"
+            self.assertEqual(minute.stat().st_mode & 0o777, 0o644)
+            data = json.loads(minute.read_text())
+            self.assertEqual(set(data), {"every_s", "at", "scopes"})
+            self.assertEqual(set(data["scopes"]), {"machine", "c:city-hall"})
+            for scope in data["scopes"].values():
+                for series in scope.values():
+                    for ts, value in series:
+                        self.assertIsInstance(value, float)
 
 
 if __name__ == "__main__":

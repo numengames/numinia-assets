@@ -93,6 +93,13 @@ ACTIONS: dict[str, tuple[tuple[str, str], ...]] = {
     # The house's list of Oracles and Archons every machine follows: the wallets
     # (lowercase, sorted, unique, joined with ","), `seq` (= issuedAt) only grows.
     # Signed by the house's one wallet (signers.HOUSE_SIGNER), not by an Oracle.
+    # A read token for one machine's vitals (vitalsread.py): signed by an Oracle, never writes.
+    "FleetVitalsRead": (
+        ("machine", "string"),
+        ("issuedAt", "uint256"),
+        ("expires", "uint256"),
+        ("nonce", "string"),
+    ),
     "FleetSigners": (
         ("signers", "string"),
         ("seq", "uint256"),

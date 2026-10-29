@@ -582,7 +582,7 @@ class Bootstrap(unittest.TestCase):
 
     def test_the_bootstrap_installs_and_starts_the_recipe_updater(self):
         text = (MACHINE / "bootstrap.sh").read_text()
-        self.assertIn("nightly.py recipe.py condiciones.py signers.py versions.py cleanup.py vitals.py; do", text)
+        self.assertIn("nightly.py recipe.py condiciones.py signers.py versions.py cleanup.py vitals.py vitalsread.py; do", text)
         self.assertIn("wrapper fleet-recipe recipe.py", text)
         self.assertIn("cat > /etc/systemd/system/fleet-recipe.timer", text)
         self.assertIn("ExecStart=/usr/local/sbin/fleet-recipe", text)
