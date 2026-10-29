@@ -553,7 +553,7 @@ class Wiring(unittest.TestCase):
     text = (MACHINE / "bootstrap.sh").read_text()
 
     def test_the_bootstrap_installs_cleanup_the_way_it_installs_the_others(self):
-        self.assertIn("versions.py cleanup.py vitals.py; do", self.text)
+        self.assertIn("versions.py cleanup.py vitals.py vitalsread.py; do", self.text)
         self.assertIn("wrapper fleet-cleanup cleanup.py", self.text)
         self.assertIn("ExecStart=/usr/local/sbin/fleet-cleanup", self.text)
         self.assertIn("cat > /etc/systemd/system/fleet-cleanup.service", self.text)

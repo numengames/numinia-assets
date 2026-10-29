@@ -682,7 +682,7 @@ class TestBootstrapWiring(unittest.TestCase):
     text = (MACHINE / "bootstrap.sh").read_text()
 
     def test_installed_not_run_from_the_clone(self):
-        self.assertIn("nightly.py recipe.py condiciones.py signers.py versions.py cleanup.py vitals.py; do", self.text)
+        self.assertIn("nightly.py recipe.py condiciones.py signers.py versions.py cleanup.py vitals.py vitalsread.py; do", self.text)
         self.assertIn("wrapper fleet-nightly nightly.py", self.text)
         self.assertIn("ExecStart=/usr/local/sbin/fleet-nightly", self.text)
 
