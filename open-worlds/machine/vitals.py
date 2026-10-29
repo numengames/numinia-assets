@@ -49,6 +49,8 @@ import time
 from pathlib import Path
 
 STATE_DIR = Path(os.environ.get("STATE_DIRECTORY", "/var/lib/fleet/vitals").split(":")[0])
+OUT_DIR = Path("/run/fleet-vitals")  # world-readable copy for the door: numbers only, no names but the worlds'
+# (this is what a read token lets fleetd serve; vitals.db itself stays private to this unit)
 CONTAINERS_FILE = Path("/run/fleet/containers.json")  # written by reconcile.py, world-readable: names and ids, no secrets
 RAW_KEEP_S = 48 * 3600
 FIVE_KEEP_S = 30 * 86400
@@ -166,7 +168,8 @@ class Env:
 
     def __init__(self, dir: Path = STATE_DIR, proc: Path = Path("/proc"), cgroup: Path = CGROUP,
                  now=time.time, run=None, disk_usage=shutil.disk_usage, cores: int | None = None,
-                 containers_file: Path = CONTAINERS_FILE) -> None:
+                 containers_file: Path = CONTAINERS_FILE, out: Path = OUT_DIR) -> None:
+        self.out = out
         self.dir = dir
         self.containers_file = containers_file
         self.proc = proc
@@ -308,6 +311,33 @@ def roll_up(db: sqlite3.Connection, now: int) -> None:
     db.execute("DELETE FROM m WHERE res = 60 AND ts < ?", (now - HOUR_KEEP_S,))
 
 
+EXPORTS = (("minute", 1, 3 * 3600, 60), ("five", 5, 48 * 3600, 300), ("hour", 60, 30 * 86400, 3600))
+
+
+def export(db: sqlite3.Connection, env: Env, now: int) -> None:
+    """Copy the recent rows into world-readable files the door can serve. A coarse file is rewritten only
+    when one of its buckets has just closed. No state is lost if the directory is missing: nothing is served."""
+    try:
+        env.out.mkdir(parents=True, exist_ok=True)
+        os.chmod(env.out, 0o755)
+    except OSError:
+        return
+    for label, res, keep_s, size in EXPORTS:
+        path = env.out / f"{label}.json"
+        if path.exists() and now % size >= 60 and size > 60:
+            continue
+        rows: dict[str, dict[str, dict[str, float]]] = {}
+        for ts, scope, name, value in db.execute(
+                "SELECT ts, scope, name, value FROM m WHERE res = ? AND ts >= ? ORDER BY ts", (res, now - keep_s)):
+            rows.setdefault(scope, {}).setdefault(name, {})[str(ts)] = round(value, 3)
+        body = {"every_s": size, "at": now, "scopes": {s: {n: sorted(p.items(), key=lambda kv: int(kv[0])) for n, p in d.items()}
+                                                       for s, d in rows.items()}}
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(body, separators=(",", ":")), encoding="utf-8")
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+
+
 def cap_file(db: sqlite3.Connection, path: Path) -> None:
     """Over the cap the oldest hourly rows go first, then the oldest five-minute rows."""
     for res in (60, 5):
@@ -339,6 +369,7 @@ def run_pass(env: Env) -> dict:
         roll_up(db, int(now))
         db.commit()
         cap_file(db, env.dir / "vitals.db")
+        export(db, env, int(now))
     finally:
         db.close()
     tmp = state_file.with_suffix(".tmp")

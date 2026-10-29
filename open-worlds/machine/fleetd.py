@@ -50,6 +50,8 @@ What it does, and nothing more:
   that it takes updates, its worlds and their phase (an import shows its
   upload's progress), the last things done here. No wallet in full, no
   key, no code.
+- GET /fleet/v1/vitals/minute|five|hour — this machine's own cpu, memory, disk and network numbers, only with an
+  Oracle's read token that names this machine (vitalsread.py); numbers only, 60 a minute.
 - GET /fleet/v1/requests/<n> — how a request went.
 - GET /fleet/v1/copies/<c> and /copies/<c>/file — a copy's state and the
   zip. The copy's number (128 random bits, given only to the Oracle who
@@ -83,6 +85,7 @@ from pathlib import Path
 import nightly as N
 import reconcile as R
 import versions as V
+import vitalsread as VR
 import walletsig as W
 
 STATE = Path("/var/lib/fleetd")  # the request numbers already used
@@ -185,6 +188,8 @@ class Door:
         self.lock = threading.Lock()
         self.nonces = Nonces(state / "nonces.json")
         self.limiter = Limiter()
+        self.vitals_limiter = Limiter(per_client=60, overall=120, window=60)  # 60 a minute
+        self.vitals_dir = VITALS_DIR
         self.streaming: set[str] = set()  # the slots a PUT is writing into right now
 
     # --- what the door reads -------------------------------------------------
@@ -533,6 +538,19 @@ class Door:
                 "restorable": item["restorable"], "worldExists": R.read_order(self.orders / f"{world}.json") is not None,
             })
         return {"machine": self.alias, "nightly": listed, "at": R.utc(self.clock())}
+
+    def vitals(self, which: str, header: str | None, client: str) -> tuple[int, dict]:
+        """The machine's own vitals, for the one Oracle token that names this machine. Numbers only."""
+        now = self.clock()
+        if not self.vitals_limiter.allow(client, now):
+            return 429, {"error": "slow-down"}
+        ok, why = VR.check(header, self.alias, R.read_signers(self.signers_file), now)
+        if not ok:
+            return (401 if why in ("no-token", "bad-signature", "expired") else 403), {"error": why}
+        found = VR.served(self.vitals_dir, which)
+        if found is None:
+            return 404, {"error": "no-vitals-yet"}
+        return 200, {"machine": self.alias, **found}
 
     def log(self) -> dict:
         """What was done here, newest first, for anyone. The short wallet (`by`) stays in log.jsonl and is never served:
@@ -896,6 +914,7 @@ class Door:
 # ---------------------------------------------------------------------------
 
 PREFIX = "/fleet/v1/"
+VITALS_DIR = Path("/run/fleet-vitals")
 
 
 DRAIN_MAX = 1 << 20  # the most of a refused body we read before answering
@@ -982,6 +1001,9 @@ class Handler(BaseHTTPRequestHandler):
             found = door.nightly()
         elif parts == ["log"]:
             found = door.log()
+        elif len(parts) == 2 and parts[0] == "vitals":
+            status, payload = door.vitals(parts[1], self.headers.get("Authorization"), self.client())
+            return self.reply(status, payload)
         elif len(parts) == 2 and parts[0] == "requests":
             found = door.request(parts[1])
         elif len(parts) == 2 and parts[0] == "copies":
