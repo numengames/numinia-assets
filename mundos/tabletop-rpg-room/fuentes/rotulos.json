@@ -1,0 +1,38 @@
+{
+ "mapa-ruinas": {
+  "fichero": "rotulos/mapa-ruinas.png",
+  "sha": "3b4f01047cfa3fb12f24abe25df14b2e80219bebcca8401c40a7711d9ac9d929",
+  "bytes": 63753,
+  "px": [
+   1560,
+   1020
+  ]
+ },
+ "placa-manual": {
+  "fichero": "rotulos/placa-manual.png",
+  "sha": "477d3395ff495125ae3a7c3f512be5644fdd3fc46e69a7fcf0ca6a499c73f6b8",
+  "bytes": 78030,
+  "px": [
+   1200,
+   900
+  ]
+ },
+ "placa-inscripcion": {
+  "fichero": "rotulos/placa-inscripcion.png",
+  "sha": "069bff09d54e8ebb1b0b2957a4ae67de81244ada0a9530c16ddb8e2a84d8a5b8",
+  "bytes": 38027,
+  "px": [
+   1200,
+   900
+  ]
+ },
+ "mapa-cripta": {
+  "fichero": "rotulos/mapa-cripta.png",
+  "sha": "8d59108dbdba377181c2f531e5ba0b2b8453c76831bd846ed66b02756b9f8fee",
+  "bytes": 29388,
+  "px": [
+   1320,
+   900
+  ]
+ }
+}

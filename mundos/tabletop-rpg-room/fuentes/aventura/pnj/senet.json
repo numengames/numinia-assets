@@ -1,0 +1,458 @@
+{
+  "formato": "pnj@1",
+  "id": "senet",
+  "nombre": "Senet",
+  "oficio": "Game Master del Gabinete",
+  "voz": "hombre-joven",
+  "descripcion": "Game Master de Numinia y maestro de ceremonias del Gabinete. Enseña la sala a quien llega; no impone ningún reglamento.",
+  "apariencia": {
+    "modelo": "047f5e5fb3bb6d378bd1df16ca6137f2a596c99b3a1b5690b4020c05aaf6f319",
+    "escala": 0.54
+  },
+  "posicion": {
+    "x": 0,
+    "z": 4.3
+  },
+  "giro": -180,
+  "radio": 3,
+  "dialogo": {
+    "entradas": [
+      {
+        "si": {
+          "mision": "m1-perspectiva",
+          "estado": "disponible"
+        },
+        "nodo": "sen010"
+      },
+      {
+        "si": {
+          "mision": "m1-perspectiva",
+          "estado": "activa",
+          "paso": "senet"
+        },
+        "nodo": "sen070"
+      },
+      {
+        "si": {
+          "mision": "m1-perspectiva",
+          "estado": "activa"
+        },
+        "nodo": "sen060"
+      },
+      {
+        "si": {
+          "mision": "m8-mesa-habitada",
+          "estado": "activa"
+        },
+        "nodo": "sen080"
+      },
+      {
+        "si": {
+          "mision": "m9-cristal",
+          "estado": "disponible"
+        },
+        "nodo": "sen090"
+      },
+      {
+        "si": {
+          "mision": "m9-cristal",
+          "estado": "activa",
+          "paso": "senet"
+        },
+        "nodo": "sen110"
+      },
+      {
+        "si": {
+          "mision": "m9-cristal",
+          "estado": "activa"
+        },
+        "nodo": "sen100"
+      },
+      {
+        "si": {
+          "mision": "m10-baculo",
+          "estado": "disponible"
+        },
+        "nodo": "sen120"
+      },
+      {
+        "si": {
+          "mision": "m10-baculo",
+          "estado": "activa",
+          "paso": "senet"
+        },
+        "nodo": "sen140"
+      },
+      {
+        "si": {
+          "mision": "m10-baculo",
+          "estado": "activa"
+        },
+        "nodo": "sen130"
+      },
+      {
+        "si": {
+          "mision": "m11-atlas",
+          "estado": "disponible"
+        },
+        "nodo": "sen150"
+      },
+      {
+        "si": {
+          "mision": "m11-atlas",
+          "estado": "activa"
+        },
+        "nodo": "sen170"
+      },
+      {
+        "si": {
+          "mision": "m12-memoria",
+          "estado": "disponible"
+        },
+        "nodo": "sen190"
+      },
+      {
+        "si": {
+          "mision": "m12-memoria",
+          "estado": "activa"
+        },
+        "nodo": "sen210"
+      },
+      {
+        "si": {
+          "mision": "m12-memoria",
+          "estado": "hecha"
+        },
+        "nodo": "libre"
+      },
+      {
+        "nodo": "sen900"
+      }
+    ],
+    "nodos": {
+      "sen010": {
+        "texto": "Bienvenido al Gabinete de los Mil Mundos. Aquí no viene a jugar una sola historia: viene a aprender a dar forma a todas.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "sen020"
+          }
+        ]
+      },
+      "sen020": {
+        "texto": "Yo soy Senet. Este báculo significa la voz de quien dirige la partida. Unas veces lo llevaré yo; otras podrá sostenerlo usted.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "sen030"
+          }
+        ]
+      },
+      "sen030": {
+        "texto": "El Atlas del gabinete ha perdido cuatro lentes. No necesita vencer a nadie para recuperarlas: basta con aprender a usar lo que tiene ante usted.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "sen040"
+          }
+        ]
+      },
+      "sen040": {
+        "texto": "¿Prefiere descubrir la sala conmigo o entrar ya a la mesa libre?",
+        "opciones": [
+          {
+            "texto": "Aprender a usar la sala.",
+            "accion": {
+              "tipo": "dar_mision",
+              "mision": "m1-perspectiva"
+            },
+            "ir": "sen050"
+          },
+          {
+            "texto": "Entrar directamente a la mesa libre.",
+            "ir": "libre"
+          }
+        ]
+      },
+      "sen050": {
+        "texto": "Comencemos por lo esencial. Camine hasta el espejo, junto a la puerta. Su punto de vista le pertenece y nadie debe arrebatárselo.",
+        "opciones": [
+          {
+            "texto": "Voy al espejo.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "sen060": {
+        "texto": "Puede pasar de primera a tercera persona con la tecla V o la rueda. Su cuaderno se abre con la J: ahí están sus pasos. Examine el espejo y vuelva conmigo.",
+        "opciones": [
+          {
+            "texto": "De acuerdo.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "sen070": {
+        "texto": "Ya sabe dónde está, cómo mira y dónde consultar su camino. La primera lente despierta. Rima le espera junto a la torre de engranajes, al este.",
+        "opciones": [
+          {
+            "texto": "Voy con Rima.",
+            "si": {
+              "mision": "m1-perspectiva",
+              "estado": "activa",
+              "paso": "senet"
+            },
+            "accion": {
+              "tipo": "avanzar_paso",
+              "mision": "m1-perspectiva"
+            }
+          }
+        ]
+      },
+      "sen080": {
+        "texto": "En una mesa de rol la conversación es el centro de todo. Por eso, aquí hablar no activa dados ni objetos: las acciones necesitan un clic consciente.",
+        "opciones": [
+          {
+            "texto": "Entendido.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "sen090": {
+        "texto": "La ficción puede adoptar forma. Este cristal recibe propuestas y las manifiesta en la mesa, pero ninguna palabra pronunciada lo activa por sí sola.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "sen100a"
+          }
+        ]
+      },
+      "sen100a": {
+        "texto": "Acérquese a la mesa y proyecte en el cristal con un clic. Después coja la Llave de Mercurio en la mesa de práctica, al noreste, y vuelva conmigo.",
+        "opciones": [
+          {
+            "texto": "Probaré el cristal.",
+            "accion": {
+              "tipo": "dar_mision",
+              "mision": "m9-cristal"
+            }
+          }
+        ]
+      },
+      "sen100": {
+        "texto": "Proyecte en el cristal con un clic y coja la Llave de Mercurio en la mesa de práctica, al noreste. Luego vuelva conmigo.",
+        "opciones": [
+          {
+            "texto": "Voy.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "sen110": {
+        "texto": "Una imagen no basta. Esa llave es una entidad de práctica: tiene nombre, estado y un lugar en el registro. Cuando la suelte, volverá a su sitio.",
+        "opciones": [
+          {
+            "texto": "Entendido.",
+            "si": {
+              "mision": "m9-cristal",
+              "estado": "activa",
+              "paso": "senet"
+            },
+            "accion": {
+              "tipo": "avanzar_paso",
+              "mision": "m9-cristal"
+            }
+          }
+        ]
+      },
+      "sen120": {
+        "texto": "Ahora conocerá el signo del Game Master. El báculo no es una regla de ningún juego; es la herramienta de dirección de esta sala.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "sen130a"
+          }
+        ]
+      },
+      "sen130a": {
+        "texto": "Está en su soporte, junto a la silla alta. Si está libre, tómelo con E y devuélvalo enseguida. Si alguien lo lleva, hay una partida en curso: no la interrumpa; acérquese al soporte y vuelva.",
+        "opciones": [
+          {
+            "texto": "Tomaré el báculo.",
+            "accion": {
+              "tipo": "dar_mision",
+              "mision": "m10-baculo"
+            }
+          }
+        ]
+      },
+      "sen130": {
+        "texto": "Vaya al soporte del báculo, junto a la silla alta. Si está libre, tómelo con E y déjelo de nuevo en su soporte; si alguien lo lleva, no interrumpa la partida.",
+        "opciones": [
+          {
+            "texto": "Voy.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "sen140": {
+        "texto": "Un solo báculo, una sola dirección activa: aquí nadie se lo quita a quien dirige una partida. La narración no es la administración.",
+        "opciones": [
+          {
+            "texto": "Está en su soporte, o lo lleva quien dirige.",
+            "si": {
+              "mision": "m10-baculo",
+              "estado": "activa",
+              "paso": "senet"
+            },
+            "accion": {
+              "tipo": "avanzar_paso",
+              "mision": "m10-baculo"
+            }
+          },
+          {
+            "texto": "Aún lo llevo.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "sen150": {
+        "texto": "Queda una última lente. El Eco sin Contorno ha desplazado la inscripción del Atlas. Las herramientas ya son suyas: obsérvelas y úselas.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "sen160"
+          }
+        ]
+      },
+      "sen160": {
+        "texto": "Lea la pista, utilice la luz, tire dos dados en la torre si lo desea y coloque la Llave de Mercurio en el pedestal. Después, active el Atlas.",
+        "opciones": [
+          {
+            "texto": "Despertaré el Atlas.",
+            "accion": {
+              "tipo": "dar_mision",
+              "mision": "m11-atlas"
+            }
+          }
+        ]
+      },
+      "sen170": {
+        "texto": "El azar no cierra la historia. Si los dados dudan, vuelva a mirar la luz y complete el gesto: la llave, el pedestal y el Atlas.",
+        "opciones": [
+          {
+            "texto": "Sigo.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "sen190": {
+        "texto": "El Atlas ha despertado. Ha conocido la mesa, el azar, las fichas, los escenarios y el poder del relato compartido.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "sen200"
+          }
+        ]
+      },
+      "sen200": {
+        "texto": "Su práctica queda guardada en el cuaderno: puede volver, repetir una estación o abrir la sala para una partida cualquiera.",
+        "opciones": [
+          {
+            "texto": "Cerrar la práctica.",
+            "accion": {
+              "tipo": "dar_mision",
+              "mision": "m12-memoria"
+            },
+            "ir": "sen210"
+          }
+        ]
+      },
+      "sen210": {
+        "texto": "Si quiere aprender a dirigir una sesión, Cepheus le espera. Si prefiere jugar, el gabinete ya está a su disposición.",
+        "opciones": [
+          {
+            "texto": "Ir a la mesa libre.",
+            "si": {
+              "mision": "m12-memoria",
+              "estado": "activa",
+              "paso": "senet"
+            },
+            "accion": {
+              "tipo": "avanzar_paso",
+              "mision": "m12-memoria"
+            },
+            "ir": "libre"
+          },
+          {
+            "texto": "Aprender a dirigir.",
+            "si": {
+              "mision": "m12-memoria",
+              "estado": "activa",
+              "paso": "senet"
+            },
+            "accion": {
+              "tipo": "avanzar_paso",
+              "mision": "m12-memoria"
+            },
+            "ir": "dirigir"
+          },
+          {
+            "texto": "Más tarde.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "dirigir": {
+        "texto": "Hable con Cepheus, junto a la vitrina del noroeste. El ensayo de dirección aún se está preparando; él le dirá lo que ya puede ver.",
+        "opciones": [
+          {
+            "texto": "Gracias, Senet.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "libre": {
+        "texto": "La mesa está abierta. Siéntese con E junto a una silla; quien lleve el báculo pone las escenas y los dados los tira la torre. Si quiere aprender, aquí estaré.",
+        "opciones": [
+          {
+            "texto": "Gracias.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "sen900": {
+        "texto": "Consulte el cuaderno (J) si necesita recordar el siguiente paso. No hay prisa.",
+        "opciones": [
+          {
+            "texto": "Gracias.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "notas": "Agente DJ de la casa (agents/senet), aquí con guion y sin modelo de lenguaje (coste cero). [MOTOR] Senet aún no puede llevar el báculo ni aceptar una solicitud: el báculo está en su soporte (ENTREGA.md)."
+}

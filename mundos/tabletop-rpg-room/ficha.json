@@ -1,0 +1,363 @@
+{
+ "format": "ficha-mundo@1",
+ "name": "Tabletop RPG Room",
+ "subtitle": "The Cabinet of a Thousand Worlds (Gabinete de los Mil Mundos)",
+ "description": "A universal tabletop role-playing room: a steampunk cabinet of wonders to play any game, with its system, an invented one or none. Round walnut table for eight, the Game Master's staff, server-rolled dice, a map on the table, and a 40-minute guided practice (The Awakened Atlas).",
+ "type": "template",
+ "state": "in-construction",
+ "version": "2.1.0-dev",
+ "published": false,
+ "branch": "mundos/tabletop-rpg-room-v2",
+ "previous_published_version": "1.0.0 (Tholos, tag tabletop-rpg-room-v1.0.0, not yet in main)",
+ "creator": "Numen Games",
+ "owner": "pending",
+ "owner_note": "Person or organisation; pending the ATH21 consultation (DECISIONES-MUNDOS 2026-11-07, round 2 item 2).",
+ "signature": "pending (Pablo, Oracle)",
+ "machine": null,
+ "capacity": "Medium 50",
+ "weight": null,
+ "remaining_hours": null,
+ "size_bytes": 2053013,
+ "languages": {
+  "default": "en",
+  "playable": [
+   "en",
+   "es"
+  ],
+  "status": {
+   "en": "pending: in-world text is still Spanish only (usted)",
+   "es": "complete (translation of the English default once it exists)"
+  }
+ },
+ "visibility": "public (when published)",
+ "license": {
+  "content": "CC0-1.0",
+  "exceptions": "Numen/Numinia logo, if any appears, is a trademark and not CC0 (none in this entry)"
+ },
+ "engine": {
+  "license": "AGPL-3.0-only",
+  "schema": "numinia-engine/mundo@2",
+  "commit": "d2a27eb6945c69c1da6cd768f708ef6a7190b811",
+  "note": "version lives in this ficha; the engine's mundo.json has no version field and the zip is not rewritten"
+ },
+ "dependencies": [
+  "numinia-engine mundo@2",
+  "engine gaps listed in fuentes/ENTREGA.md ([MOTOR])"
+ ],
+ "evidence": [
+  "fuentes/ENTREGA.md",
+  "fuentes/construido.json",
+  "fuentes/recorrido.mjs (12/12 missions)"
+ ],
+ "pieces": [
+  {
+   "id": "model-suelo",
+   "kind": "model",
+   "path": "fuentes/modelos.json#suelo",
+   "sha256": "a9d767b508abd0cc3bdf5bf47f2f5f48ac97a87fc53886c817f6bf69d1b9ede5",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-muro",
+   "kind": "model",
+   "path": "fuentes/modelos.json#muro",
+   "sha256": "03f186ba0640ba75ebf6b064c677b150d039418a02389f28601483a67644a78e",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-biblioteca",
+   "kind": "model",
+   "path": "fuentes/modelos.json#biblioteca",
+   "sha256": "09ffee8d4a990c34c75d086252ed2d082127a893e12f67948476514028de82ab",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-techo",
+   "kind": "model",
+   "path": "fuentes/modelos.json#techo",
+   "sha256": "17a4b31aa700e057e30e548ba323c2a7d1fe234ab300ebbda822a490f5e413cf",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-mesa",
+   "kind": "model",
+   "path": "fuentes/modelos.json#mesa",
+   "sha256": "97e5b73b988720d9591549f669c5f4560f79806bf68de071b73cd1dc58377c71",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-silla",
+   "kind": "model",
+   "path": "fuentes/modelos.json#silla",
+   "sha256": "626a4991c01406a313e98d69c42cae55ce5bac619ea9aa2ca5bdc8526434a0d5",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-silla-dj",
+   "kind": "model",
+   "path": "fuentes/modelos.json#silla-dj",
+   "sha256": "1a325b43a7c809f7b69c4146acd652ab33c98d59c7884318154b6b42a09b99c5",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-cristal",
+   "kind": "model",
+   "path": "fuentes/modelos.json#cristal",
+   "sha256": "4d3302c56179056ad8dce9d5a7156d8b3c4541ebfed335a2d88e68baf8de748a",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-torre-dados",
+   "kind": "model",
+   "path": "fuentes/modelos.json#torre-dados",
+   "sha256": "ff23392d2550ed8494967668a8cfbaaab9e095318995763a72e5a4a3e3fd091a",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-consola",
+   "kind": "model",
+   "path": "fuentes/modelos.json#consola",
+   "sha256": "d67a94c1624117d9af1953f4ccd46b09e5d763a9f6903b3560bcfa3641b96fa0",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-fanal",
+   "kind": "model",
+   "path": "fuentes/modelos.json#fanal",
+   "sha256": "4a0590847f0dc7c9fb3f8f4d05c59f220d7b02a425267b05597ba730b898046c",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-placa",
+   "kind": "model",
+   "path": "fuentes/modelos.json#placa",
+   "sha256": "86bbc24c411aa221c8d4cc8dab4330ccbe730d04dcdb454caae516f2b6378c61",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-archivo",
+   "kind": "model",
+   "path": "fuentes/modelos.json#archivo",
+   "sha256": "8a8702c7bbb6a5933c9baa4894c896038ff0a0332eac4c050a655f7f72acdc11",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-preparacion",
+   "kind": "model",
+   "path": "fuentes/modelos.json#preparacion",
+   "sha256": "5d8c81ec6578b63f3a89f985433eb94ede735c94313fdfdc0d6d0013a4799965",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-globo",
+   "kind": "model",
+   "path": "fuentes/modelos.json#globo",
+   "sha256": "00756e2e8cd49300bd21a7892ea100ec78978e7506ce9cdd13a5c5924866c5dc",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-vitrina",
+   "kind": "model",
+   "path": "fuentes/modelos.json#vitrina",
+   "sha256": "eb81442ff7244c4b511af9eea1525ed8b89c444b4455247ef68f4b9634e989f1",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-reloj",
+   "kind": "model",
+   "path": "fuentes/modelos.json#reloj",
+   "sha256": "27639df84b8358e8416244e824a4890277acb2487ac62da2e5ea9f17b85e6e2a",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-mini-arlen",
+   "kind": "model",
+   "path": "fuentes/modelos.json#mini-arlen",
+   "sha256": "bb4129c06894bd9462552310b7c1c3f7f6b20704a895196c2c74f2a1178451d6",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-mini-guardiana",
+   "kind": "model",
+   "path": "fuentes/modelos.json#mini-guardiana",
+   "sha256": "606c29c7b4ddff70e886e37d17d6fe2aa88b62062c076c516f8a87ce34b2f90b",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-mini-erudito",
+   "kind": "model",
+   "path": "fuentes/modelos.json#mini-erudito",
+   "sha256": "9989f3f8319cbcf3bcbddd863862d48ea733317cfca09692850d1d64c7f7ac55",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-mini-exploradora",
+   "kind": "model",
+   "path": "fuentes/modelos.json#mini-exploradora",
+   "sha256": "5d9a24fb882ba06f6eee3c4bc4c438c86d173a7254bbf075e7e73a381bd37bd2",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-mini-sombra",
+   "kind": "model",
+   "path": "fuentes/modelos.json#mini-sombra",
+   "sha256": "6663d8220be79f11748b5f36022124f600622e8667ef114ce694a95cd51248a2",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-mini-guardian-piedra",
+   "kind": "model",
+   "path": "fuentes/modelos.json#mini-guardian-piedra",
+   "sha256": "c6b03f0a5e037f9d278360f036e2243f045df114fef91aebb96ea23d450aaca8",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-choque",
+   "kind": "model",
+   "path": "fuentes/modelos.json#choque",
+   "sha256": "b846cac46a3caaa7adb9019bbef2cf16663453fe71a97c2b0d7678603a48aba4",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "model-gabinete",
+   "kind": "model",
+   "path": "fuentes/modelos.json#gabinete",
+   "sha256": "f8579d2cf3d94d7868abd680c5f3a8b9dea95e7c14be993e71f3df8b45389165",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Built by fuentes/modelos.mjs + glb.mjs (procedural, house palette); AI-assisted: written by the Ursa agent under Pablo's direction, Numen Games"
+  },
+  {
+   "id": "image-mapa-ruinas",
+   "kind": "image",
+   "path": "fuentes/rotulos.json#mapa-ruinas",
+   "sha256": "3b4f01047cfa3fb12f24abe25df14b2e80219bebcca8401c40a7711d9ac9d929",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Drawn as SVG/HTML and photographed by fuentes/mapa.mjs (Playwright Chromium); AI-assisted, Numen Games"
+  },
+  {
+   "id": "image-placa-manual",
+   "kind": "image",
+   "path": "fuentes/rotulos.json#placa-manual",
+   "sha256": "477d3395ff495125ae3a7c3f512be5644fdd3fc46e69a7fcf0ca6a499c73f6b8",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Drawn as SVG/HTML and photographed by fuentes/mapa.mjs (Playwright Chromium); AI-assisted, Numen Games"
+  },
+  {
+   "id": "image-placa-inscripcion",
+   "kind": "image",
+   "path": "fuentes/rotulos.json#placa-inscripcion",
+   "sha256": "069bff09d54e8ebb1b0b2957a4ae67de81244ada0a9530c16ddb8e2a84d8a5b8",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Drawn as SVG/HTML and photographed by fuentes/mapa.mjs (Playwright Chromium); AI-assisted, Numen Games"
+  },
+  {
+   "id": "image-mapa-cripta",
+   "kind": "image",
+   "path": "fuentes/rotulos.json#mapa-cripta",
+   "sha256": "8d59108dbdba377181c2f531e5ba0b2b8453c76831bd846ed66b02756b9f8fee",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Drawn as SVG/HTML and photographed by fuentes/mapa.mjs (Playwright Chromium); AI-assisted, Numen Games"
+  },
+  {
+   "id": "adventure",
+   "kind": "data",
+   "path": "fuentes/aventura/",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Missions, characters, scenes written by fuentes/aventura.mjs from guion v2.1 (2026-11-04); Spanish text uses usted; English text pending (task B-series)"
+  },
+  {
+   "id": "world-zip",
+   "kind": "data",
+   "path": "tabletop-rpg-room.zip",
+   "sha256": "6298f411961836e6ff0ce50027a3286551914f8880634bd95ee6055fa6e7fdd8",
+   "creator": "Numen Games",
+   "made_by": "person with AI",
+   "license": "CC0-1.0",
+   "provenance": "Output of fuentes/zip.sh (engine `copia`, mundo@2, engine commit d2a27eb6)"
+  }
+ ]
+}

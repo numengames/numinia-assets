@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "pagina-atlas",
+  "nombre": "Página del Atlas",
+  "descripcion": "El Atlas anota una frase: «Lo que la niebla oculta, la luz puede devolverlo a los ojos».",
+  "posicion": {
+    "x": -4.24,
+    "z": 2.4499999999999997,
+    "y": 1.15
+  },
+  "radio": 1.8,
+  "aviso": "leer la página del Atlas",
+  "apariencia": {
+    "escala": 0.18,
+    "color": "#E8DCC2"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}

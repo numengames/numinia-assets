@@ -1,0 +1,972 @@
+{
+ "url": "ws://127.0.0.1:8879",
+ "cuando": "2026-10-30T09:13:57.252Z",
+ "hechos": [
+  {
+   "id": "o1",
+   "nombre": "El Gabinete: sala universal de rol",
+   "modelo": "gabinete",
+   "x": 0,
+   "y": 0,
+   "z": 0
+  },
+  {
+   "id": "o2",
+   "nombre": "El mapa de la mesa: quien dirige pone aquí su plano",
+   "modelo": "rótulo",
+   "hueco": "mapa",
+   "x": 0,
+   "y": 0.92,
+   "z": 0
+  },
+  {
+   "id": "o3",
+   "nombre": "Placa de consulta oeste",
+   "modelo": "rótulo",
+   "hueco": "placa-oeste",
+   "x": -4.564,
+   "y": 1.55,
+   "z": 2.635
+  },
+  {
+   "id": "o4",
+   "nombre": "Placa de consulta este",
+   "modelo": "rótulo",
+   "hueco": "placa-este",
+   "x": 4.564,
+   "y": 1.55,
+   "z": 2.635
+  },
+  {
+   "id": "o5",
+   "nombre": "Miniatura: Arlen",
+   "modelo": "mini-arlen",
+   "x": -0.55,
+   "y": 0.924,
+   "z": 0.42
+  },
+  {
+   "id": "o6",
+   "nombre": "Miniatura: la guardiana",
+   "modelo": "mini-guardiana",
+   "x": -0.32,
+   "y": 0.924,
+   "z": 0.5
+  },
+  {
+   "id": "o7",
+   "nombre": "Miniatura: el erudito",
+   "modelo": "mini-erudito",
+   "x": 4.269,
+   "y": 0.9,
+   "z": -5.122
+  },
+  {
+   "id": "o8",
+   "nombre": "Miniatura: la exploradora",
+   "modelo": "mini-exploradora",
+   "x": 4.437,
+   "y": 0.9,
+   "z": -4.936
+  },
+  {
+   "id": "o9",
+   "nombre": "Miniatura: criatura de sombra",
+   "modelo": "mini-sombra",
+   "x": 5.139,
+   "y": 0.906,
+   "z": -4.156
+  },
+  {
+   "id": "oa",
+   "nombre": "Miniatura: guardián de piedra",
+   "modelo": "mini-guardian-piedra",
+   "x": 5.407,
+   "y": 0.906,
+   "z": -3.859
+  },
+  {
+   "id": "ob",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -3.094,
+   "y": 0,
+   "z": 11.65
+  },
+  {
+   "id": "oc",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -1.547,
+   "y": 0,
+   "z": 11.65
+  },
+  {
+   "id": "od",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 1.547,
+   "y": 0,
+   "z": 11.65
+  },
+  {
+   "id": "oe",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 3.094,
+   "y": 0,
+   "z": 11.65
+  },
+  {
+   "id": "of",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -9.35,
+   "y": 0,
+   "z": 7.607
+  },
+  {
+   "id": "og",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -8.099,
+   "y": 0,
+   "z": 8.516
+  },
+  {
+   "id": "oh",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -6.848,
+   "y": 0,
+   "z": 9.425
+  },
+  {
+   "id": "oi",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -5.596,
+   "y": 0,
+   "z": 10.334
+  },
+  {
+   "id": "oj",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -4.345,
+   "y": 0,
+   "z": 11.243
+  },
+  {
+   "id": "ok",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -12.036,
+   "y": 0,
+   "z": 0.658
+  },
+  {
+   "id": "ol",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -11.558,
+   "y": 0,
+   "z": 2.129
+  },
+  {
+   "id": "om",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -11.08,
+   "y": 0,
+   "z": 3.6
+  },
+  {
+   "id": "on",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -10.602,
+   "y": 0,
+   "z": 5.071
+  },
+  {
+   "id": "oo",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -10.124,
+   "y": 0,
+   "z": 6.542
+  },
+  {
+   "id": "op",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -10.124,
+   "y": 0,
+   "z": -6.542
+  },
+  {
+   "id": "oq",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -10.602,
+   "y": 0,
+   "z": -5.071
+  },
+  {
+   "id": "or",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -11.08,
+   "y": 0,
+   "z": -3.6
+  },
+  {
+   "id": "os",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -11.558,
+   "y": 0,
+   "z": -2.129
+  },
+  {
+   "id": "ot",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -12.036,
+   "y": 0,
+   "z": -0.658
+  },
+  {
+   "id": "ou",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -4.345,
+   "y": 0,
+   "z": -11.243
+  },
+  {
+   "id": "ov",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -5.596,
+   "y": 0,
+   "z": -10.334
+  },
+  {
+   "id": "ow",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -6.848,
+   "y": 0,
+   "z": -9.425
+  },
+  {
+   "id": "ox",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -8.099,
+   "y": 0,
+   "z": -8.516
+  },
+  {
+   "id": "oy",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -9.35,
+   "y": 0,
+   "z": -7.607
+  },
+  {
+   "id": "oz",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 3.094,
+   "y": 0,
+   "z": -11.65
+  },
+  {
+   "id": "o10",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 1.547,
+   "y": 0,
+   "z": -11.65
+  },
+  {
+   "id": "o11",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 0,
+   "y": 0,
+   "z": -11.65
+  },
+  {
+   "id": "o12",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -1.547,
+   "y": 0,
+   "z": -11.65
+  },
+  {
+   "id": "o13",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -3.094,
+   "y": 0,
+   "z": -11.65
+  },
+  {
+   "id": "o14",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 9.35,
+   "y": 0,
+   "z": -7.607
+  },
+  {
+   "id": "o15",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 8.099,
+   "y": 0,
+   "z": -8.516
+  },
+  {
+   "id": "o16",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 6.848,
+   "y": 0,
+   "z": -9.425
+  },
+  {
+   "id": "o17",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 5.596,
+   "y": 0,
+   "z": -10.334
+  },
+  {
+   "id": "o18",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 4.345,
+   "y": 0,
+   "z": -11.243
+  },
+  {
+   "id": "o19",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 12.036,
+   "y": 0,
+   "z": -0.658
+  },
+  {
+   "id": "o1a",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 11.558,
+   "y": 0,
+   "z": -2.129
+  },
+  {
+   "id": "o1b",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 11.08,
+   "y": 0,
+   "z": -3.6
+  },
+  {
+   "id": "o1c",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 10.602,
+   "y": 0,
+   "z": -5.071
+  },
+  {
+   "id": "o1d",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 10.124,
+   "y": 0,
+   "z": -6.542
+  },
+  {
+   "id": "o1e",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 10.124,
+   "y": 0,
+   "z": 6.542
+  },
+  {
+   "id": "o1f",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 10.602,
+   "y": 0,
+   "z": 5.071
+  },
+  {
+   "id": "o1g",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 11.08,
+   "y": 0,
+   "z": 3.6
+  },
+  {
+   "id": "o1h",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 11.558,
+   "y": 0,
+   "z": 2.129
+  },
+  {
+   "id": "o1i",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 12.036,
+   "y": 0,
+   "z": 0.658
+  },
+  {
+   "id": "o1j",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 4.345,
+   "y": 0,
+   "z": 11.243
+  },
+  {
+   "id": "o1k",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 5.596,
+   "y": 0,
+   "z": 10.334
+  },
+  {
+   "id": "o1l",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 6.848,
+   "y": 0,
+   "z": 9.425
+  },
+  {
+   "id": "o1m",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 8.099,
+   "y": 0,
+   "z": 8.516
+  },
+  {
+   "id": "o1n",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 9.35,
+   "y": 0,
+   "z": 7.607
+  },
+  {
+   "id": "o1o",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 0,
+   "y": 3.1,
+   "z": 11.65
+  },
+  {
+   "id": "o1p",
+   "nombre": "La puerta del Gabinete",
+   "modelo": "choque",
+   "x": 0,
+   "y": 0,
+   "z": 11.65
+  },
+  {
+   "id": "o1q",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 0,
+   "y": 4,
+   "z": -7.45
+  },
+  {
+   "id": "o1r",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 0,
+   "y": 4,
+   "z": 7.45
+  },
+  {
+   "id": "o1s",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -7.45,
+   "y": 4,
+   "z": 0
+  },
+  {
+   "id": "o1t",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 7.45,
+   "y": 4,
+   "z": 0
+  },
+  {
+   "id": "o1u",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 0,
+   "y": 4,
+   "z": -3
+  },
+  {
+   "id": "o1v",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 0,
+   "y": 4,
+   "z": 3
+  },
+  {
+   "id": "o1w",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -3,
+   "y": 4,
+   "z": 0
+  },
+  {
+   "id": "o1x",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 3,
+   "y": 4,
+   "z": 0
+  },
+  {
+   "id": "o1y",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 0,
+   "y": 5.6,
+   "z": 0
+  },
+  {
+   "id": "o1z",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -8.276,
+   "y": 0,
+   "z": 7.819
+  },
+  {
+   "id": "o20",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -6.577,
+   "y": 0,
+   "z": 9.053
+  },
+  {
+   "id": "o21",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -4.878,
+   "y": 0,
+   "z": 10.287
+  },
+  {
+   "id": "o22",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -11.291,
+   "y": 0,
+   "z": 1.461
+  },
+  {
+   "id": "o23",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -10.642,
+   "y": 0,
+   "z": 3.458
+  },
+  {
+   "id": "o24",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -9.993,
+   "y": 0,
+   "z": 5.455
+  },
+  {
+   "id": "o25",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -9.993,
+   "y": 0,
+   "z": -5.455
+  },
+  {
+   "id": "o26",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -10.642,
+   "y": 0,
+   "z": -3.458
+  },
+  {
+   "id": "o27",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -11.291,
+   "y": 0,
+   "z": -1.461
+  },
+  {
+   "id": "o28",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -4.878,
+   "y": 0,
+   "z": -10.287
+  },
+  {
+   "id": "o29",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -6.577,
+   "y": 0,
+   "z": -9.053
+  },
+  {
+   "id": "o2a",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -8.276,
+   "y": 0,
+   "z": -7.819
+  },
+  {
+   "id": "o2b",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 2.1,
+   "y": 0,
+   "z": -11.19
+  },
+  {
+   "id": "o2c",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 0,
+   "y": 0,
+   "z": -11.19
+  },
+  {
+   "id": "o2d",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -2.1,
+   "y": 0,
+   "z": -11.19
+  },
+  {
+   "id": "o2e",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 8.276,
+   "y": 0,
+   "z": -7.819
+  },
+  {
+   "id": "o2f",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 6.577,
+   "y": 0,
+   "z": -9.053
+  },
+  {
+   "id": "o2g",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 4.878,
+   "y": 0,
+   "z": -10.287
+  },
+  {
+   "id": "o2h",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 11.291,
+   "y": 0,
+   "z": -1.461
+  },
+  {
+   "id": "o2i",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 10.642,
+   "y": 0,
+   "z": -3.458
+  },
+  {
+   "id": "o2j",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 9.993,
+   "y": 0,
+   "z": -5.455
+  },
+  {
+   "id": "o2k",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 9.993,
+   "y": 0,
+   "z": 5.455
+  },
+  {
+   "id": "o2l",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 10.642,
+   "y": 0,
+   "z": 3.458
+  },
+  {
+   "id": "o2m",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 11.291,
+   "y": 0,
+   "z": 1.461
+  },
+  {
+   "id": "o2n",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 4.878,
+   "y": 0,
+   "z": 10.287
+  },
+  {
+   "id": "o2o",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 6.577,
+   "y": 0,
+   "z": 9.053
+  },
+  {
+   "id": "o2p",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 8.276,
+   "y": 0,
+   "z": 7.819
+  },
+  {
+   "id": "o2q",
+   "nombre": "La mesa",
+   "modelo": "choque",
+   "x": 0,
+   "y": 0,
+   "z": 0
+  },
+  {
+   "id": "o2r",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 0,
+   "y": 0,
+   "z": 0
+  },
+  {
+   "id": "o2s",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 0,
+   "y": 0,
+   "z": 0
+  },
+  {
+   "id": "o2t",
+   "nombre": "Torre de dados (estación de dados)",
+   "modelo": "choque",
+   "x": 4.35,
+   "y": 0,
+   "z": 0
+  },
+  {
+   "id": "o2u",
+   "nombre": "Consola de quien dirige",
+   "modelo": "choque",
+   "x": 0,
+   "y": 0,
+   "z": -4.7
+  },
+  {
+   "id": "o2v",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -0.935,
+   "y": 0,
+   "z": -4.81
+  },
+  {
+   "id": "o2w",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 0.935,
+   "y": 0,
+   "z": -4.81
+  },
+  {
+   "id": "o2x",
+   "nombre": "",
+   "modelo": "choque",
+   "x": -4.59,
+   "y": 0,
+   "z": 2.65
+  },
+  {
+   "id": "o2y",
+   "nombre": "",
+   "modelo": "choque",
+   "x": 4.59,
+   "y": 0,
+   "z": 2.65
+  },
+  {
+   "id": "o2z",
+   "nombre": "Archivo de la campaña",
+   "modelo": "choque",
+   "x": -7.2,
+   "y": 0,
+   "z": 0
+  },
+  {
+   "id": "o30",
+   "nombre": "Mesa de preparación",
+   "modelo": "choque",
+   "x": 4.905,
+   "y": 0,
+   "z": -4.416
+  },
+  {
+   "id": "o31",
+   "nombre": "Globo celeste",
+   "modelo": "choque",
+   "x": -5.739,
+   "y": 0,
+   "z": -3.052
+  },
+  {
+   "id": "o32",
+   "nombre": "Vitrina de la esfera armilar",
+   "modelo": "choque",
+   "x": -5.085,
+   "y": 0,
+   "z": -5.648
+  },
+  {
+   "id": "o33",
+   "nombre": "El cristal narrativo",
+   "modelo": "choque",
+   "x": 0,
+   "y": 2,
+   "z": 0
+  },
+  {
+   "id": "o34",
+   "nombre": "Asiento 1",
+   "modelo": "choque",
+   "x": 2.55,
+   "y": 0,
+   "z": 0
+  },
+  {
+   "id": "o35",
+   "nombre": "Asiento 2",
+   "modelo": "choque",
+   "x": 1.803,
+   "y": 0,
+   "z": 1.803
+  },
+  {
+   "id": "o36",
+   "nombre": "Asiento 3",
+   "modelo": "choque",
+   "x": 0,
+   "y": 0,
+   "z": 2.55
+  },
+  {
+   "id": "o37",
+   "nombre": "Asiento 4",
+   "modelo": "choque",
+   "x": -1.803,
+   "y": 0,
+   "z": 1.803
+  },
+  {
+   "id": "o38",
+   "nombre": "Asiento 5",
+   "modelo": "choque",
+   "x": -2.55,
+   "y": 0,
+   "z": 0
+  },
+  {
+   "id": "o39",
+   "nombre": "Asiento 6",
+   "modelo": "choque",
+   "x": -1.803,
+   "y": 0,
+   "z": -1.803
+  },
+  {
+   "id": "o3a",
+   "nombre": "Asiento de quien dirige",
+   "modelo": "choque",
+   "x": 0,
+   "y": 0,
+   "z": -2.55
+  },
+  {
+   "id": "o3b",
+   "nombre": "Asiento 8",
+   "modelo": "choque",
+   "x": 1.803,
+   "y": 0,
+   "z": -1.803
+  }
+ ],
+ "elementos": [
+  {
+   "id": "e1",
+   "nombre": "Fanal oeste de la consola"
+  },
+  {
+   "id": "e2",
+   "nombre": "Fanal este de la consola"
+  }
+ ],
+ "fallos": []
+}

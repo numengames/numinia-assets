@@ -1,0 +1,32 @@
+{
+  "formato": "secuencia@1",
+  "id": "atlas-despierta",
+  "duracion": 7,
+  "pistas": [
+    {
+      "tipo": "sonido",
+      "t": 0.2,
+      "sonido": "magia"
+    },
+    {
+      "tipo": "texto",
+      "t": 0.4,
+      "texto": "Las cuatro lentes giran en sus anillos: Perspectiva, Azar, Forma…"
+    },
+    {
+      "tipo": "texto",
+      "t": 3.2,
+      "texto": "…y Relato. La inscripción vuelve a leerse."
+    },
+    {
+      "tipo": "sonido",
+      "t": 5.2,
+      "sonido": "exito"
+    },
+    {
+      "tipo": "texto",
+      "t": 5.4,
+      "texto": "El Atlas ha despertado. Senet le espera."
+    }
+  ]
+}

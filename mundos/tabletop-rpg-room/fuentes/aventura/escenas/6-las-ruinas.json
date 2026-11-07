@@ -1,0 +1,22 @@
+{
+  "schema": "numinia-engine/escena@1",
+  "nombre": "Las ruinas",
+  "preset": "atardecer",
+  "entorno": {
+    "niebla": {
+      "cerca": 22,
+      "lejos": 90,
+      "color": "#6b5a48",
+      "delCielo": false
+    },
+    "tono": {
+      "exposicion": 0.95
+    }
+  },
+  "narracion": "Columnas rotas y un pozo en el patio. Algo se mueve en la capilla.",
+  "mapa": {
+    "obra": "3b4f01047cfa3fb12f24abe25df14b2e80219bebcca8401c40a7711d9ac9d929.png",
+    "titulo": "Las ruinas",
+    "hueco": "mapa"
+  }
+}

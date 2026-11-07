@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "ficha-eco",
+  "nombre": "Ficha del Eco sin Contorno",
+  "descripcion": "El Eco sin Contorno es una criatura de ensayo. En esta vista solo se ven su nombre y su silueta; lo demás es de quien dirige.",
+  "posicion": {
+    "x": -6.7,
+    "z": 0.45,
+    "y": 1
+  },
+  "radio": 1.7,
+  "aviso": "consultar la criatura",
+  "apariencia": {
+    "escala": 0.16,
+    "color": "#274A47"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}

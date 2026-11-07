@@ -1,0 +1,38 @@
+{
+  "schema": "numinia-engine/dados@1",
+  "activa": true,
+  "torres": [
+    {
+      "id": "engranajes",
+      "nombre": "La torre de engranajes",
+      "x": 4.6,
+      "y": 0,
+      "z": 0,
+      "radio": 2.4,
+      "dados": "1d20",
+      "bandeja": {
+        "dx": -0.62,
+        "dz": 0,
+        "alto": 0.89,
+        "ancho": 0.8,
+        "fondo": 0.6
+      }
+    },
+    {
+      "id": "consola",
+      "nombre": "La bandeja de quien dirige",
+      "x": 0,
+      "y": 0,
+      "z": -4.7,
+      "radio": 1.6,
+      "dados": "1d20",
+      "bandeja": {
+        "dx": 0,
+        "dz": 0.28,
+        "alto": 0.99,
+        "ancho": 0.42,
+        "fondo": 0.3
+      }
+    }
+  ]
+}

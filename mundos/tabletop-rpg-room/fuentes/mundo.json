@@ -1,0 +1,9 @@
+{
+ "esquema": "numinia-engine/mundo@2",
+ "motor": {
+  "build": "dev",
+  "commit": "d2a27eb6945c69c1da6cd768f708ef6a7190b811",
+  "imagen": "ghcr.io/numengames/numinia-engine:sha-d2a27eb6945c69c1da6cd768f708ef6a7190b811"
+ },
+ "creado": "2026-11-04T21:16:43.410Z"
+}

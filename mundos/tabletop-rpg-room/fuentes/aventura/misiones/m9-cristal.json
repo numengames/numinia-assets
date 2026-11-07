@@ -1,0 +1,35 @@
+{
+  "formato": "mision@1",
+  "id": "m9-cristal",
+  "titulo": "Una imagen adquiere forma",
+  "descripcion": "Proyecte en el Cristal Narrativo y recoja la Llave de Mercurio en la mesa de práctica.",
+  "requisitos": {
+    "misiones": [
+      "m8-mesa-habitada"
+    ]
+  },
+  "pasos": [
+    {
+      "id": "cristal",
+      "tipo": "usa",
+      "cosa": "cristal",
+      "texto": "Acérquese a la mesa y proyecte en el cristal (E)"
+    },
+    {
+      "id": "llave",
+      "tipo": "coge",
+      "cosa": "llave",
+      "texto": "Coja la Llave de Mercurio en la mesa de práctica, al noreste"
+    },
+    {
+      "id": "senet",
+      "tipo": "habla_con",
+      "pnj": "senet",
+      "texto": "Vuelva con Senet"
+    }
+  ],
+  "textos": {
+    "aceptada": "El cristal cuelga sobre la mesa.",
+    "completada": "La Llave de Mercurio queda en el registro."
+  }
+}

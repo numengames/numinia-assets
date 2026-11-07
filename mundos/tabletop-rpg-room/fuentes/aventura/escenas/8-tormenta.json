@@ -1,0 +1,11 @@
+{
+  "schema": "numinia-engine/escena@1",
+  "nombre": "Tormenta",
+  "preset": "tormenta",
+  "entorno": {
+    "tono": {
+      "exposicion": 0.75
+    }
+  },
+  "narracion": "El cristal de la linterna tiembla con cada trueno."
+}

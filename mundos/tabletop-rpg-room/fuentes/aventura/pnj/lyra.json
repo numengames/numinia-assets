@@ -1,0 +1,249 @@
+{
+  "formato": "pnj@1",
+  "id": "lyra",
+  "nombre": "Lyra",
+  "oficio": "Archivera",
+  "voz": "mujer-mayor",
+  "descripcion": "Exégeta y bibliotecaria del gabinete. Guarda fichas, documentos, cartas y tablas.",
+  "apariencia": {
+    "modelo": "047f5e5fb3bb6d378bd1df16ca6137f2a596c99b3a1b5690b4020c05aaf6f319",
+    "escala": 0.52
+  },
+  "posicion": {
+    "x": -6.25,
+    "z": 1.45
+  },
+  "giro": -77,
+  "radio": 3,
+  "dialogo": {
+    "entradas": [
+      {
+        "si": {
+          "mision": "m3-ficha",
+          "estado": "disponible"
+        },
+        "nodo": "lyr010"
+      },
+      {
+        "si": {
+          "mision": "m3-ficha",
+          "estado": "activa",
+          "paso": "lyra"
+        },
+        "nodo": "lyr040"
+      },
+      {
+        "si": {
+          "mision": "m3-ficha",
+          "estado": "activa"
+        },
+        "nodo": "lyr030"
+      },
+      {
+        "si": {
+          "mision": "m7-secretos",
+          "estado": "disponible"
+        },
+        "nodo": "lyr050"
+      },
+      {
+        "si": {
+          "mision": "m7-secretos",
+          "estado": "activa",
+          "paso": "lyra"
+        },
+        "nodo": "lyr070"
+      },
+      {
+        "si": {
+          "mision": "m7-secretos",
+          "estado": "activa"
+        },
+        "nodo": "lyr060"
+      },
+      {
+        "si": {
+          "mision": "m8-mesa-habitada",
+          "estado": "disponible"
+        },
+        "nodo": "lyr080"
+      },
+      {
+        "si": {
+          "mision": "m8-mesa-habitada",
+          "estado": "activa",
+          "paso": "lyra"
+        },
+        "nodo": "lyr090"
+      },
+      {
+        "si": {
+          "mision": "m2-azar",
+          "estado": "hecha"
+        },
+        "nodo": "lyr900"
+      },
+      {
+        "nodo": "hola"
+      }
+    ],
+    "nodos": {
+      "lyr010": {
+        "texto": "Soy Lyra. Una miniatura no es una ficha, y una ficha no es un jugador: son piezas distintas que pueden vincularse.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "lyr020"
+          }
+        ]
+      },
+      "lyr020": {
+        "texto": "Sobre el escritorio están la ficha de Iria y la del Eco sin Contorno. Coja la de Iria y consulte la del Eco: su aspecto puede conocerse sin revelar sus secretos.",
+        "opciones": [
+          {
+            "texto": "Voy al escritorio.",
+            "accion": {
+              "tipo": "dar_mision",
+              "mision": "m3-ficha"
+            }
+          }
+        ]
+      },
+      "lyr030": {
+        "texto": "La ficha de Iria y la del Eco están sobre el escritorio del archivo. Cuando las tenga vistas, vuelva conmigo.",
+        "opciones": [
+          {
+            "texto": "Voy.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "lyr040": {
+        "texto": "Pronto podrá editar sus notas y vincularla a su miniatura; de momento, llévela consigo. Pictor le espera junto a la mesa de preparación, al noreste.",
+        "opciones": [
+          {
+            "texto": "Voy con Pictor.",
+            "si": {
+              "mision": "m3-ficha",
+              "estado": "activa",
+              "paso": "lyra"
+            },
+            "accion": {
+              "tipo": "avanzar_paso",
+              "mision": "m3-ficha"
+            }
+          }
+        ]
+      },
+      "lyr050": {
+        "texto": "Los relatos también se guardan. Lea la página del Atlas, en la placa de consulta; después pruebe la baraja y la tabla del archivo.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "lyr060a"
+          }
+        ]
+      },
+      "lyr060a": {
+        "texto": "Puede robar una carta y consultar un resultado al azar. Cada operación queda registrada según su visibilidad.",
+        "opciones": [
+          {
+            "texto": "Voy a ello.",
+            "accion": {
+              "tipo": "dar_mision",
+              "mision": "m7-secretos"
+            }
+          }
+        ]
+      },
+      "lyr060": {
+        "texto": "Le faltan la página del Atlas, la baraja o la tabla. Mire su cuaderno (J): ahí está lo que queda.",
+        "opciones": [
+          {
+            "texto": "Voy.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "lyr070": {
+        "texto": "La biblioteca conserva personajes, monstruos, mapas, documentos y reglas que los jugadores tienen derecho a utilizar. Guarde bien esa pista del Atlas.",
+        "opciones": [
+          {
+            "texto": "La guardo.",
+            "si": {
+              "mision": "m7-secretos",
+              "estado": "activa",
+              "paso": "lyra"
+            },
+            "accion": {
+              "tipo": "avanzar_paso",
+              "mision": "m7-secretos"
+            }
+          }
+        ]
+      },
+      "lyr080": {
+        "texto": "Pruebe el chat (Intro) y escriba a la mesa. Nada de lo que escriba se interpreta como una orden. Luego ponga música en el gramófono, junto a la mesa.",
+        "opciones": [
+          {
+            "texto": "Lo probaré.",
+            "accion": {
+              "tipo": "dar_mision",
+              "mision": "m8-mesa-habitada"
+            }
+          }
+        ]
+      },
+      "lyr090": {
+        "texto": "El gramófono le ayuda a crear atmósfera. Ajuste el volumen en los ajustes de sonido para que las voces nunca queden ocultas. Senet le espera para el cristal.",
+        "opciones": [
+          {
+            "texto": "Voy con Senet.",
+            "si": {
+              "mision": "m8-mesa-habitada",
+              "estado": "activa",
+              "paso": "lyra"
+            },
+            "accion": {
+              "tipo": "avanzar_paso",
+              "mision": "m8-mesa-habitada"
+            }
+          },
+          {
+            "texto": "Aún no he puesto música.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "lyr900": {
+        "texto": "El archivo está abierto. Fichas, documentos, cartas y tablas esperan a quien dirija la próxima partida.",
+        "opciones": [
+          {
+            "texto": "Gracias.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "hola": {
+        "texto": "Soy Lyra, del archivo. Cuando haya pasado por Senet y por Rima, aquí le espero.",
+        "opciones": [
+          {
+            "texto": "De acuerdo.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos. [MOTOR] Ficha editable, vínculo ficha–miniatura, inventario de práctica, mazo y tabla con resultado, envío de chat como paso."
+}

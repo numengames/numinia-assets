@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "llave",
+  "nombre": "Llave de Mercurio",
+  "descripcion": "Llave de Mercurio: objeto de práctica, sacado de la biblioteca. Puede colocarse, recogerse y retirarse.",
+  "posicion": {
+    "x": 5.14,
+    "z": -4.16,
+    "y": 0.93
+  },
+  "radio": 1.6,
+  "aviso": "coger la Llave de Mercurio",
+  "apariencia": {
+    "escala": 0.08,
+    "color": "#C8CCD2"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}

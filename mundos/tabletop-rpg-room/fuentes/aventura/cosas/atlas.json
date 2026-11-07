@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "atlas",
+  "nombre": "Atlas de los Mil Mundos",
+  "descripcion": "Cuatro lentes —Perspectiva, Azar, Forma y Relato— han de devolver al Atlas su capacidad para abrir mundos.",
+  "posicion": {
+    "x": 5.61,
+    "z": -3.64,
+    "y": 1
+  },
+  "radio": 1.6,
+  "aviso": "activar el Atlas",
+  "apariencia": {
+    "escala": 0.22,
+    "color": "#A17C44"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}

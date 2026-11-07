@@ -1,0 +1,23 @@
+{
+  "formato": "mision@1",
+  "id": "m12-memoria",
+  "titulo": "Memoria del gabinete",
+  "descripcion": "Senet cierra la práctica y le abre la sala: mesa libre, repetir una estación o aprender a dirigir.",
+  "requisitos": {
+    "misiones": [
+      "m11-atlas"
+    ]
+  },
+  "pasos": [
+    {
+      "id": "senet",
+      "tipo": "habla_con",
+      "pnj": "senet",
+      "texto": "Hable con Senet"
+    }
+  ],
+  "textos": {
+    "aceptada": "Senet cierra la práctica.",
+    "completada": "Práctica completada. La sala queda abierta."
+  }
+}

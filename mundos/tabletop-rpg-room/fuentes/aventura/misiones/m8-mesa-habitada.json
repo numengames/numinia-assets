@@ -1,0 +1,29 @@
+{
+  "formato": "mision@1",
+  "id": "m8-mesa-habitada",
+  "titulo": "La mesa habitada",
+  "descripcion": "Escriba en el chat a la mesa y ponga música en el gramófono. Hablar no activa nada: cada acción es un clic.",
+  "requisitos": {
+    "misiones": [
+      "m7-secretos"
+    ]
+  },
+  "pasos": [
+    {
+      "id": "musica",
+      "tipo": "usa",
+      "cosa": "gramofono",
+      "texto": "Ponga música en el gramófono, junto a la mesa (y escriba algo en el chat: Intro)"
+    },
+    {
+      "id": "lyra",
+      "tipo": "habla_con",
+      "pnj": "lyra",
+      "texto": "Vuelva con Lyra"
+    }
+  ],
+  "textos": {
+    "aceptada": "El gramófono está al sureste de la mesa.",
+    "completada": "La mesa está habitada."
+  }
+}

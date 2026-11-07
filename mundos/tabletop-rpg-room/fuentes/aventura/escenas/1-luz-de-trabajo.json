@@ -1,0 +1,18 @@
+{
+  "schema": "numinia-engine/escena@1",
+  "nombre": "Luz de trabajo (neutra)",
+  "preset": "día",
+  "entorno": {
+    "luz": {
+      "ambiente": 1.6
+    },
+    "niebla": {
+      "cerca": 80,
+      "lejos": 300
+    },
+    "tono": {
+      "exposicion": 1.15
+    }
+  },
+  "narracion": "Luz clara para leer fichas y mapas."
+}

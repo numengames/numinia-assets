@@ -1,0 +1,35 @@
+{
+  "formato": "mision@1",
+  "id": "m4-cartografia",
+  "titulo": "Cartografía de lo posible",
+  "descripcion": "Pictor le enseña la mesa como tablero: lleve la miniatura de Iria a una casilla permitida.",
+  "requisitos": {
+    "misiones": [
+      "m3-ficha"
+    ]
+  },
+  "pasos": [
+    {
+      "id": "mini",
+      "tipo": "coge",
+      "cosa": "mini-iria",
+      "texto": "Coja la miniatura de Iria de la mesa de preparación, al noreste"
+    },
+    {
+      "id": "casilla",
+      "tipo": "usa",
+      "cosa": "casilla",
+      "texto": "Déjela en la casilla marcada de la maqueta, en la misma mesa"
+    },
+    {
+      "id": "pictor",
+      "tipo": "habla_con",
+      "pnj": "pictor",
+      "texto": "Vuelva con Pictor"
+    }
+  ],
+  "textos": {
+    "aceptada": "Pictor le espera junto a la mesa de preparación.",
+    "completada": "Iria ya está en el mapa."
+  }
+}

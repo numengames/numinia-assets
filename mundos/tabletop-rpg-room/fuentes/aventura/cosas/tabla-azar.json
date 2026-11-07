@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "tabla-azar",
+  "nombre": "Tabla «Recuerdos de Cámara»",
+  "descripcion": "Tabla de recuerdos: una selección al azar devuelve una frase breve de ambientación.",
+  "posicion": {
+    "x": -6.7,
+    "z": 1.1,
+    "y": 1
+  },
+  "radio": 1.7,
+  "aviso": "consultar la tabla",
+  "apariencia": {
+    "escala": 0.14,
+    "color": "#E8DCC2"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}

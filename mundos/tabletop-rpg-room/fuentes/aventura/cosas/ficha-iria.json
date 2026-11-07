@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "ficha-iria",
+  "nombre": "Ficha de Iria",
+  "descripcion": "Iria es un personaje ficticio de práctica. Sus campos (nombre, concepto, notas, recursos) no obedecen a ningún reglamento.",
+  "posicion": {
+    "x": -6.7,
+    "z": -0.45,
+    "y": 1
+  },
+  "radio": 1.7,
+  "aviso": "coger la ficha de Iria",
+  "apariencia": {
+    "escala": 0.16,
+    "color": "#E8DCC2"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}

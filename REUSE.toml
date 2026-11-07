@@ -50,3 +50,97 @@ SPDX-License-Identifier = "CC0-1.0"
 path = ["CODE_OF_CONDUCT.md"]
 SPDX-FileCopyrightText = "2026 Numen Games S.L."
 SPDX-License-Identifier = "CC0-1.0"
+
+# Tabletop RPG Room (world, branch mundos/tabletop-rpg-room-v2): own work of Numen Games, CC0 per piece (see
+# mundos/tabletop-rpg-room/ficha.json). Declared by exact path, never by folder. Scripts are MIT, texts CC-BY-4.0.
+
+[[annotations]]
+path = [
+  "mundos/tabletop-rpg-room/ficha.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/atlas.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/baraja.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/casilla.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/cristal.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/espejo.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/ficha-eco.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/ficha-iria.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/gramofono.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/llave.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/luminaria.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/mini-iria.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/pagina-atlas.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/pedestal.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/puerta-maqueta.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/reloj-turnos.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/cosas/tabla-azar.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/escenas/0-el-gabinete.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/escenas/1-luz-de-trabajo.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/escenas/2-gotica.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/escenas/3-expedicion.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/escenas/4-cosmologica.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/escenas/5-contemporanea.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/escenas/6-las-ruinas.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/escenas/7-la-cripta.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/escenas/8-tormenta.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/ficha.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/misiones/m1-perspectiva.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/misiones/m10-baculo.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/misiones/m11-atlas.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/misiones/m12-memoria.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/misiones/m2-azar.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/misiones/m3-ficha.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/misiones/m4-cartografia.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/misiones/m5-puerta.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/misiones/m6-turno.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/misiones/m7-secretos.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/misiones/m8-mesa-habitada.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/misiones/m9-cristal.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/pnj/cepheus.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/pnj/lyra.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/pnj/pictor.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/pnj/rima.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/pnj/senet.json",
+  "mundos/tabletop-rpg-room/fuentes/aventura/secuencias/atlas-despierta.json",
+  "mundos/tabletop-rpg-room/fuentes/construido.json",
+  "mundos/tabletop-rpg-room/fuentes/entorno/asientos.json",
+  "mundos/tabletop-rpg-room/fuentes/entorno/baculos.json",
+  "mundos/tabletop-rpg-room/fuentes/entorno/burbujas.json",
+  "mundos/tabletop-rpg-room/fuentes/entorno/contadores.json",
+  "mundos/tabletop-rpg-room/fuentes/entorno/dados.json",
+  "mundos/tabletop-rpg-room/fuentes/entorno/dardos.json",
+  "mundos/tabletop-rpg-room/fuentes/entorno/entorno.json",
+  "mundos/tabletop-rpg-room/fuentes/entorno/pesca.json",
+  "mundos/tabletop-rpg-room/fuentes/modelos.json",
+  "mundos/tabletop-rpg-room/fuentes/mundo.json",
+  "mundos/tabletop-rpg-room/fuentes/rotulos.json",
+  "mundos/tabletop-rpg-room/tabletop-rpg-room.zip",
+]
+SPDX-FileCopyrightText = "2026 Numen Games S.L."
+SPDX-License-Identifier = "CC0-1.0"
+
+[[annotations]]
+path = [
+  "mundos/tabletop-rpg-room/fuentes/ENTREGA.md",
+  "mundos/tabletop-rpg-room/fuentes/LEEME.md",
+  "mundos/tabletop-rpg-room/fuentes/aventura/LEEME-IA.md",
+]
+SPDX-FileCopyrightText = "2026 Numen Games S.L."
+SPDX-License-Identifier = "CC-BY-4.0"
+
+[[annotations]]
+path = [
+  "mundos/tabletop-rpg-room/fuentes/aventura.mjs",
+  "mundos/tabletop-rpg-room/fuentes/construir.mjs",
+  "mundos/tabletop-rpg-room/fuentes/fotos.mjs",
+  "mundos/tabletop-rpg-room/fuentes/glb.mjs",
+  "mundos/tabletop-rpg-room/fuentes/mapa.mjs",
+  "mundos/tabletop-rpg-room/fuentes/medidas.mjs",
+  "mundos/tabletop-rpg-room/fuentes/modelos.mjs",
+  "mundos/tabletop-rpg-room/fuentes/recorrido.mjs",
+  "mundos/tabletop-rpg-room/fuentes/rehacer.sh",
+  "mundos/tabletop-rpg-room/fuentes/servicios.sh",
+  "mundos/tabletop-rpg-room/fuentes/trazado.mjs",
+  "mundos/tabletop-rpg-room/fuentes/zip.sh",
+]
+SPDX-FileCopyrightText = "2026 Numen Games S.L."
+SPDX-License-Identifier = "MIT"
