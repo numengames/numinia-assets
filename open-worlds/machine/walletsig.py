@@ -43,6 +43,21 @@ ACTIONS: dict[str, tuple[tuple[str, str], ...]] = {
         ("nonce", "string"),
         ("expires", "uint256"),
     ),
+    # A world born from a named template of its engine: CreateWorld's fields,
+    # plus the template, before the nonce. A machine that does not know this
+    # type refuses it by name; CreateWorld itself is unchanged.
+    "CreateWorldFromTemplate": (
+        ("machine", "string"),
+        ("world", "string"),
+        ("domain", "string"),
+        ("image", "string"),
+        ("memory", "string"),
+        ("cpus", "string"),
+        ("maxUploadMb", "uint256"),
+        ("template", "string"),
+        ("nonce", "string"),
+        ("expires", "uint256"),
+    ),
     "DeleteWorld": (
         ("machine", "string"),
         ("world", "string"),

@@ -100,7 +100,7 @@ WINDOW = 15 * 60  # a signed request is good for at most fifteen minutes
 MAX_BODY = 16 * 1024
 LOG_LINES = 50
 PHASES = {"DeleteWorld": "deleting", "StopWorld": "stopping", "StartWorld": "starting", "UpdateWorld": "updating", "PinWorld": "updating"}
-BIRTHS = ("CreateWorld", "ImportWorld")  # the requests that make a world that is not here yet
+BIRTHS = (*R.CREATES, "ImportWorld")  # the requests that make a world that is not here yet
 VERSION_TYPES = (*R.VERSION_REQUESTS, "ImportVersion")  # the requests about one of a world's versions
 MAKES = ("DuplicateVersion", "ImportVersion")  # the ones that make a version: one at a time per world
 # The requests that change a world that is here: one at a time (busy).
@@ -286,6 +286,8 @@ class Door:
             "versions": {"max": V.MAX_VERSIONS},
             "engines": list(R.ENGINES),
             "updates": True,
+            # The room offers a world born from a named template only to a door that says this.
+            "templates": True,
             # Optional: a room that does not know them ignores them. `listens/pin`: this door takes a
             # PinWorld (hold a world on a build, or let it follow the fleet again).
             # `listens/nightly`: this door lists the nightly copies (GET /nightly) and takes a
@@ -478,7 +480,7 @@ class Door:
         for raw in pending.values():
             if R.request_problem(raw.get("type"), raw["message"]) is not None:
                 continue
-            if raw["type"] == "CreateWorld":
+            if raw["type"] in R.CREATES:
                 coming(raw["message"], "creating")
             elif raw["type"] == "ImportWorld":
                 coming(raw["message"], "importing")
@@ -671,11 +673,14 @@ class Door:
             # Only an engine this machine runs: numinia-hyperfy2 or numinia-engine.
             if R.engine_of(message["image"]) is None:
                 return "unknown-engine"
+            if kind == "CreateWorldFromTemplate" and R.engine_of(message["image"]) != R.NUMINIA_ENGINE:
+                return "engine-has-no-templates"  # only the Numinia Engine ships templates
             draft = {
-                "id": wid, "state": "running" if kind == "CreateWorld" else "stopped", "domain": domain,
+                "id": wid, "state": "running" if kind in R.CREATES else "stopped", "domain": domain,
                 "image": message["image"],
                 "limits": {"memory": message["memory"], "cpus": message["cpus"],
                            "maxUploadMb": message["maxUploadMb"]},
+                **({"template": message["template"]} if "template" in message else {}),
             }
             control = R.read_control_host(self.control_host_file)
             if R.refusal(draft, R.read_allowed_domains(self.domains_file), control) is not None:

@@ -388,6 +388,7 @@ as Snapshot does with votes. The wallet shows every field before signing.
 | Request | Fields |
 |---|---|
 | `CreateWorld` | machine, world, domain, image, memory, cpus, maxUploadMb, nonce, expires |
+| `CreateWorldFromTemplate` | CreateWorld's fields, and template (1–31 characters: `a-z`, `0-9`, `-`, `_`, first a letter or digit) before the nonce. Numinia Engine only (`engine-has-no-templates` otherwise). The machine keeps `template` in the world's order and nightly copy, and sets `MOTOR_PLANTILLA` on the engine; the engine reads it on the world's first boot only. The door says it takes it: `/fleet/v1/machine` → `templates: true`. The names come from the engine release; the machine keeps no list. |
 | `ImportWorld` | CreateWorld's fields, and zipBytes, zipSha256 before the nonce — then the zip itself, `PUT /fleet/v1/uploads/<nonce>` (not signed again: it must be the zip whose size and SHA-256 were signed) |
 | `DeleteWorld` | machine, world, domain, nonce, expires |
 | `StopWorld`, `StartWorld`, `DownloadWorld` | machine, world, nonce, expires |

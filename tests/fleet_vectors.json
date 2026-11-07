@@ -43,6 +43,48 @@
         "type": "uint256"
       }
     ],
+    "CreateWorldFromTemplate": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "type": "string"
+      },
+      {
+        "name": "domain",
+        "type": "string"
+      },
+      {
+        "name": "image",
+        "type": "string"
+      },
+      {
+        "name": "memory",
+        "type": "string"
+      },
+      {
+        "name": "cpus",
+        "type": "string"
+      },
+      {
+        "name": "maxUploadMb",
+        "type": "uint256"
+      },
+      {
+        "name": "template",
+        "type": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
+    ],
     "DeleteWorld": [
       {
         "name": "machine",
@@ -259,6 +301,38 @@
         "type": "uint256"
       }
     ],
+    "FleetVitalsRead": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "issuedAt",
+        "type": "uint256"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      }
+    ],
+    "FleetSigners": [
+      {
+        "name": "signers",
+        "type": "string"
+      },
+      {
+        "name": "seq",
+        "type": "uint256"
+      },
+      {
+        "name": "issuedAt",
+        "type": "uint256"
+      }
+    ],
     "PinWorld": [
       {
         "name": "machine",
@@ -282,20 +356,6 @@
       },
       {
         "name": "expires",
-        "type": "uint256"
-      }
-    ],
-    "FleetSigners": [
-      {
-        "name": "signers",
-        "type": "string"
-      },
-      {
-        "name": "seq",
-        "type": "uint256"
-      },
-      {
-        "name": "issuedAt",
         "type": "uint256"
       }
     ],
@@ -387,6 +447,28 @@
         "type": "uint256"
       }
     ],
+    "DownloadNightly": [
+      {
+        "name": "machine",
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "type": "string"
+      },
+      {
+        "name": "stamp",
+        "type": "string"
+      },
+      {
+        "name": "nonce",
+        "type": "string"
+      },
+      {
+        "name": "expires",
+        "type": "uint256"
+      }
+    ],
     "ImportVersion": [
       {
         "name": "machine",
@@ -415,46 +497,6 @@
       {
         "name": "expires",
         "type": "uint256"
-      }
-    ],
-    "DownloadNightly": [
-      {
-        "name": "machine",
-        "type": "string"
-      },
-      {
-        "name": "world",
-        "type": "string"
-      },
-      {
-        "name": "stamp",
-        "type": "string"
-      },
-      {
-        "name": "nonce",
-        "type": "string"
-      },
-      {
-        "name": "expires",
-        "type": "uint256"
-      }
-    ],
-    "FleetVitalsRead": [
-      {
-        "name": "machine",
-        "type": "string"
-      },
-      {
-        "name": "issuedAt",
-        "type": "uint256"
-      },
-      {
-        "name": "expires",
-        "type": "uint256"
-      },
-      {
-        "name": "nonce",
-        "type": "string"
       }
     ]
   },
@@ -738,6 +780,24 @@
       "digest": "0x9e6e3e77e9b6e4fb6e7496b64d805054ce65f1fdea959768535f4c3dfaf631bd",
       "signature": "0x90d1cce697d61ec624a5463375e276dbb02a6857c3f59e81c9cd95c910cc16e6064ae321c5bc1288ba514ac7224b668c755341ca5f693ff0f23a694c1bbff5131b",
       "signer": "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a"
+    },
+    {
+      "type": "CreateWorldFromTemplate",
+      "message": {
+        "machine": "open-1",
+        "world": "nomada",
+        "domain": "nomada.numinia.com",
+        "image": "ghcr.io/numengames/numinia-engine:sha-0e2045370989d051e73f81c7c9d53121d5c374b3",
+        "memory": "2g",
+        "cpus": "1.5",
+        "maxUploadMb": 50,
+        "template": "hermes",
+        "nonce": "fedcba9876543210fedcba9876543210",
+        "expires": 1893456000
+      },
+      "digest": "0x2ea0463feca07abe624a2e44073dbbfb43a39f289487e99dcc83e9b597cbb463",
+      "signature": "0xd3330bd2bfe03834f2475a086f87d2fbd9bceea0fd4dc1943c41a0a8320fead84cf18b977aa5397a957bba008b57a1fc275c08db2347814ccb88260b22ef3c641c",
+      "signer": "0x3c311e4ae233db15f46bd0014ce8e6e532bc06e8"
     }
   ],
   "stranger": {

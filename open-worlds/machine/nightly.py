@@ -244,7 +244,7 @@ def copy_engine_world(env: Env, order: dict, now: float) -> Path:
     final = folder / f"{wid}-{stamp}.zip"
     part = folder / f".{wid}-{stamp}.zip.part"
     side = order_file(final)
-    kept = {key: order[key] for key in ("id", "domain", "image", "limits", "org") if key in order}  # never keys
+    kept = {key: order[key] for key in ("id", "domain", "image", "limits", "org", "template") if key in order}  # never keys
     try:
         R.engine_copia(order, data, part, mode=0o600)
         with zipfile.ZipFile(part) as zipped:

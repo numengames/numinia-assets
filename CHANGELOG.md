@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `open-worlds/machine/`: a new signed request `CreateWorldFromTemplate` (MIS-297): CreateWorld's
+  fields plus `template` (the engine's own name rule), Numinia Engine only. The template is kept in
+  the world's order and nightly copy and reaches the engine as `MOTOR_PLANTILLA`; `GET
+  /fleet/v1/machine` says `templates: true`. `CreateWorld` is unchanged.
+
 - `open-worlds/machine/`: a private door onto one machine's own vitals. `GET
   /fleet/v1/vitals/minute|five|hour` answers only to an Oracle's read token (`FleetVitalsRead`:
   machine, issuedAt, expires, nonce; EIP-712, `Authorization: Bearer <base64 of the signed
