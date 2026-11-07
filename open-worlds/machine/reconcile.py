@@ -280,12 +280,17 @@ STAMP = re.compile(r"[0-9]{8}-[0-9]{6}")  # a nightly copy's stamp: YYYYMMDD-HHM
 VERSION = re.compile(r"v[1-9][0-9]{0,3}")  # a world's version: v1, v2, … never reused within a world
 # A name inside a zip that starts with a drive (C:, c:\…): a Windows path, never a world's.
 DRIVE = re.compile(r"[A-Za-z]:.*", re.DOTALL)
+# A template's name, as the engine itself names them (numinia-engine).
+TEMPLATE = re.compile(r"[a-z0-9][a-z0-9_-]{0,30}")
+# The requests that make a world that is not here yet, and are not a zip: it is born as the engine's default, or from a named template.
+CREATES = ("CreateWorld", "CreateWorldFromTemplate")
 # The shape every string field of a signed request must have.
 FIELD_RULES = {
     "machine": SLUG,
     "world": SLUG,
     "domain": HOST,
     "image": IMAGE,
+    "template": TEMPLATE,
     "reason": REASON,
     "memory": MEMORY,
     "cpus": CPUS,
@@ -398,6 +403,8 @@ def refusal(
         return "image is not from ghcr.io/numengames/ pinned to a sha- tag or a digest"
     if "org" in order and not matches(SLUG, order.get("org")):
         return "org is not lowercase letters, digits and hyphens"
+    if "template" in order and not matches(TEMPLATE, order.get("template")):
+        return "template is not 1 to 31 lowercase letters, digits, hyphens or underscores, starting with a letter or digit"
     domain = order.get("domain")
     if not isinstance(domain, str) or not domain_allowed(domain.lower(), allowed):
         return f"domain is neither one label under {'/'.join(HOUSE_ZONES)} nor listed in {DOMAINS_FILE}"
@@ -427,6 +434,7 @@ def clean(order: dict) -> dict:
         "image": order["image"],
         "limits": {"memory": limits["memory"], "cpus": limits["cpus"], "maxUploadMb": limits["maxUploadMb"]},
         **({"org": order["org"]} if "org" in order else {}),
+        **({"template": order["template"]} if "template" in order else {}),
     }
 
 
@@ -632,6 +640,9 @@ def engine_service(o: dict, home: Path) -> dict:
     engine ignores every pass and "Entrar" silently makes everyone a guest.
     MOTOR_PASE_ORG follows only when the order names an organization — no
     signed request sets `org` yet (see open-worlds/machine/README.md).
+    MOTOR_PLANTILLA follows only when the order names a template (a
+    CreateWorldFromTemplate): the engine reads it on a world's first boot
+    only, so a later pass changes nothing. It is never read from a key file.
     MOTOR_TOPE_PERSONAS follows only when the order's talla (its memory and
     cpus tope) is one of the three in fleet-pricing/ESTUDIO-precio-de-los-
     mundos.md §5.1: the people cap the machine sets for that talla, for the
@@ -649,6 +660,7 @@ def engine_service(o: dict, home: Path) -> dict:
             "MOTOR_PASE_CLAVE": WORLD_PASS_KEY,
             "MOTOR_PASE_MUNDO": wid,
             **({"MOTOR_PASE_ORG": o["org"]} if "org" in o else {}),
+            **({"MOTOR_PLANTILLA": o["template"]} if "template" in o else {}),
             **({"MOTOR_TOPE_PERSONAS": str(cap)} if cap is not None else {}),
         },
         "volumes": [f"{home}/data/{wid}:{ENGINE_FOLDER}"],
@@ -1156,7 +1168,7 @@ def change_book(
         return None  # the door showed the code; this is the record of it, and nothing changes
     path = orders / f"{wid}.json"
     current = read_order(path)
-    if kind == "CreateWorld":
+    if kind in CREATES:
         if current is not None or path.exists():
             return "a world with this name already exists here"
         domain = message["domain"]
@@ -1167,6 +1179,8 @@ def change_book(
             return "another world already has this address"
         if engine_of(message["image"]) is None:
             return "unknown-engine"
+        if kind == "CreateWorldFromTemplate" and engine_of(message["image"]) != NUMINIA_ENGINE:
+            return "engine-has-no-templates"
         order = {
             "id": wid,
             "card": wid,
@@ -1177,6 +1191,7 @@ def change_book(
             "limits": {"memory": message["memory"], "cpus": message["cpus"], "maxUploadMb": message["maxUploadMb"]},
             "createdAt": utc(now),
             "createdBy": entry["by"],
+            **({"template": message["template"]} if kind == "CreateWorldFromTemplate" else {}),
         }
         why = refusal(order, allowed, control_host)
         if why:
@@ -1320,7 +1335,7 @@ def carried_code(raw: object, kind: object) -> tuple[str | None, str | None]:
     change of code must carry the code the door already showed to the
     Oracle, and only a plain one is ever written.
     """
-    if kind not in ("CreateWorld", "ImportWorld", "RotateWorldCode") or not isinstance(raw, dict):
+    if kind not in (*CREATES, "ImportWorld", "RotateWorldCode") or not isinstance(raw, dict):
         return None, None
     if "adminCode" not in raw:
         if kind != "RotateWorldCode":
@@ -1339,7 +1354,7 @@ def key_world(home: Path, orders: Path, codes_dir: Path, entry: dict, admin_code
     create whose keys cannot be written is undone: no world without its code.
     """
     wid = entry["world"]
-    created = entry["type"] == "CreateWorld"
+    created = entry["type"] in CREATES
     try:
         if not created:
             queue_restart(home, wid)
