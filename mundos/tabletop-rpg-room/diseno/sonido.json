@@ -1,0 +1,923 @@
+{
+  "schema": "sonido-gabinete@1",
+  "world": "tabletop-rpg-room",
+  "version_target": "2.1.0-dev",
+  "language_default": "en",
+  "status": "design (C1); no audio file exists yet; sources named at pack level",
+  "buses": {
+    "voice": {
+      "default_db": 0,
+      "note": "Reference level. Nothing else is ever louder; voice chat never ducked."
+    },
+    "effects": {
+      "default_db": -6,
+      "user_slider": true
+    },
+    "ui": {
+      "default_db": -6,
+      "user_slider": true
+    },
+    "ambient": {
+      "default_db": -6,
+      "user_slider": true
+    },
+    "music": {
+      "default_db": -8,
+      "user_slider": true,
+      "default_track": null
+    }
+  },
+  "budget": {
+    "format": "ogg/opus mono 48 kbps (ambient loops stereo not required)",
+    "per_effect_max_kB": 40,
+    "total_effects_max_kB": 450,
+    "per_loop_max_kB": 120,
+    "voices_max_desktop": 12,
+    "voices_max_phone": 6,
+    "load": "lazy by station; never part of the first-draw page budget",
+    "status": "design targets, not measured"
+  },
+  "sources": {
+    "casino": "Kenney Casino Audio (https://kenney.nl/assets/casino-audio, CC0)",
+    "rpg": "Kenney RPG Audio (https://kenney.nl/assets/rpg-audio, CC0)",
+    "ui": "Kenney Interface Sounds (https://kenney.nl/assets/interface-sounds, CC0)",
+    "impact": "Kenney Impact Sounds (https://kenney.nl/assets/impact-sounds, CC0)",
+    "own": "Own work, Numen Games, procedural (script, CC0)"
+  },
+  "sounds": {
+    "amb_room": {
+      "what": "Room tone: faint mechanism and paper murmur, loop",
+      "source": "own",
+      "spec": "Pink noise 120-900 Hz band-pass, 2 slow amplitude swells, a rare paper rustle (filtered noise burst, 1 per 20 s). Seamless 20 s loop, mono.",
+      "bus": "ambient",
+      "peak_db_vs_voice": -30,
+      "max_ms": 20000,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    },
+    "amb_vestibule": {
+      "what": "Vestibule resonance, loop",
+      "source": "own",
+      "spec": "Two detuned sines 82.4 Hz + 123.5 Hz, 6 s swell, soft low-pass 600 Hz. Seamless 12 s loop, mono.",
+      "bus": "ambient",
+      "peak_db_vs_voice": -32,
+      "max_ms": 12000,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    },
+    "step_wood": {
+      "what": "Step on wooden floor",
+      "source": "rpg",
+      "spec": "footstep-type files; 4 variants, pick at build",
+      "bus": "effects",
+      "peak_db_vs_voice": -22,
+      "max_ms": 400,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "mech_access": {
+      "what": "Access mechanism / ceremonial door",
+      "source": "rpg",
+      "spec": "door open/close + creak files; layered with 1 Impact Sounds wood-heavy file",
+      "bus": "effects",
+      "peak_db_vs_voice": -18,
+      "max_ms": 1800,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "page_flip": {
+      "what": "Page turn",
+      "source": "rpg",
+      "spec": "book flip files; 3 variants",
+      "bus": "effects",
+      "peak_db_vs_voice": -22,
+      "max_ms": 500,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "book_open": {
+      "what": "Book / notebook opens",
+      "source": "rpg",
+      "spec": "book open file",
+      "bus": "effects",
+      "peak_db_vs_voice": -20,
+      "max_ms": 700,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "book_close": {
+      "what": "Book / notebook closes",
+      "source": "rpg",
+      "spec": "book close file",
+      "bus": "effects",
+      "peak_db_vs_voice": -20,
+      "max_ms": 600,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "drawer": {
+      "what": "Drawer / cabinet",
+      "source": "impact",
+      "spec": "soft wood impact, low-passed 3 kHz at build",
+      "bus": "effects",
+      "peak_db_vs_voice": -22,
+      "max_ms": 500,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "bell_min": {
+      "what": "Minimal call bell",
+      "source": "own",
+      "spec": "Bell partials 1 : 2.76 : 5.40 : 8.93 of 1318.5 Hz (E6), gains 0 / -9 / -15 / -21 dB, decay 700 ms.",
+      "bus": "effects",
+      "peak_db_vs_voice": -24,
+      "max_ms": 900,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    },
+    "dice_wood": {
+      "what": "Dice on wood tray",
+      "source": "casino",
+      "spec": "die/dice throw files; 3 variants",
+      "bus": "effects",
+      "peak_db_vs_voice": -16,
+      "max_ms": 900,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "dice_metal": {
+      "what": "Metal dice on brass tray",
+      "source": "casino",
+      "spec": "die throw file + Impact Sounds metal-light layer, high-passed 400 Hz",
+      "bus": "effects",
+      "peak_db_vs_voice": -16,
+      "max_ms": 900,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "dice_bone": {
+      "what": "Bone/resin dice, d6 group",
+      "source": "casino",
+      "spec": "dice throw (multiple) file",
+      "bus": "effects",
+      "peak_db_vs_voice": -16,
+      "max_ms": 1000,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "dice_result": {
+      "what": "Result lands (single clear tick)",
+      "source": "ui",
+      "spec": "one short confirm/tick file",
+      "bus": "ui",
+      "peak_db_vs_voice": -18,
+      "max_ms": 250,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "ui_click": {
+      "what": "Button / label press",
+      "source": "ui",
+      "spec": "click file (soft)",
+      "bus": "ui",
+      "peak_db_vs_voice": -20,
+      "max_ms": 150,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "ui_toggle": {
+      "what": "Switch on/off (panel, option)",
+      "source": "ui",
+      "spec": "toggle/switch files (2: on, off)",
+      "bus": "ui",
+      "peak_db_vs_voice": -20,
+      "max_ms": 200,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "ui_confirm": {
+      "what": "Action accepted (step checked, saved)",
+      "source": "ui",
+      "spec": "confirmation file (soft, low pitch)",
+      "bus": "ui",
+      "peak_db_vs_voice": -18,
+      "max_ms": 400,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "ui_error": {
+      "what": "Action refused (UI_1090-UI_1094)",
+      "source": "ui",
+      "spec": "error/back file, the mildest one",
+      "bus": "ui",
+      "peak_db_vs_voice": -20,
+      "max_ms": 350,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "ui_send": {
+      "what": "Chat message sent",
+      "source": "ui",
+      "spec": "soft select file",
+      "bus": "ui",
+      "peak_db_vs_voice": -22,
+      "max_ms": 250,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "ui_whisper": {
+      "what": "Whisper channel opens",
+      "source": "ui",
+      "spec": "toggle file pitched -3 semitones at build",
+      "bus": "ui",
+      "peak_db_vs_voice": -22,
+      "max_ms": 300,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "map_unfold": {
+      "what": "Map unfolds",
+      "source": "rpg",
+      "spec": "cloth file + Casino Audio card slide file layered",
+      "bus": "effects",
+      "peak_db_vs_voice": -20,
+      "max_ms": 1200,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "mini_set": {
+      "what": "Miniature set down on board",
+      "source": "impact",
+      "spec": "soft wood-light impact, 3 variants",
+      "bus": "effects",
+      "peak_db_vs_voice": -20,
+      "max_ms": 300,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "door_stage": {
+      "what": "Stage door opens/closes (diorama)",
+      "source": "rpg",
+      "spec": "door file at -6 dB and 1.5 x pitch (small scale)",
+      "bus": "effects",
+      "peak_db_vs_voice": -22,
+      "max_ms": 900,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "lamp_switch": {
+      "what": "Lamp on/off (diorama)",
+      "source": "ui",
+      "spec": "switch file, low-passed 4 kHz",
+      "bus": "effects",
+      "peak_db_vs_voice": -22,
+      "max_ms": 250,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "turn_next": {
+      "what": "Turn marker advances (single mechanical tick, never repeating)",
+      "source": "impact",
+      "spec": "metal-light impact, 1 file",
+      "bus": "effects",
+      "peak_db_vs_voice": -20,
+      "max_ms": 350,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "macro_run": {
+      "what": "Safe practice action runs",
+      "source": "ui",
+      "spec": "soft confirm file",
+      "bus": "ui",
+      "peak_db_vs_voice": -20,
+      "max_ms": 400,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "card_shuffle": {
+      "what": "Shuffle deck",
+      "source": "casino",
+      "spec": "card shuffle file",
+      "bus": "effects",
+      "peak_db_vs_voice": -20,
+      "max_ms": 1500,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "card_draw": {
+      "what": "Draw a card",
+      "source": "casino",
+      "spec": "card slide/place file",
+      "bus": "effects",
+      "peak_db_vs_voice": -20,
+      "max_ms": 500,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "table_roll": {
+      "what": "Random table picks an entry",
+      "source": "casino",
+      "spec": "chip/dice-light file + ui_confirm layered",
+      "bus": "effects",
+      "peak_db_vs_voice": -20,
+      "max_ms": 800,
+      "file_status": "to select/build in C3; pack-level source verified CC0 on its page, file names not yet checked against the download"
+    },
+    "crystal_rise": {
+      "what": "Crystal Narrative: tonal rise while the form is proposed",
+      "source": "own",
+      "spec": "Sine sweep 392 -> 783.99 Hz over 1.6 s, + octave -12 dB, gentle tremolo 5 Hz 8 %, low-pass 5 kHz.",
+      "bus": "effects",
+      "peak_db_vs_voice": -18,
+      "max_ms": 1800,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    },
+    "crystal_chime": {
+      "what": "Crystal Narrative: short harmony and glassy resonance when the object appears",
+      "source": "own",
+      "spec": "Chord G4 B4 D5 (392.00 / 493.88 / 587.33 Hz), partial ratios 1 : 2.9 : 5.4, decay 1.4 s.",
+      "bus": "effects",
+      "peak_db_vs_voice": -18,
+      "max_ms": 1800,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    },
+    "crystal_fade": {
+      "what": "Crystal Narrative: object withdrawn",
+      "source": "own",
+      "spec": "Chime G4 B4 D5 reversed envelope then 300 ms fall to 261.63 Hz.",
+      "bus": "effects",
+      "peak_db_vs_voice": -22,
+      "max_ms": 1000,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    },
+    "staff_take": {
+      "what": "Staff: you hold it (possession signature)",
+      "source": "own",
+      "spec": "Two notes D3 -> A3 (146.83 / 220.00 Hz), warm triangle + sine, 450 ms each, soft attack 40 ms, ring of 1.2 s.",
+      "bus": "effects",
+      "peak_db_vs_voice": -18,
+      "max_ms": 1700,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    },
+    "staff_give": {
+      "what": "Staff: you hand it over (release signature)",
+      "source": "own",
+      "spec": "Mirror of staff_take: A3 -> D3, same timbre.",
+      "bus": "effects",
+      "peak_db_vs_voice": -18,
+      "max_ms": 1700,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    },
+    "lens_perspectiva": {
+      "what": "Atlas chord 1 (Perspective)",
+      "source": "own",
+      "spec": "C major C4 E4 G4 (261.63 / 329.63 / 392.00 Hz), sine + 2nd harmonic -12 dB, attack 15 ms, 1.2 s decay.",
+      "bus": "effects",
+      "peak_db_vs_voice": -16,
+      "max_ms": 1300,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    },
+    "lens_azar": {
+      "what": "Atlas chord 2 (Chance)",
+      "source": "own",
+      "spec": "G major G3 B3 D4 (196.00 / 246.94 / 293.66 Hz), same timbre.",
+      "bus": "effects",
+      "peak_db_vs_voice": -16,
+      "max_ms": 1300,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    },
+    "lens_forma": {
+      "what": "Atlas chord 3 (Form)",
+      "source": "own",
+      "spec": "F major F3 A3 C4 (174.61 / 220.00 / 261.63 Hz), same timbre.",
+      "bus": "effects",
+      "peak_db_vs_voice": -16,
+      "max_ms": 1300,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    },
+    "lens_relato": {
+      "what": "Atlas chord 4 (Story)",
+      "source": "own",
+      "spec": "A minor A3 C4 E4 (220.00 / 261.63 / 329.63 Hz), same timbre.",
+      "bus": "effects",
+      "peak_db_vs_voice": -16,
+      "max_ms": 1300,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    },
+    "atlas_close": {
+      "what": "Atlas closing chord (all four lenses)",
+      "source": "own",
+      "spec": "C major spread C3 G3 E4 C5 G5, same timbre, 2.4 s decay, no fanfare.",
+      "bus": "effects",
+      "peak_db_vs_voice": -14,
+      "max_ms": 2500,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    },
+    "safe_save": {
+      "what": "Secure archive / save confirmed (calm)",
+      "source": "own",
+      "spec": "Two soft sines C3 + G3 (130.81 / 196.00 Hz) 600 ms, low-pass 1.2 kHz.",
+      "bus": "effects",
+      "peak_db_vs_voice": -24,
+      "max_ms": 900,
+      "file_status": "to build in C3 from the spec; own work, CC0"
+    }
+  },
+  "cues": [
+    {
+      "station": "E0",
+      "id": "c0_ambient",
+      "trigger": "Instance loaded, scene ready",
+      "sound": "amb_vestibule",
+      "caption": "silent"
+    },
+    {
+      "station": "E0",
+      "id": "c0_door",
+      "trigger": "Ceremonial door shows open (scene start, once)",
+      "sound": "mech_access",
+      "caption": {
+        "en": "[Mechanism: the door is open]",
+        "es": "[Mecanismo: la puerta está abierta]"
+      }
+    },
+    {
+      "station": "E0",
+      "id": "c0_steps",
+      "trigger": "Avatar walks on wood (rate by speed, silent when still)",
+      "sound": "step_wood",
+      "caption": "silent"
+    },
+    {
+      "station": "E0",
+      "id": "c0_label",
+      "trigger": "«Talk to Senet» appears",
+      "sound": "ui_click",
+      "caption": "silent"
+    },
+    {
+      "station": "E1",
+      "id": "c1_ambient",
+      "trigger": "Dialogue with Senet starts",
+      "sound": "amb_room",
+      "caption": "silent"
+    },
+    {
+      "station": "E1",
+      "id": "c1_book",
+      "trigger": "Notebook handed over / opened first time",
+      "sound": "book_open",
+      "caption": {
+        "en": "[Notebook received]",
+        "es": "[Cuaderno recibido]"
+      }
+    },
+    {
+      "station": "E1",
+      "id": "c1_accept",
+      "trigger": "«Learn to use the room» pressed",
+      "sound": "ui_confirm",
+      "caption": {
+        "en": "[Practice started]",
+        "es": "[Práctica iniciada]"
+      }
+    },
+    {
+      "station": "E2",
+      "id": "c2_mirror",
+      "trigger": "Avatar view changes (V / wheel / button)",
+      "sound": "ui_toggle",
+      "caption": {
+        "en": "[View changed]",
+        "es": "[Vista cambiada]"
+      },
+      "ui_code": "UI_020"
+    },
+    {
+      "station": "E2",
+      "id": "c2_notebook",
+      "trigger": "Notebook opens (J) / closes",
+      "sound": "book_open",
+      "caption": "silent"
+    },
+    {
+      "station": "E2",
+      "id": "c2_board",
+      "trigger": "Board view on / back to seat",
+      "sound": "ui_toggle",
+      "caption": {
+        "en": "[Board view]",
+        "es": "[Vista de tablero]"
+      }
+    },
+    {
+      "station": "E2",
+      "id": "c2_lens",
+      "trigger": "Four marks done: Perspective lens lights",
+      "sound": "lens_perspectiva",
+      "caption": {
+        "en": "[Perspective completed]",
+        "es": "[Perspectiva completada]"
+      },
+      "ui_code": "UI_030"
+    },
+    {
+      "station": "E3",
+      "id": "c3_throw_d20",
+      "trigger": "1d20 thrown",
+      "sound": "dice_wood",
+      "caption": {
+        "en": "[Dice rolling]",
+        "es": "[Dados rodando]"
+      }
+    },
+    {
+      "station": "E3",
+      "id": "c3_throw_3d6",
+      "trigger": "3d6 thrown as a group",
+      "sound": "dice_bone",
+      "caption": {
+        "en": "[Dice rolling]",
+        "es": "[Dados rodando]"
+      }
+    },
+    {
+      "station": "E3",
+      "id": "c3_throw_formula",
+      "trigger": "Formula 2d10+5 thrown",
+      "sound": "dice_metal",
+      "caption": {
+        "en": "[Dice rolling]",
+        "es": "[Dados rodando]"
+      }
+    },
+    {
+      "station": "E3",
+      "id": "c3_result",
+      "trigger": "Each result is written to the log",
+      "sound": "dice_result",
+      "caption": {
+        "en": "[Result: <total>]",
+        "es": "[Resultado: <total>]"
+      }
+    },
+    {
+      "station": "E3",
+      "id": "c3_invalid",
+      "trigger": "Invalid formula (nothing thrown)",
+      "sound": "ui_error",
+      "caption": {
+        "en": "[Invalid dice formula]",
+        "es": "[Fórmula de dado no válida]"
+      },
+      "ui_code": "UI_1093"
+    },
+    {
+      "station": "E3",
+      "id": "c3_lens",
+      "trigger": "Chance lens lights",
+      "sound": "lens_azar",
+      "caption": {
+        "en": "[Chance lens lit]",
+        "es": "[Lente de Azar encendida]"
+      }
+    },
+    {
+      "station": "E4",
+      "id": "c4_sheet_open",
+      "trigger": "Iria's sheet opens (quick card / full panel)",
+      "sound": "page_flip",
+      "caption": "silent"
+    },
+    {
+      "station": "E4",
+      "id": "c4_save_note",
+      "trigger": "Note edit saved",
+      "sound": "ui_confirm",
+      "caption": {
+        "en": "[Saved]",
+        "es": "[Guardado]"
+      }
+    },
+    {
+      "station": "E4",
+      "id": "c4_link",
+      "trigger": "Miniature linked to the character",
+      "sound": "drawer",
+      "caption": {
+        "en": "[Miniature linked]",
+        "es": "[Miniatura vinculada]"
+      }
+    },
+    {
+      "station": "E4",
+      "id": "c4_inventory",
+      "trigger": "Item added to inventory",
+      "sound": "drawer",
+      "caption": {
+        "en": "[Item added]",
+        "es": "[Objeto añadido]"
+      }
+    },
+    {
+      "station": "E4",
+      "id": "c4_lens",
+      "trigger": "Form lens (provisional) lights",
+      "sound": "lens_forma",
+      "caption": {
+        "en": "[Form lens lit]",
+        "es": "[Lente de Forma encendida]"
+      }
+    },
+    {
+      "station": "E5",
+      "id": "c5_map",
+      "trigger": "2D map unfolds, then the 3D model",
+      "sound": "map_unfold",
+      "caption": {
+        "en": "[Map unfolded]",
+        "es": "[Mapa desplegado]"
+      }
+    },
+    {
+      "station": "E5",
+      "id": "c5_move",
+      "trigger": "Miniature set on a valid square",
+      "sound": "mini_set",
+      "caption": {
+        "en": "[Miniature moved]",
+        "es": "[Miniatura movida]"
+      }
+    },
+    {
+      "station": "E5",
+      "id": "c5_invalid",
+      "trigger": "Invalid move (miniature stays)",
+      "sound": "ui_error",
+      "caption": {
+        "en": "[Move not available]",
+        "es": "[Acción no disponible]"
+      },
+      "ui_code": "UI_1090"
+    },
+    {
+      "station": "E5",
+      "id": "c5_measure",
+      "trigger": "Distance measured (ruler)",
+      "sound": "ui_confirm",
+      "caption": {
+        "en": "[Distance: <n>]",
+        "es": "[Distancia: <n>]"
+      }
+    },
+    {
+      "station": "E6",
+      "id": "c6_door",
+      "trigger": "Stage door opens/closes",
+      "sound": "door_stage",
+      "caption": {
+        "en": "[Stage door: open|closed]",
+        "es": "[Puerta de la maqueta: abierta|cerrada]"
+      }
+    },
+    {
+      "station": "E6",
+      "id": "c6_lamp",
+      "trigger": "Lamp on/off",
+      "sound": "lamp_switch",
+      "caption": {
+        "en": "[Lamp: on|off]",
+        "es": "[Lámpara: encendida|apagada]"
+      }
+    },
+    {
+      "station": "E6",
+      "id": "c6_preview",
+      "trigger": "Character / practice-DJ preview toggled",
+      "sound": "ui_toggle",
+      "caption": {
+        "en": "[Preview: <mode>]",
+        "es": "[Vista previa: <modo>]"
+      }
+    },
+    {
+      "station": "E7",
+      "id": "c7_open",
+      "trigger": "Turn clock opens",
+      "sound": "turn_next",
+      "caption": "silent"
+    },
+    {
+      "station": "E7",
+      "id": "c7_next",
+      "trigger": "Next turn (one tick per advance, none while idle)",
+      "sound": "turn_next",
+      "caption": {
+        "en": "[Turn: <name>]",
+        "es": "[Turno: <nombre>]"
+      }
+    },
+    {
+      "station": "E7",
+      "id": "c7_macro",
+      "trigger": "Safe practice action confirmed and run",
+      "sound": "macro_run",
+      "caption": {
+        "en": "[Practice action done]",
+        "es": "[Acción de práctica hecha]"
+      }
+    },
+    {
+      "station": "E8",
+      "id": "c8_doc",
+      "trigger": "Atlas page opens",
+      "sound": "page_flip",
+      "caption": "silent"
+    },
+    {
+      "station": "E8",
+      "id": "c8_shuffle",
+      "trigger": "Deck shuffled",
+      "sound": "card_shuffle",
+      "caption": {
+        "en": "[Deck shuffled]",
+        "es": "[Mazo barajado]"
+      }
+    },
+    {
+      "station": "E8",
+      "id": "c8_draw",
+      "trigger": "Card drawn",
+      "sound": "card_draw",
+      "caption": {
+        "en": "[Card drawn]",
+        "es": "[Carta robada]"
+      }
+    },
+    {
+      "station": "E8",
+      "id": "c8_table",
+      "trigger": "Random table run",
+      "sound": "table_roll",
+      "caption": {
+        "en": "[Table: <entry>]",
+        "es": "[Tabla: <entrada>]"
+      }
+    },
+    {
+      "station": "E8",
+      "id": "c8_bell",
+      "trigger": "Resource saved to the library (the minimal bell)",
+      "sound": "bell_min",
+      "caption": {
+        "en": "[Resource saved]",
+        "es": "[Recurso guardado]"
+      }
+    },
+    {
+      "station": "E9",
+      "id": "c9_send",
+      "trigger": "Chat message sent",
+      "sound": "ui_send",
+      "caption": {
+        "en": "[Message sent]",
+        "es": "[Mensaje enviado]"
+      }
+    },
+    {
+      "station": "E9",
+      "id": "c9_whisper",
+      "trigger": "Whisper opens",
+      "sound": "ui_whisper",
+      "caption": {
+        "en": "[Whisper channel]",
+        "es": "[Canal de susurro]"
+      }
+    },
+    {
+      "station": "E9",
+      "id": "c9_music",
+      "trigger": "Gramophone starts / pauses a track the DJ or user chose (no default track)",
+      "sound": "ui_toggle",
+      "caption": {
+        "en": "[Music: on|paused]",
+        "es": "[Música: sonando|en pausa]"
+      }
+    },
+    {
+      "station": "E9",
+      "id": "c9_room",
+      "trigger": "Room tone under table observation",
+      "sound": "amb_room",
+      "caption": "silent"
+    },
+    {
+      "station": "E10",
+      "id": "c10_form",
+      "trigger": "Crystal form opens",
+      "sound": "ui_toggle",
+      "caption": "silent"
+    },
+    {
+      "station": "E10",
+      "id": "c10_rise",
+      "trigger": "Proposal sent: tonal rise while it is previewed",
+      "sound": "crystal_rise",
+      "caption": {
+        "en": "[Crystal: proposal projecting]",
+        "es": "[Cristal: propuesta proyectándose]"
+      }
+    },
+    {
+      "station": "E10",
+      "id": "c10_appear",
+      "trigger": "Object (or labelled marker) created",
+      "sound": "crystal_chime",
+      "caption": {
+        "en": "[Crystal: object created]",
+        "es": "[Cristal: objeto creado]"
+      }
+    },
+    {
+      "station": "E10",
+      "id": "c10_withdraw",
+      "trigger": "Object withdrawn / redone",
+      "sound": "crystal_fade",
+      "caption": {
+        "en": "[Crystal: object withdrawn]",
+        "es": "[Cristal: objeto retirado]"
+      }
+    },
+    {
+      "station": "E11",
+      "id": "c11_take",
+      "trigger": "Staff passes to the player",
+      "sound": "staff_take",
+      "caption": {
+        "en": "[You hold the Staff]",
+        "es": "[Usted tiene el Báculo]"
+      }
+    },
+    {
+      "station": "E11",
+      "id": "c11_give",
+      "trigger": "Staff returned to Senet",
+      "sound": "staff_give",
+      "caption": {
+        "en": "[Staff returned to Senet]",
+        "es": "[Báculo devuelto a Senet]"
+      }
+    },
+    {
+      "station": "E11",
+      "id": "c11_busy",
+      "trigger": "Staff request refused (already held)",
+      "sound": "ui_error",
+      "caption": {
+        "en": "[The Staff is already taken]",
+        "es": "[El Báculo ya está ocupado]"
+      },
+      "ui_code": "UI_1094"
+    },
+    {
+      "station": "E12",
+      "id": "c12_door",
+      "trigger": "Mechanism opens the door",
+      "sound": "door_stage",
+      "caption": {
+        "en": "[Mechanism: door open]",
+        "es": "[Mecanismo: puerta abierta]"
+      }
+    },
+    {
+      "station": "E12",
+      "id": "c12_roll",
+      "trigger": "2d6 thrown",
+      "sound": "dice_wood",
+      "caption": {
+        "en": "[Dice rolling]",
+        "es": "[Dados rodando]"
+      }
+    },
+    {
+      "station": "E12",
+      "id": "c12_lens",
+      "trigger": "Story lens lights, then the Atlas wakes (4 chords in order, 1.2 s apart, then the closing chord)",
+      "sound": "lens_relato",
+      "caption": {
+        "en": "[Atlas awake]",
+        "es": "[Atlas despierto]"
+      }
+    },
+    {
+      "station": "E12",
+      "id": "c12_close",
+      "trigger": "Atlas closing chord after lens 4",
+      "sound": "atlas_close",
+      "caption": "silent"
+    },
+    {
+      "station": "E13",
+      "id": "c13_save",
+      "trigger": "Save confirmed (only after the save is real)",
+      "sound": "safe_save",
+      "caption": {
+        "en": "[Progress saved]",
+        "es": "[Progreso guardado]"
+      },
+      "ui_code": "UI_990"
+    },
+    {
+      "station": "E13",
+      "id": "c13_fail",
+      "trigger": "Save failed",
+      "sound": "ui_error",
+      "caption": {
+        "en": "[Could not save]",
+        "es": "[No se pudo guardar]"
+      },
+      "ui_code": "UI_1092"
+    },
+    {
+      "station": "E13",
+      "id": "c13_ambient",
+      "trigger": "Room stays alive for free table",
+      "sound": "amb_room",
+      "caption": "silent"
+    }
+  ]
+}

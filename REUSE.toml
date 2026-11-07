@@ -144,3 +144,18 @@ path = [
 ]
 SPDX-FileCopyrightText = "2026 Numen Games S.L."
 SPDX-License-Identifier = "MIT"
+
+# Tabletop RPG Room, design of UI and sound (C1): texts CC-BY-4.0, data CC0. The HTML wireframe carries its own header.
+[[annotations]]
+path = [
+  "mundos/tabletop-rpg-room/diseno/UI.md",
+  "mundos/tabletop-rpg-room/diseno/SONIDO.md",
+  "mundos/tabletop-rpg-room/diseno/NOTA-PARA-PABLO.md",
+]
+SPDX-FileCopyrightText = "2026 Numen Games S.L."
+SPDX-License-Identifier = "CC-BY-4.0"
+
+[[annotations]]
+path = ["mundos/tabletop-rpg-room/diseno/sonido.json"]
+SPDX-FileCopyrightText = "2026 Numen Games S.L."
+SPDX-License-Identifier = "CC0-1.0"
