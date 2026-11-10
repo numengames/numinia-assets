@@ -42,5 +42,20 @@ class WorldFichaTests(unittest.TestCase):
                         self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(), piece["sha256"])
 
 
+class SoundDesignTests(unittest.TestCase):
+    def test_every_station_has_cues_and_every_cue_has_a_known_sound(self):
+        path = ROOT / "mundos" / "tabletop-rpg-room" / "diseno" / "sonido.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(data["schema"], "sonido-gabinete@1")
+        for key, sound in data["sounds"].items():
+            self.assertIn(sound["source"], data["sources"], key)
+            self.assertIn(sound["bus"], data["buses"], key)
+        stations = {cue["station"] for cue in data["cues"]}
+        self.assertEqual(stations, {"E%d" % i for i in range(14)})
+        for cue in data["cues"]:
+            self.assertIn(cue["sound"], data["sounds"], cue["id"])
+            self.assertTrue(cue["caption"] == "silent" or {"en", "es"} <= set(cue["caption"]), cue["id"])
+
+
 if __name__ == "__main__":
     unittest.main()
