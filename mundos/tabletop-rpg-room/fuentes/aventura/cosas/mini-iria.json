@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "mini-iria",
+  "nombre": "Miniatura de Iria",
+  "descripcion": "La miniatura de Iria. Una miniatura no es una ficha: son piezas distintas que pueden vincularse.",
+  "posicion": {
+    "x": 4.2,
+    "z": -5.2,
+    "y": 0.9400000000000001
+  },
+  "radio": 1.7,
+  "aviso": "coger la miniatura de Iria",
+  "apariencia": {
+    "escala": 0.12,
+    "color": "#3FA7A0"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}

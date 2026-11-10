@@ -1,0 +1,20 @@
+{
+  "schema": "numinia-engine/escena@1",
+  "nombre": "Capa cosmológica",
+  "preset": "noche",
+  "entorno": {
+    "cielo": {
+      "tipo": "degradado",
+      "arriba": "#03060f",
+      "horizonte": "#16325c"
+    },
+    "luz": {
+      "ambiente": 1.3,
+      "cielo": "#5a75b0"
+    },
+    "tono": {
+      "exposicion": 1
+    }
+  },
+  "narracion": "Sobre la linterna, las estrellas. El globo celeste parece girar."
+}

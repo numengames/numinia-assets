@@ -1,0 +1,39 @@
+{
+  "schema": "numinia-engine/contadores@1",
+  "contadores": [
+    {
+      "id": "ronda",
+      "nombre": "Ronda",
+      "tipo": "contador",
+      "inicio": 0,
+      "tope": 0,
+      "x": -0.7,
+      "z": -5.2,
+      "y": 1.9,
+      "donde": "ambos",
+      "manda": "dirige"
+    },
+    {
+      "id": "sesion",
+      "nombre": "Reloj de la sesión",
+      "tipo": "reloj",
+      "x": 0,
+      "z": -5.2,
+      "y": 1.9,
+      "donde": "cartel",
+      "manda": "dirige"
+    },
+    {
+      "id": "cuenta",
+      "nombre": "Cuenta atrás",
+      "tipo": "cuenta_atras",
+      "segundos": 600,
+      "x": 0.7,
+      "z": -5.2,
+      "y": 1.9,
+      "donde": "cartel",
+      "manda": "dirige",
+      "evento": "cuenta-a-cero"
+    }
+  ]
+}

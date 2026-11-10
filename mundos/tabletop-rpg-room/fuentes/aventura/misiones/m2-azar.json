@@ -1,0 +1,23 @@
+{
+  "formato": "mision@1",
+  "id": "m2-azar",
+  "titulo": "La lente del Azar",
+  "descripcion": "Tire en la torre de engranajes un dado de veinte, tres de seis y la fórmula 2d10+5. Distinga una tirada pública de una privada.",
+  "requisitos": {
+    "misiones": [
+      "m1-perspectiva"
+    ]
+  },
+  "pasos": [
+    {
+      "id": "rima",
+      "tipo": "habla_con",
+      "pnj": "rima",
+      "texto": "Tire 1d20, 3d6 y 2d10+5 en la torre (pulse la torre o /tirar) y cuénteselo a Rima"
+    }
+  ],
+  "textos": {
+    "aceptada": "Rima le espera junto a la torre.",
+    "completada": "Lente del Azar encendida."
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "formato": "mision@1",
+  "id": "m3-ficha",
+  "titulo": "La identidad tiene ficha",
+  "descripcion": "Lyra le enseña que una ficha, una miniatura y un jugador son piezas distintas.",
+  "requisitos": {
+    "misiones": [
+      "m2-azar"
+    ]
+  },
+  "pasos": [
+    {
+      "id": "iria",
+      "tipo": "coge",
+      "cosa": "ficha-iria",
+      "texto": "Coja la ficha de Iria del escritorio del archivo",
+      "grupo": "Fichas del archivo"
+    },
+    {
+      "id": "eco",
+      "tipo": "usa",
+      "cosa": "ficha-eco",
+      "texto": "Consulte la ficha del Eco sin Contorno",
+      "grupo": "Fichas del archivo"
+    },
+    {
+      "id": "lyra",
+      "tipo": "habla_con",
+      "pnj": "lyra",
+      "texto": "Vuelva con Lyra"
+    }
+  ],
+  "textos": {
+    "aceptada": "Las fichas están en el escritorio del archivo.",
+    "completada": "Ya distingue ficha, miniatura y jugador."
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "schema": "numinia-engine/escena@1",
+  "nombre": "Capa de expedición",
+  "preset": "amanecer",
+  "entorno": {
+    "tono": {
+      "exposicion": 1.05
+    }
+  },
+  "narracion": "Mapas abiertos, brújulas a punto. Se parte al alba."
+}

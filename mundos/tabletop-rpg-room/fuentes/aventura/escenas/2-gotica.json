@@ -1,0 +1,21 @@
+{
+  "schema": "numinia-engine/escena@1",
+  "nombre": "Capa gótica",
+  "preset": "noche",
+  "entorno": {
+    "luz": {
+      "ambiente": 1.1,
+      "cielo": "#6b4a6b"
+    },
+    "niebla": {
+      "cerca": 12,
+      "lejos": 45,
+      "color": "#1a1418",
+      "delCielo": false
+    },
+    "tono": {
+      "exposicion": 0.9
+    }
+  },
+  "narracion": "Las sombras se alargan entre los libros."
+}

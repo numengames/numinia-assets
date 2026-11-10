@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "espejo",
+  "nombre": "Espejo del avatar",
+  "descripcion": "El espejo refleja a su avatar. Puede cambiar el encuadre de cámara (V), pero su posición y su mirada siguen siendo suyas.",
+  "posicion": {
+    "x": -2.7,
+    "z": 7.1,
+    "y": 1.2
+  },
+  "radio": 1.8,
+  "aviso": "examinar el espejo",
+  "apariencia": {
+    "escala": 0.5,
+    "color": "#A17C44"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}

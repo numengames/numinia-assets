@@ -1,0 +1,270 @@
+{
+  "formato": "pnj@1",
+  "id": "pictor",
+  "nombre": "Pictor",
+  "oficio": "Cartógrafo",
+  "voz": "hombre-joven",
+  "descripcion": "Guardián del tablero y cartógrafo del gabinete. Prepara mapas, maquetas y miniaturas.",
+  "apariencia": {
+    "modelo": "047f5e5fb3bb6d378bd1df16ca6137f2a596c99b3a1b5690b4020c05aaf6f319",
+    "escala": 0.53
+  },
+  "posicion": {
+    "x": 3.7,
+    "z": -3.9
+  },
+  "giro": 137,
+  "radio": 3,
+  "dialogo": {
+    "entradas": [
+      {
+        "si": {
+          "mision": "m4-cartografia",
+          "estado": "disponible"
+        },
+        "nodo": "pic010"
+      },
+      {
+        "si": {
+          "mision": "m4-cartografia",
+          "estado": "activa",
+          "paso": "pictor"
+        },
+        "nodo": "pic030"
+      },
+      {
+        "si": {
+          "mision": "m4-cartografia",
+          "estado": "activa"
+        },
+        "nodo": "pic020b"
+      },
+      {
+        "si": {
+          "mision": "m5-puerta",
+          "estado": "disponible"
+        },
+        "nodo": "pic040"
+      },
+      {
+        "si": {
+          "mision": "m5-puerta",
+          "estado": "activa",
+          "paso": "pictor"
+        },
+        "nodo": "pic060"
+      },
+      {
+        "si": {
+          "mision": "m5-puerta",
+          "estado": "activa"
+        },
+        "nodo": "pic050b"
+      },
+      {
+        "si": {
+          "mision": "m6-turno",
+          "estado": "disponible"
+        },
+        "nodo": "pic070"
+      },
+      {
+        "si": {
+          "mision": "m6-turno",
+          "estado": "activa",
+          "paso": "pictor"
+        },
+        "nodo": "pic090"
+      },
+      {
+        "si": {
+          "mision": "m6-turno",
+          "estado": "activa"
+        },
+        "nodo": "pic080b"
+      },
+      {
+        "si": {
+          "mision": "m3-ficha",
+          "estado": "hecha"
+        },
+        "nodo": "pic900"
+      },
+      {
+        "nodo": "hola"
+      }
+    ],
+    "nodos": {
+      "pic010": {
+        "texto": "Soy Pictor. Una mesa puede mostrar un plano, una maqueta o un mundo que se recorre.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "pic020"
+          }
+        ]
+      },
+      "pic020": {
+        "texto": "Coja la miniatura de Iria de esta mesa de preparación y déjela en la casilla marcada de la maqueta, en esta misma mesa. Luego vuelva conmigo.",
+        "opciones": [
+          {
+            "texto": "Voy con Iria.",
+            "accion": {
+              "tipo": "dar_mision",
+              "mision": "m4-cartografia"
+            }
+          }
+        ]
+      },
+      "pic020b": {
+        "texto": "La miniatura de Iria y la casilla están las dos en esta mesa de práctica. La mesa redonda queda para quien juega.",
+        "opciones": [
+          {
+            "texto": "Voy.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "pic030": {
+        "texto": "Medir distancias y alturas sobre el mapa llegará pronto. La medida pertenece al escenario, no al tamaño decorativo de la miniatura.",
+        "opciones": [
+          {
+            "texto": "Entendido.",
+            "si": {
+              "mision": "m4-cartografia",
+              "estado": "activa",
+              "paso": "pictor"
+            },
+            "accion": {
+              "tipo": "avanzar_paso",
+              "mision": "m4-cartografia"
+            }
+          }
+        ]
+      },
+      "pic040": {
+        "texto": "No todos ven todo. Una puerta, una pared o una luz pueden cambiar lo que un personaje descubre.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "pic050"
+          }
+        ]
+      },
+      "pic050": {
+        "texto": "En la maqueta de esta mesa hay una puerta y una lámpara. Abra primero la puerta y después encienda la lámpara, cada una con su clic.",
+        "opciones": [
+          {
+            "texto": "Voy a la maqueta.",
+            "accion": {
+              "tipo": "dar_mision",
+              "mision": "m5-puerta"
+            }
+          }
+        ]
+      },
+      "pic050b": {
+        "texto": "Primero la puerta de la maqueta, después la lámpara. Las dos están en esta mesa de práctica.",
+        "opciones": [
+          {
+            "texto": "Voy.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "pic060": {
+        "texto": "La información secreta no debe ocultarse solo con una cortina visual. También debe quedar fuera de quien no puede recibirla.",
+        "opciones": [
+          {
+            "texto": "Lo recordaré.",
+            "si": {
+              "mision": "m5-puerta",
+              "estado": "activa",
+              "paso": "pictor"
+            },
+            "accion": {
+              "tipo": "avanzar_paso",
+              "mision": "m5-puerta"
+            }
+          }
+        ]
+      },
+      "pic070": {
+        "texto": "El Eco será nuestro compañero de prueba. Vamos a organizar una ronda sin imponer reglas de combate.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "pic080"
+          }
+        ]
+      },
+      "pic080": {
+        "texto": "Gire el reloj de turnos, en el borde oeste de la mesa: Iria interviene primero y el Eco después. Luego vuelva conmigo.",
+        "opciones": [
+          {
+            "texto": "Giraré el reloj.",
+            "accion": {
+              "tipo": "dar_mision",
+              "mision": "m6-turno"
+            }
+          }
+        ]
+      },
+      "pic080b": {
+        "texto": "El reloj de turnos está en el borde oeste de la mesa redonda.",
+        "opciones": [
+          {
+            "texto": "Voy.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "pic090": {
+        "texto": "Una acción rápida bien hecha ahorra trabajo, pero nunca debe decidir en secreto qué reglas usa la mesa. Lyra le espera de nuevo en el archivo.",
+        "opciones": [
+          {
+            "texto": "Voy con Lyra.",
+            "si": {
+              "mision": "m6-turno",
+              "estado": "activa",
+              "paso": "pictor"
+            },
+            "accion": {
+              "tipo": "avanzar_paso",
+              "mision": "m6-turno"
+            }
+          }
+        ]
+      },
+      "pic900": {
+        "texto": "Todo desplazamiento y toda medida deben confirmarse con un gesto o un clic deliberado.",
+        "opciones": [
+          {
+            "texto": "Gracias.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "hola": {
+        "texto": "Soy Pictor, del tablero. Pase antes por Senet, Rima y Lyra.",
+        "opciones": [
+          {
+            "texto": "De acuerdo.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos. [MOTOR] Mapa 2D/3D, mover y medir miniaturas en la mesa, visión y niebla, orden de turnos y acción rápida."
+}

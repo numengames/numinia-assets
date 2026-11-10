@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "gramofono",
+  "nombre": "Gramófono",
+  "descripcion": "Gramófono y mezclador de la mesa. La música de la partida va aparte del sonido de la sala.",
+  "posicion": {
+    "x": 2.9,
+    "z": 3.7,
+    "y": 0.9
+  },
+  "radio": 1.8,
+  "aviso": "poner música",
+  "apariencia": {
+    "escala": 0.3,
+    "color": "#A17C44"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}

@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "cristal",
+  "nombre": "Cristal Narrativo",
+  "descripcion": "El Cristal Narrativo admite una propuesta de entidad con nombre, descripción, autor, posición y visibilidad.",
+  "posicion": {
+    "x": 0,
+    "z": 0,
+    "y": 2.45
+  },
+  "radio": 2.8,
+  "aviso": "proyectar en el cristal",
+  "apariencia": {
+    "escala": 0.05,
+    "color": "#E7B66D"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}

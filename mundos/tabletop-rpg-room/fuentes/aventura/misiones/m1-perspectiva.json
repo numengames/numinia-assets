@@ -1,0 +1,27 @@
+{
+  "formato": "mision@1",
+  "id": "m1-perspectiva",
+  "titulo": "La lente de Perspectiva",
+  "descripcion": "Moverse, mirar y consultar: camine hasta el espejo, pruebe la tercera persona (V) y abra su cuaderno (J).",
+  "requisitos": {
+    "misiones": []
+  },
+  "pasos": [
+    {
+      "id": "espejo",
+      "tipo": "usa",
+      "cosa": "espejo",
+      "texto": "Camine hasta el espejo, junto a la puerta, y examínelo (E). Pruebe la tecla V"
+    },
+    {
+      "id": "senet",
+      "tipo": "habla_con",
+      "pnj": "senet",
+      "texto": "Vuelva con Senet"
+    }
+  ],
+  "textos": {
+    "aceptada": "Su cuaderno (J) le marca cada paso.",
+    "completada": "Lente de Perspectiva encendida."
+  }
+}

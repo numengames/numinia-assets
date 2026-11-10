@@ -1,0 +1,10 @@
+{
+  "schema": "numinia-engine/escena@1",
+  "nombre": "El Gabinete",
+  "entorno": {
+    "tono": {
+      "exposicion": 1
+    }
+  },
+  "narracion": "Siéntense. La lámpara está encendida y el cristal respira. Empieza la sesión."
+}

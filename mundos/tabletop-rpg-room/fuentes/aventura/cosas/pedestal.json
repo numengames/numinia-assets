@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "pedestal",
+  "nombre": "Pedestal de la maqueta",
+  "descripcion": "Un pedestal en la cámara cerrada de la maqueta, con una ranura del tamaño de una llave.",
+  "posicion": {
+    "x": 5.37,
+    "z": -3.9,
+    "y": 0.9500000000000001
+  },
+  "radio": 1.6,
+  "aviso": "colocar la llave en el pedestal",
+  "apariencia": {
+    "escala": 0.12,
+    "color": "#745838"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}

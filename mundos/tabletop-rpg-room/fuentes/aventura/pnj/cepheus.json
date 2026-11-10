@@ -1,0 +1,66 @@
+{
+  "formato": "pnj@1",
+  "id": "cepheus",
+  "nombre": "Cepheus",
+  "oficio": "Custodio de reglas",
+  "voz": "hombre-joven",
+  "descripcion": "Custodio de reglas y permisos del gabinete. Instruye a quien quiere aprender a dirigir.",
+  "apariencia": {
+    "modelo": "047f5e5fb3bb6d378bd1df16ca6137f2a596c99b3a1b5690b4020c05aaf6f319",
+    "escala": 0.53
+  },
+  "posicion": {
+    "x": -4.2,
+    "z": -4.6
+  },
+  "giro": -138,
+  "radio": 3,
+  "dialogo": {
+    "entradas": [
+      {
+        "si": {
+          "mision": "m12-memoria",
+          "estado": "hecha"
+        },
+        "nodo": "cep010"
+      },
+      {
+        "nodo": "hola"
+      }
+    ],
+    "nodos": {
+      "cep010": {
+        "texto": "Soy Cepheus. Una partida necesita autoridad, pero también límites. No es lo mismo poseer una campaña, dirigirla o sostener el báculo.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "cep020"
+          }
+        ]
+      },
+      "cep020": {
+        "texto": "El ensayo de dirección aún se está preparando. Mientras tanto, observe una partida: quien lleva el báculo pone escenas; el dueño del mundo da los permisos.",
+        "opciones": [
+          {
+            "texto": "Volveré.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "hola": {
+        "texto": "Custodio la sala de quien dirige. Termine antes la práctica con Senet.",
+        "opciones": [
+          {
+            "texto": "De acuerdo.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos. [MOTOR] La ruta de dirección (D1–D5) va en el mismo mundo (Pablo, 2026-11-04): necesita un báculo de ensayo que no quite el de verdad."
+}

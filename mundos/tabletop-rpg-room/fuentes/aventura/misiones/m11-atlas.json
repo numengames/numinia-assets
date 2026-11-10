@@ -1,0 +1,50 @@
+{
+  "formato": "mision@1",
+  "id": "m11-atlas",
+  "titulo": "El Atlas Despierto",
+  "descripcion": "La última lente: lea la pista, use la luz, coloque la Llave de Mercurio en el pedestal y despierte el Atlas.",
+  "requisitos": {
+    "misiones": [
+      "m10-baculo"
+    ]
+  },
+  "pasos": [
+    {
+      "id": "pagina",
+      "tipo": "usa",
+      "cosa": "pagina-atlas",
+      "texto": "Vuelva a leer la pista del Atlas",
+      "grupo": "Pistas"
+    },
+    {
+      "id": "luz",
+      "tipo": "usa",
+      "cosa": "luminaria",
+      "texto": "Encienda de nuevo la lámpara de la maqueta",
+      "grupo": "Pistas"
+    },
+    {
+      "id": "llave",
+      "tipo": "coge",
+      "cosa": "llave",
+      "texto": "Coja la Llave de Mercurio (si quiere, tire 2d6 en la torre)"
+    },
+    {
+      "id": "pedestal",
+      "tipo": "usa",
+      "cosa": "pedestal",
+      "texto": "Coloque la llave en el pedestal de la maqueta"
+    },
+    {
+      "id": "atlas",
+      "tipo": "usa",
+      "cosa": "atlas",
+      "texto": "Active el Atlas, en el extremo de la mesa de práctica",
+      "secuencia": "atlas-despierta"
+    }
+  ],
+  "textos": {
+    "aceptada": "Las herramientas ya son suyas.",
+    "completada": "El Atlas ha despertado. Lente del Relato encendida."
+  }
+}
