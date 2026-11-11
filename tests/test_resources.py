@@ -17,9 +17,15 @@ ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {
     "content/avatars/ndg-019d4075-9ece-7d3e-aafa-41f81370eb63.vrm": (
         1253352, "4f8a44907bb2232178514f230aedfc4d344600287e236724a0b660420f2d995e",
+        "Polygonal Mind",
+    ),
+    "content/avatars/nomad_for_the_oracles.vrm": (
+        3194568, "31c189268e71bd5791889f7c25f122840427318276dad0423ed2b79d8108ccea",
+        "PabloFM",
     ),
     "content/models/pot-vapor-02.glb": (
         407284, "330605050f1786591a1f2f65f92ea04be5e29277577cf8ce36d29e83d4b77390",
+        "Polygonal Mind",
     ),
 }
 
@@ -32,7 +38,7 @@ class FirstIntakeTests(unittest.TestCase):
             if path.is_file() and path.suffix not in {".md", ".license"}
         }
         self.assertEqual(actual, set(EXPECTED))
-        for name, (size, digest) in EXPECTED.items():
+        for name, (size, digest, holder) in EXPECTED.items():
             with self.subTest(resource=name):
                 payload = (ROOT / name).read_bytes()
                 self.assertEqual(len(payload), size)
@@ -40,11 +46,11 @@ class FirstIntakeTests(unittest.TestCase):
                 notice = (ROOT / (name + ".license")).read_text(encoding="utf-8")
                 # Split the tags: these assertions do not license this code.
                 self.assertIn("SPDX-" + "License-Identifier: CC0-1.0", notice)
-                self.assertIn("SPDX-" + "FileCopyrightText: Polygonal Mind", notice)
+                self.assertIn("SPDX-" + "FileCopyrightText: " + holder, notice)
                 self.assertIn("SYS-005-digital-resource-register.md", notice)
 
     def test_models_are_self_contained_and_avatar_retains_cc0(self):
-        for name in EXPECTED:
+        for name, (_size, _digest, holder) in EXPECTED.items():
             with self.subTest(resource=name):
                 self.assertTrue((ROOT / name).is_file(), name)
                 payload = (ROOT / name).read_bytes()
@@ -60,7 +66,7 @@ class FirstIntakeTests(unittest.TestCase):
                 if name.endswith(".vrm"):
                     meta = model["extensions"]["VRM"]["meta"]
                     self.assertEqual(meta["licenseName"], "CC0")
-                    self.assertEqual(meta["author"], "Polygonal Mind")
+                    self.assertIn(holder, meta["author"])
 
 
 if __name__ == "__main__":

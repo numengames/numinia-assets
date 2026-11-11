@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `content/avatars/`: Nomad for The Oracles (`nomad_for_the_oracles.vrm`), the engine's default avatar,
+  unchanged bytes as Pablo delivered it on 2026-11-11 (CC0 inside the file, author PabloFM). Its
+  canonical SYS-005 record is still to be written; the notice lists the open review points. The
+  integrity test now pins each resource's rightsholder.
+
 - `open-worlds/machine/`: a new signed request `CreateWorldFromTemplate` (MIS-297): CreateWorld's
   fields plus `template` (the engine's own name rule), Numinia Engine only. The template is kept in
   the world's order and nightly copy and reaches the engine as `MOTOR_PLANTILLA`; `GET

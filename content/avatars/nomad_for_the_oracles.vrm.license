@@ -1,0 +1,24 @@
+SPDX-FileCopyrightText: PabloFM
+SPDX-License-Identifier: CC0-1.0
+
+Resource: Nomad for The Oracles (the engine's default avatar from 2026-11-11).
+Canonical record: pending in https://github.com/numengames/numinia-archive/blob/main/system/SYS-005-digital-resource-register.md
+
+Delivered by Pablo Fernandez (operator, Numen Games) on 2026-11-11 as a work
+commissioned and paid for by Numen Games, to be published "as it is".
+The VRM itself declares (extensions.VRM.meta): title "Nomad for The Oracles",
+author "PabloFM / 0x42e62e421bedf2469826879ec1a0574d7d3cca26",
+licenseName "CC0", commercialUssageName "Allow", allowedUserName "Everyone",
+violentUssageName "Disallow", sexualUssageName "Disallow",
+contactInformation "support@vipe.io",
+otherPermissionUrl "ipfs://QmbeYPZbT6x92EbFbhMxLBiu9y5KJJXvvJr3sjJQuEfknU".
+
+Open review points for the canonical record (they do not change the bytes):
+- the skeleton's bone names start with "mixamorig:" (rigged with the Mixamo
+  auto-rigger on this mesh; no Mixamo character or animation is inside), the
+  same case the archive already records for 100Avatars;
+- the commission's paperwork and the IPFS permission document are not
+  attached here.
+No metadata or bytes inside this VRM have been changed. The engine ships a
+lighter derived copy (1.80 m tall, base colour only, WebP, meshopt):
+numinia-engine activos/avatares/Nomad_for_The_Oracles.vrm.
