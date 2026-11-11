@@ -1,0 +1,70 @@
+{
+  "schema": "numinia-engine/asientos@1",
+  "activa": true,
+  "sitios": [
+    {
+      "id": "seat-0",
+      "x": 2.55,
+      "y": 0,
+      "z": 0,
+      "mira": -90,
+      "etiqueta": "Asiento 1"
+    },
+    {
+      "id": "seat-1",
+      "x": 1.803,
+      "y": 0,
+      "z": 1.803,
+      "mira": -135,
+      "etiqueta": "Asiento 2"
+    },
+    {
+      "id": "seat-2",
+      "x": 0,
+      "y": 0,
+      "z": 2.55,
+      "mira": 180,
+      "etiqueta": "Asiento 3"
+    },
+    {
+      "id": "seat-3",
+      "x": -1.803,
+      "y": 0,
+      "z": 1.803,
+      "mira": 135,
+      "etiqueta": "Asiento 4"
+    },
+    {
+      "id": "seat-4",
+      "x": -2.55,
+      "y": 0,
+      "z": 0,
+      "mira": 90,
+      "etiqueta": "Asiento 5"
+    },
+    {
+      "id": "seat-5",
+      "x": -1.803,
+      "y": 0,
+      "z": -1.803,
+      "mira": 45,
+      "etiqueta": "Asiento 6"
+    },
+    {
+      "id": "seat-6",
+      "x": 0,
+      "y": 0,
+      "z": -2.55,
+      "mira": 0,
+      "etiqueta": "Asiento de quien dirige"
+    },
+    {
+      "id": "seat-7",
+      "x": 1.803,
+      "y": 0,
+      "z": -1.803,
+      "mira": -45,
+      "etiqueta": "Asiento 8"
+    }
+  ]
+}

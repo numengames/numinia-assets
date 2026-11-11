@@ -1,0 +1,45 @@
+{
+  "schema": "numinia-engine/entorno@1",
+  "preset": "propio",
+  "cielo": {
+    "tipo": "degradado",
+    "arriba": "#16325c",
+    "horizonte": "#C4B5A6",
+    "nubes": 0.15
+  },
+  "sol": {
+    "altura": 74,
+    "rumbo": 160,
+    "intensidad": 2.4,
+    "color": "#F9EBDC"
+  },
+  "luz": {
+    "hdr": "",
+    "ambiente": 1.55,
+    "cielo": "#F9EBDC",
+    "suelo": "#7A5100"
+  },
+  "niebla": {
+    "cerca": 40,
+    "lejos": 200,
+    "color": "#3A332D",
+    "delCielo": false
+  },
+  "suelo": {
+    "tipo": "liso",
+    "color": "#3A332D",
+    "escala": 1
+  },
+  "tono": {
+    "curva": "neutro",
+    "exposicion": 1.12
+  },
+  "hitos": false,
+  "rejilla": false,
+  "aparicion": {
+    "x": 0,
+    "z": 7.6,
+    "radio": 1
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos. Sol alto y cálido: entra por la linterna de cristal y cae sobre la mesa (la mesa es el foco). Las capas del Director modulan esto, nunca la sala."
+}

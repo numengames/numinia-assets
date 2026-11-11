@@ -1,0 +1,27 @@
+{
+  "schema": "numinia-engine/escena@1",
+  "nombre": "La cripta",
+  "preset": "noche",
+  "entorno": {
+    "niebla": {
+      "cerca": 10,
+      "lejos": 32,
+      "color": "#0a0a0f",
+      "delCielo": false
+    },
+    "luz": {
+      "ambiente": 0.95,
+      "cielo": "#3a3a4a"
+    },
+    "tono": {
+      "exposicion": 0.8
+    }
+  },
+  "narracion": "El aire está frío y quieto. Algo se mueve más allá de la luz.",
+  "ambiente": "",
+  "mapa": {
+    "obra": "8d59108dbdba377181c2f531e5ba0b2b8453c76831bd846ed66b02756b9f8fee.png",
+    "titulo": "La cripta",
+    "hueco": "mapa"
+  }
+}

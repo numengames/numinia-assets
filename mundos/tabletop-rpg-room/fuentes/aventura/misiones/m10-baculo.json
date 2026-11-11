@@ -1,0 +1,32 @@
+{
+  "formato": "mision@1",
+  "id": "m10-baculo",
+  "titulo": "El Báculo de Senet",
+  "descripcion": "Vaya al soporte del báculo; si está libre, tómelo y devuélvalo. Un solo báculo, una sola dirección: si alguien dirige, no se le quita.",
+  "requisitos": {
+    "misiones": [
+      "m9-cristal"
+    ]
+  },
+  "pasos": [
+    {
+      "id": "soporte",
+      "tipo": "llega_a",
+      "texto": "Vaya al soporte del báculo, junto a la silla alta (tómelo con E solo si está libre)",
+      "x": -1.18,
+      "z": -3.242,
+      "radio": 1.8,
+      "lugar": "el soporte del báculo"
+    },
+    {
+      "id": "senet",
+      "tipo": "habla_con",
+      "pnj": "senet",
+      "texto": "Si lo tomó, devuélvalo a su soporte; luego vuelva con Senet"
+    }
+  ],
+  "textos": {
+    "aceptada": "El soporte está junto a la silla alta.",
+    "completada": "Ha probado el báculo y lo ha devuelto."
+  }
+}

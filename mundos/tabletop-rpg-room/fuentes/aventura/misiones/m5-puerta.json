@@ -1,0 +1,35 @@
+{
+  "formato": "mision@1",
+  "id": "m5-puerta",
+  "titulo": "La puerta y la bruma",
+  "descripcion": "Una puerta y una luz cambian lo que un personaje descubre. Ábrala y encienda la lámpara de la maqueta.",
+  "requisitos": {
+    "misiones": [
+      "m4-cartografia"
+    ]
+  },
+  "pasos": [
+    {
+      "id": "puerta",
+      "tipo": "usa",
+      "cosa": "puerta-maqueta",
+      "texto": "Abra la puerta de la maqueta, en la mesa de práctica"
+    },
+    {
+      "id": "luz",
+      "tipo": "usa",
+      "cosa": "luminaria",
+      "texto": "Encienda la lámpara de la maqueta"
+    },
+    {
+      "id": "pictor",
+      "tipo": "habla_con",
+      "pnj": "pictor",
+      "texto": "Vuelva con Pictor"
+    }
+  ],
+  "textos": {
+    "aceptada": "Primero la puerta, después la luz.",
+    "completada": "Lente de Forma encendida."
+  }
+}

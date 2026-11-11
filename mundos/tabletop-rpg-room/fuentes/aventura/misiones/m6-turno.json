@@ -1,0 +1,29 @@
+{
+  "formato": "mision@1",
+  "id": "m6-turno",
+  "titulo": "El Eco toma su turno",
+  "descripcion": "Organice una ronda de práctica con Iria y el Eco, sin reglas de combate impuestas.",
+  "requisitos": {
+    "misiones": [
+      "m5-puerta"
+    ]
+  },
+  "pasos": [
+    {
+      "id": "reloj",
+      "tipo": "usa",
+      "cosa": "reloj-turnos",
+      "texto": "Gire el reloj de turnos, en el borde oeste de la mesa"
+    },
+    {
+      "id": "pictor",
+      "tipo": "habla_con",
+      "pnj": "pictor",
+      "texto": "Vuelva con Pictor"
+    }
+  ],
+  "textos": {
+    "aceptada": "El reloj está en el borde de la mesa.",
+    "completada": "La ronda de práctica ha terminado."
+  }
+}

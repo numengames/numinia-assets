@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "puerta-maqueta",
+  "nombre": "Puerta de la maqueta",
+  "descripcion": "La puerta separa dos zonas de la maqueta. Abrirla cambia lo que un personaje puede descubrir.",
+  "posicion": {
+    "x": 4.67,
+    "z": -4.68,
+    "y": 0.96
+  },
+  "radio": 1.6,
+  "aviso": "abrir la puerta de la maqueta",
+  "apariencia": {
+    "escala": 0.14,
+    "color": "#745838"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}

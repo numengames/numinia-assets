@@ -1,0 +1,45 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 Numen Games S.L. -->
+<!-- SPDX-License-Identifier: CC0-1.0 -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gabinete · HUD wireframe (design preview, not the engine)</title>
+<style>
+:root{--fondo:#14110F;--sup:#1E1A17;--elev:#292420;--texto:#F9EBDC;--texto2:#C4B5A6;--linea:#3A332D;--accion:#017C8D;--ambar:#EFA517;--hecho:#8FC46B;--r:6px}
+*{box-sizing:border-box}body{margin:0;background:#0b0907;color:var(--texto);font:16px/1.4 system-ui,sans-serif;padding:16px}
+h1{font-size:16px;margin:0 0 4px}p.n{color:var(--texto2);font-size:13px;margin:0 0 12px}
+.row{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+.screen{position:relative;background:linear-gradient(#2c241d,#17120e);border:1px solid var(--linea);overflow:hidden}
+.d{width:900px;height:520px}.m{width:300px;height:560px}
+.p{position:absolute;background:var(--sup);border:1px solid var(--linea);border-radius:8px;padding:8px 10px;font-size:14px}
+.b{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:0 10px;border:1px solid var(--linea);border-radius:var(--r);background:var(--elev);color:var(--texto);font-weight:600;font-size:14px}
+.b.pri{background:var(--accion);border-color:var(--accion);color:#fff}
+.t2{color:var(--texto2)}.am{color:var(--ambar)}.ok{color:var(--hecho)}
+.chip{display:inline-block;border:1px solid var(--texto2);border-radius:99px;padding:1px 8px;font-size:12px}
+.focus{outline:3px solid var(--ambar);outline-offset:2px}
+.tabs{display:flex;gap:2px;font-size:12px;margin-bottom:6px}.tabs span{padding:6px 8px;border-bottom:2px solid transparent;color:var(--texto2)}.tabs .on{color:var(--texto);border-color:var(--ambar)}
+</style></head><body>
+<h1>Gabinete de los Mil Mundos · HUD wireframe</h1>
+<p class="n">Static preview of UI.md §2, §3, §6 (E3, dice on the table). Tokens are the engine's. Positions are the design; this is not running code.</p>
+<div class="row">
+<div class="screen d" aria-label="Desktop HUD">
+ <div class="p" style="left:12px;top:12px;width:300px"><span class="am">▸ Objective</span> <span class="t2">(min ▾)</span><br>Roll 1d20, 3d6 and 2d10+5; check the log.</div>
+ <div style="position:absolute;right:12px;top:12px;display:flex;gap:6px"><span class="b">Cam</span><span class="b">?</span><span class="b">⚙</span><span class="b t2">Saved 14:03</span></div>
+ <div class="p" style="left:12px;top:92px;width:380px;height:250px"><div class="tabs"><span class="on">Missions</span><span>Clues</span><span>Records</span><span>Controls</span><span>Sequences</span></div>
+  <div class="ok">☑ <span style="color:var(--texto)">Open the notebook</span> <span class="t2">· 2026-11-07 14:03</span></div>
+  <div>☐ Roll 1d20</div><div>☐ Roll 3d6</div><div>☐ Roll 2d10+5</div>
+  <div class="t2"><i>Pending implementation: private roll</i></div></div>
+ <div class="p" style="left:50%;top:230px;transform:translateX(-50%);padding:4px 12px" ><span class="focus" style="padding:2px 6px">Rima's tray · Roll dice</span></div>
+ <div class="p" style="right:12px;top:200px;width:300px"><b>Table</b> <span class="t2">▾</span><br><span class="chip">Public</span> d20 · 17<br><span class="chip">Private to you</span> 3d6 · 11<br>
+  <div style="display:flex;gap:6px;margin-top:6px"><span class="b pri">Roll</span><span class="b">Measure</span></div></div>
+ <div class="p" style="left:50%;bottom:12px;transform:translateX(-50%);width:500px"><b class="am">Rima</b><br>Subtitle text, three lines at most, never over her face.<br>
+  <div style="display:flex;gap:6px;margin-top:6px"><span class="b">Option one</span><span class="b">Option two</span></div></div>
+ <div class="p" style="right:12px;bottom:150px;width:200px;font-size:13px">[Dice rolling]</div>
+</div>
+<div class="screen m" aria-label="Phone HUD">
+ <div class="p" style="left:8px;right:8px;top:8px;padding:6px 10px"><span class="am">▸</span> Roll 1d20, 3d6 and 2d10+5 <span class="t2">(tap to expand)</span></div>
+ <div class="p" style="left:8px;right:8px;bottom:64px;height:220px"><div class="tabs"><span class="on">Table</span></div><span class="chip">Public</span> d20 · 17<br><span class="chip">Private to you</span> 3d6 · 11
+  <div style="display:flex;gap:6px;margin-top:8px"><span class="b pri" style="flex:1">Roll dice</span><span class="b">Close</span></div></div>
+ <div style="position:absolute;left:0;right:0;bottom:0;height:56px;background:var(--sup);border-top:1px solid var(--linea);display:flex;justify-content:space-around;align-items:center;font-size:11px;text-align:center">
+  <span>☰<br>Menu</span><span>▤<br>Notebook</span><span class="am">◧<br>Table</span><span>✉<br>Chat</span><span>◉<br>Camera</span></div>
+</div></div>
+</body></html>

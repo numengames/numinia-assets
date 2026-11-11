@@ -1,0 +1,477 @@
+{
+ "suelo": {
+  "fichero": "modelos/suelo.glb",
+  "sha": "a9d767b508abd0cc3bdf5bf47f2f5f48ac97a87fc53886c817f6bf69d1b9ede5",
+  "bytes": 46320,
+  "tris": 600,
+  "materiales": 5,
+  "min": [
+   -12.512,
+   0,
+   -11.9
+  ],
+  "max": [
+   12.512,
+   0.05,
+   11.9
+  ],
+  "vueltas": 0,
+  "notas": "suelo de piedra oscura, alfombra verde petróleo, rosa de los vientos de latón y alfombra de entrada"
+ },
+ "muro": {
+  "fichero": "modelos/muro.glb",
+  "sha": "03f186ba0640ba75ebf6b064c677b150d039418a02389f28601483a67644a78e",
+  "bytes": 117536,
+  "tris": 1596,
+  "materiales": 4,
+  "min": [
+   -12.513,
+   0,
+   -11.901
+  ],
+  "max": [
+   12.513,
+   4,
+   11.901
+  ],
+  "vueltas": 0,
+  "notas": "muro decagonal de nogal con zócalo de piedra, ventanal alto en cada lado y la puerta al sur"
+ },
+ "biblioteca": {
+  "fichero": "modelos/biblioteca.glb",
+  "sha": "09ffee8d4a990c34c75d086252ed2d082127a893e12f67948476514028de82ab",
+  "bytes": 744796,
+  "tris": 10284,
+  "materiales": 7,
+  "min": [
+   -11.825,
+   0,
+   -11.41
+  ],
+  "max": [
+   11.825,
+   2.92,
+   11.083
+  ],
+  "vueltas": 0,
+  "notas": "estanterías de ébano con libros en nueve muros y la escalerilla de la biblioteca"
+ },
+ "techo": {
+  "fichero": "modelos/techo.glb",
+  "sha": "17a4b31aa700e057e30e548ba323c2a7d1fe234ab300ebbda822a490f5e413cf",
+  "bytes": 99636,
+  "tris": 1324,
+  "materiales": 7,
+  "min": [
+   -12.512,
+   3.01,
+   -11.9
+  ],
+  "max": [
+   12.512,
+   6.961,
+   11.9
+  ],
+  "vueltas": 0,
+  "notas": "techo artesonado a 4 m, linterna de cristal con cúpula y seis lámparas colgantes"
+ },
+ "mesa": {
+  "fichero": "modelos/mesa.glb",
+  "sha": "97e5b73b988720d9591549f669c5f4560f79806bf68de071b73cd1dc58377c71",
+  "bytes": 110628,
+  "tris": 1476,
+  "materiales": 7,
+  "min": [
+   -1.825,
+   0,
+   -1.825
+  ],
+  "max": [
+   1.825,
+   0.916,
+   1.825
+  ],
+  "vueltas": 0,
+  "notas": "mesa redonda de nogal Ø 3,60 con paño verde, riel de latón, ocho puestos y el lecho del mapa"
+ },
+ "silla": {
+  "fichero": "modelos/silla.glb",
+  "sha": "626a4991c01406a313e98d69c42cae55ce5bac619ea9aa2ca5bdc8526434a0d5",
+  "bytes": 13236,
+  "tris": 156,
+  "materiales": 3,
+  "min": [
+   -0.305,
+   0,
+   -0.29
+  ],
+  "max": [
+   0.305,
+   1.04,
+   0.26
+  ],
+  "vueltas": 0,
+  "notas": "silla de jugador, nogal y cuero"
+ },
+ "silla-dj": {
+  "fichero": "modelos/silla-dj.glb",
+  "sha": "1a325b43a7c809f7b69c4146acd652ab33c98d59c7884318154b6b42a09b99c5",
+  "bytes": 32556,
+  "tris": 424,
+  "materiales": 3,
+  "min": [
+   -0.305,
+   0,
+   -0.29
+  ],
+  "max": [
+   0.305,
+   1.67,
+   0.26
+  ],
+  "vueltas": 0,
+  "notas": "silla de quien dirige: respaldo alto con astrolabio (no un trono)"
+ },
+ "cristal": {
+  "fichero": "modelos/cristal.glb",
+  "sha": "4d3302c56179056ad8dce9d5a7156d8b3c4541ebfed335a2d88e68baf8de748a",
+  "bytes": 66060,
+  "tris": 880,
+  "materiales": 4,
+  "min": [
+   -0.485,
+   2.018,
+   -0.485
+  ],
+  "max": [
+   0.485,
+   6.5,
+   0.485
+  ],
+  "vueltas": 0,
+  "notas": "el cristal narrativo: prisma facetado con núcleo ámbar en un cardán de latón"
+ },
+ "torre-dados": {
+  "fichero": "modelos/torre-dados.glb",
+  "sha": "ff23392d2550ed8494967668a8cfbaaab9e095318995763a72e5a4a3e3fd091a",
+  "bytes": 79828,
+  "tris": 1048,
+  "materiales": 7,
+  "min": [
+   -0.47,
+   0,
+   -0.56
+  ],
+  "max": [
+   0.47,
+   2.47,
+   0.97
+  ],
+  "vueltas": 0,
+  "notas": "estación de dados: torre de engranajes con bandeja de paño (frente = +z)"
+ },
+ "consola": {
+  "fichero": "modelos/consola.glb",
+  "sha": "d67a94c1624117d9af1953f4ccd46b09e5d763a9f6903b3560bcfa3641b96fa0",
+  "bytes": 23504,
+  "tris": 266,
+  "materiales": 7,
+  "min": [
+   -0.91,
+   0,
+   -0.4
+  ],
+  "max": [
+   0.91,
+   1.4,
+   0.51
+  ],
+  "vueltas": 0,
+  "notas": "consola de quien dirige: escritorio de nogal con atril inclinado, casilleros y bandeja de dados (frente = +z, hacia la mesa)"
+ },
+ "fanal": {
+  "fichero": "modelos/fanal.glb",
+  "sha": "4a0590847f0dc7c9fb3f8f4d05c59f220d7b02a425267b05597ba730b898046c",
+  "bytes": 10424,
+  "tris": 116,
+  "materiales": 3,
+  "min": [
+   -0.173,
+   0,
+   -0.2
+  ],
+  "max": [
+   0.173,
+   1.98,
+   0.2
+  ],
+  "vueltas": 0,
+  "notas": "fanal de latón y cristal sobre poste (el fuego del motor arde dentro, a 1,62 m)"
+ },
+ "placa": {
+  "fichero": "modelos/placa.glb",
+  "sha": "86bbc24c411aa221c8d4cc8dab4330ccbe730d04dcdb454caae516f2b6378c61",
+  "bytes": 22820,
+  "tris": 280,
+  "materiales": 4,
+  "min": [
+   -0.71,
+   -0.004,
+   -0.47
+  ],
+  "max": [
+   0.71,
+   2.26,
+   0.203
+  ],
+  "vueltas": 0,
+  "notas": "placa de consulta: caballete de bronce con marco de latón (la imagen es un hueco del motor)"
+ },
+ "archivo": {
+  "fichero": "modelos/archivo.glb",
+  "sha": "8a8702c7bbb6a5933c9baa4894c896038ff0a0332eac4c050a655f7f72acdc11",
+  "bytes": 29340,
+  "tris": 356,
+  "materiales": 6,
+  "min": [
+   -1.12,
+   0,
+   -0.52
+  ],
+  "max": [
+   1.12,
+   1.095,
+   0.52
+  ],
+  "vueltas": 0,
+  "notas": "archivo: planero de cajones finos con atlas abierto y mapas enrollados"
+ },
+ "preparacion": {
+  "fichero": "modelos/preparacion.glb",
+  "sha": "5d8c81ec6578b63f3a89f985433eb94ede735c94313fdfdc0d6d0013a4799965",
+  "bytes": 14372,
+  "tris": 156,
+  "materiales": 5,
+  "min": [
+   -1.2,
+   0,
+   -0.46
+  ],
+  "max": [
+   1.2,
+   1.17,
+   0.46
+  ],
+  "vueltas": 0,
+  "notas": "mesa de preparación: lo que aún no está en el tablero (paño verde y cofre)"
+ },
+ "globo": {
+  "fichero": "modelos/globo.glb",
+  "sha": "00756e2e8cd49300bd21a7892ea100ec78978e7506ce9cdd13a5c5924866c5dc",
+  "bytes": 117872,
+  "tris": 1600,
+  "materiales": 4,
+  "min": [
+   -0.788,
+   -0.011,
+   -0.7
+  ],
+  "max": [
+   0.788,
+   2.13,
+   0.7
+  ],
+  "vueltas": 0,
+  "notas": "globo celeste verde petróleo con estrellas, aros de latón y trípode de bronce"
+ },
+ "vitrina": {
+  "fichero": "modelos/vitrina.glb",
+  "sha": "eb81442ff7244c4b511af9eea1525ed8b89c444b4455247ef68f4b9634e989f1",
+  "bytes": 81880,
+  "tris": 1076,
+  "materiales": 7,
+  "min": [
+   -0.65,
+   0,
+   -0.35
+  ],
+  "max": [
+   0.65,
+   2.14,
+   0.35
+  ],
+  "vueltas": 0,
+  "notas": "vitrina de curiosidades con esfera armilar"
+ },
+ "reloj": {
+  "fichero": "modelos/reloj.glb",
+  "sha": "27639df84b8358e8416244e824a4890277acb2487ac62da2e5ea9f17b85e6e2a",
+  "bytes": 70016,
+  "tris": 936,
+  "materiales": 4,
+  "min": [
+   -0.654,
+   2.981,
+   11.297
+  ],
+  "max": [
+   0.669,
+   3.92,
+   11.38
+  ],
+  "vueltas": 0,
+  "notas": "reloj mural de engranajes sobre la puerta"
+ },
+ "mini-arlen": {
+  "fichero": "modelos/mini-arlen.glb",
+  "sha": "bb4129c06894bd9462552310b7c1c3f7f6b20704a895196c2c74f2a1178451d6",
+  "bytes": 11560,
+  "tris": 132,
+  "materiales": 3,
+  "min": [
+   -0.041,
+   0,
+   -0.041
+  ],
+  "max": [
+   0.041,
+   0.12,
+   0.041
+  ],
+  "vueltas": 0,
+  "notas": "Miniatura: Arlen (heroe)"
+ },
+ "mini-guardiana": {
+  "fichero": "modelos/mini-guardiana.glb",
+  "sha": "606c29c7b4ddff70e886e37d17d6fe2aa88b62062c076c516f8a87ce34b2f90b",
+  "bytes": 11568,
+  "tris": 132,
+  "materiales": 3,
+  "min": [
+   -0.041,
+   0,
+   -0.041
+  ],
+  "max": [
+   0.041,
+   0.12,
+   0.041
+  ],
+  "vueltas": 0,
+  "notas": "Miniatura: la guardiana (heroe)"
+ },
+ "mini-erudito": {
+  "fichero": "modelos/mini-erudito.glb",
+  "sha": "9989f3f8319cbcf3bcbddd863862d48ea733317cfca09692850d1d64c7f7ac55",
+  "bytes": 11564,
+  "tris": 132,
+  "materiales": 3,
+  "min": [
+   -0.041,
+   0,
+   -0.041
+  ],
+  "max": [
+   0.041,
+   0.12,
+   0.041
+  ],
+  "vueltas": 0,
+  "notas": "Miniatura: el erudito (heroe)"
+ },
+ "mini-exploradora": {
+  "fichero": "modelos/mini-exploradora.glb",
+  "sha": "5d9a24fb882ba06f6eee3c4bc4c438c86d173a7254bbf075e7e73a381bd37bd2",
+  "bytes": 11572,
+  "tris": 132,
+  "materiales": 3,
+  "min": [
+   -0.041,
+   0,
+   -0.041
+  ],
+  "max": [
+   0.041,
+   0.12,
+   0.041
+  ],
+  "vueltas": 0,
+  "notas": "Miniatura: la exploradora (heroe)"
+ },
+ "mini-sombra": {
+  "fichero": "modelos/mini-sombra.glb",
+  "sha": "6663d8220be79f11748b5f36022124f600622e8667ef114ce694a95cd51248a2",
+  "bytes": 11852,
+  "tris": 136,
+  "materiales": 3,
+  "min": [
+   -0.063,
+   0,
+   -0.063
+  ],
+  "max": [
+   0.063,
+   0.163,
+   0.063
+  ],
+  "vueltas": 0,
+  "notas": "Miniatura: criatura de sombra (criatura)"
+ },
+ "mini-guardian-piedra": {
+  "fichero": "modelos/mini-guardian-piedra.glb",
+  "sha": "c6b03f0a5e037f9d278360f036e2243f045df114fef91aebb96ea23d450aaca8",
+  "bytes": 11872,
+  "tris": 136,
+  "materiales": 3,
+  "min": [
+   -0.063,
+   0,
+   -0.063
+  ],
+  "max": [
+   0.063,
+   0.163,
+   0.063
+  ],
+  "vueltas": 0,
+  "notas": "Miniatura: guardián de piedra (criatura)"
+ },
+ "choque": {
+  "fichero": "modelos/choque.glb",
+  "sha": "b846cac46a3caaa7adb9019bbef2cf16663453fe71a97c2b0d7678603a48aba4",
+  "bytes": 204,
+  "tris": 0,
+  "materiales": 0,
+  "min": [
+   0,
+   0,
+   0
+  ],
+  "max": [
+   0,
+   0,
+   0
+  ],
+  "vueltas": 0,
+  "notas": "choque invisible: un nodo vacío, sin malla (el mismo de la galería)"
+ },
+ "gabinete": {
+  "fichero": "modelos/gabinete.glb",
+  "sha": "f8579d2cf3d94d7868abd680c5f3a8b9dea95e7c14be993e71f3df8b45389165",
+  "bytes": 1727996,
+  "tris": 23906,
+  "materiales": 11,
+  "min": [
+   -12.513,
+   -0.011,
+   -11.901
+  ],
+  "max": [
+   12.513,
+   6.961,
+   11.901
+  ],
+  "vueltas": 0,
+  "notas": "el gabinete entero: 25 piezas fijas en un solo modelo"
+ }
+}

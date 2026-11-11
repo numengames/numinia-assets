@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "reloj-turnos",
+  "nombre": "Reloj de turnos",
+  "descripcion": "Reloj de latón en el borde de la mesa. Marca quién interviene ahora y quién después, sin imponer reglas de combate.",
+  "posicion": {
+    "x": -1.45,
+    "z": 0.4,
+    "y": 0.9600000000000001
+  },
+  "radio": 2.2,
+  "aviso": "girar el reloj de turnos",
+  "apariencia": {
+    "escala": 0.14,
+    "color": "#A17C44"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}

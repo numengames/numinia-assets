@@ -1,0 +1,137 @@
+{
+  "formato": "pnj@1",
+  "id": "rima",
+  "nombre": "Rima",
+  "oficio": "Maestra del azar",
+  "voz": "mujer-mayor",
+  "descripcion": "Artificiera del gabinete. Cuida la torre de engranajes y sus dados.",
+  "apariencia": {
+    "modelo": "047f5e5fb3bb6d378bd1df16ca6137f2a596c99b3a1b5690b4020c05aaf6f319",
+    "escala": 0.52
+  },
+  "posicion": {
+    "x": 4.55,
+    "z": 1.75
+  },
+  "giro": 69,
+  "radio": 3,
+  "dialogo": {
+    "entradas": [
+      {
+        "si": {
+          "mision": "m2-azar",
+          "estado": "disponible"
+        },
+        "nodo": "rim010"
+      },
+      {
+        "si": {
+          "mision": "m2-azar",
+          "estado": "activa",
+          "paso": "rima"
+        },
+        "nodo": "rim040"
+      },
+      {
+        "si": {
+          "mision": "m1-perspectiva",
+          "estado": "hecha"
+        },
+        "nodo": "rim900"
+      },
+      {
+        "nodo": "hola"
+      }
+    ],
+    "nodos": {
+      "rim010": {
+        "texto": "Soy Rima. En esta torre caben dados pequeños, grandes y combinados. Ninguna regla se impone si usted no la elige.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "rim020"
+          }
+        ]
+      },
+      "rim020": {
+        "texto": "Pulse la torre para tirar un dado de veinte caras. El resultado lo calcula el servidor antes de que el dado termine de rodar, y toda la mesa ve el mismo.",
+        "opciones": [
+          {
+            "texto": "Continuar.",
+            "ir": "rim030"
+          }
+        ]
+      },
+      "rim030": {
+        "texto": "Después pruebe tres dados de seis y la fórmula de dos dados de diez más cinco: escriba /tirar 3d6 y /tirar 2d10+5 en el chat, junto a la torre. Mire cada valor y el total.",
+        "opciones": [
+          {
+            "texto": "Voy a tirar.",
+            "accion": {
+              "tipo": "dar_mision",
+              "mision": "m2-azar"
+            }
+          }
+        ]
+      },
+      "rim040": {
+        "texto": "Una tirada puede ser pública o privada: marque «en secreto» y la cifra solo la verá usted. ¿Ha tirado ya los tres?",
+        "opciones": [
+          {
+            "texto": "Sí: 1d20, 3d6 y 2d10+5.",
+            "si": {
+              "mision": "m2-azar",
+              "estado": "activa",
+              "paso": "rima"
+            },
+            "accion": {
+              "tipo": "avanzar_paso",
+              "mision": "m2-azar"
+            },
+            "ir": "rim050"
+          },
+          {
+            "texto": "Todavía no.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "rim050": {
+        "texto": "Bien. El azar ya responde. Lyra le espera en el archivo, al oeste.",
+        "opciones": [
+          {
+            "texto": "Voy con Lyra.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "rim900": {
+        "texto": "Elija dados o escriba una fórmula y confirme. La torre tira para todos.",
+        "opciones": [
+          {
+            "texto": "Gracias.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      },
+      "hola": {
+        "texto": "Soy Rima. Senet le recibirá primero, junto a la entrada; luego venga a verme.",
+        "opciones": [
+          {
+            "texto": "De acuerdo.",
+            "accion": {
+              "tipo": "despedir"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos. [MOTOR] La misión aún no comprueba la tirada (no hay paso «tira»): la ve toda la mesa y Rima pregunta."
+}

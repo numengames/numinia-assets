@@ -1,0 +1,14 @@
+{
+  "schema": "numinia-engine/escena@1",
+  "nombre": "Capa sobria contemporánea",
+  "preset": "nublado",
+  "entorno": {
+    "luz": {
+      "ambiente": 1.3
+    },
+    "tono": {
+      "exposicion": 1
+    }
+  },
+  "narracion": "Luz gris de oficina. Una partida de hoy."
+}

@@ -1,0 +1,18 @@
+{
+  "formato": "cosa@1",
+  "id": "baraja",
+  "nombre": "Baraja de ensayo",
+  "descripcion": "Barajar, robar y revelar son operaciones distintas; una carta boca abajo conserva su contenido privado.",
+  "posicion": {
+    "x": -6.7,
+    "z": -1.1,
+    "y": 1
+  },
+  "radio": 1.7,
+  "aviso": "robar una carta",
+  "apariencia": {
+    "escala": 0.12,
+    "color": "#1B2934"
+  },
+  "notas": "Plantilla del Gabinete de los Mil Mundos."
+}
